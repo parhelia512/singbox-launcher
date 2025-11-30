@@ -1,0 +1,72 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+singbox-launcher
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Build artifacts
+rsrc.syso
+*.syso
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/*.log
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+compile_debug.txt
+
+# Build directories
+dist/
+build/dist/
+fyne-cross/
+releases/
+
+# Config files with sensitive data - DO NOT COMMIT!
+bin/config.json
+bin/*.exe
+bin/*.dll
+bin/parser.exe
+bin/parser
+
+# Backup files
+*.bak
+*~
+config — копия*.json
+
+# Test coverage
+coverage.txt
+coverage.html
+

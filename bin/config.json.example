@@ -1,0 +1,190 @@
+{
+/** @ParcerConfig
+
+{
+  "version": 1,
+  "ParserConfig": {
+    "proxies": [{ "source": "https://your-subscription-url-here" }],
+    "outbounds": [
+      {
+        "tag": "proxy-out",
+        "type": "selector",
+        "options": { "interrupt_exist_connections": true },
+        "outbounds": {
+          "proxies": { "tag": "!/(🇷🇺)/i" },
+          "addOutbounds": ["direct-out"],
+          "preferredDefault": { "tag": "/🇳🇱/i" }
+        },
+		"comment":"Proxy group for international connections"
+      },
+      {
+        "tag": "ruvpn",
+        "type": "selector",
+        "options": {},
+        "outbounds": { "proxies": { "tag": "/🇷🇺/i" } },
+		"comment":"Proxy group for Russia"
+      }
+    ]
+  }
+}
+*/
+
+  // БАЗА Читать:
+  // https://deepwiki.com/chika0801/sing-box-examples/4.3-dns-configuration-and-routing
+  // https://sing-box.sagernet.org/configuration/dns/server/
+  
+  //Downloads:
+  // https://github.com/SagerNet/sing-box/releases/
+  // https://www.wintun.net/
+  
+  
+  // --- НАСТРОЙКИ ЛОГИРОВАНИЯ ---
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+
+  // --- КОНФИГУРАЦИЯ DNS ---
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "direct_dns_resolver",
+        "server": "9.9.9.9",
+        "server_port": 53
+      },
+      {
+        "type": "https",
+        "tag": "google_doh",
+        "server": "8.8.8.8",
+        "server_port": 443,
+        "path": "/dns-query",
+        "detour": "proxy-out"
+      },
+	  {
+		"type": "https",
+		"tag": "yandex_doh",
+		"server": "77.88.8.88",
+		"server_port": 443,
+		"path": "/dns-query",
+		"detour": "ruvpn",
+		"domain_strategy": "prefer_ipv4"
+	  },
+	  {
+		"type": "udp",
+		"tag": "yandex_dns_ru_alt",
+		"server": "77.88.8.2",
+		"server_port": 53,
+		"detour": "ruvpn",
+		"domain_strategy": "prefer_ipv4"
+	  }
+    ],
+    "rules": [
+	  { "rule_set": "ru-domains", "server": "yandex_doh" },
+	  { "rule_set": "ru-domains", "server": "yandex_dns_ru_alt" },
+      { "server": "google_doh" },
+      { "server": "direct_dns_resolver" }
+    ],
+    "final": "google_doh",
+    "strategy": "ipv4_only",
+    "independent_cache": false
+  },
+
+  // --- ВХОДЯЩИЕ СОЕДИНЕНИЯ (INBOUNDS) ---
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "singbox-tun0",
+      "address": [
+        "172.16.0.1/30"
+      ],
+      "mtu": 1492,
+      "auto_route": true,
+      "strict_route": false,
+      "stack": "system"
+    }
+  ],
+
+  // --- ИСХОДЯЩИЕ СОЕДИНЕНИЯ (OUTBOUNDS) ---
+  "outbounds": [
+    
+	/** @ParserSTART */
+	// Прокси будут добавлены парсером из подписок
+	/** @ParserEND */
+	
+    { "type": "direct", "tag": "direct-out" }
+  ],
+
+  // --- ПРАВИЛА МАРШРУТИЗАЦИИ (ROUTE) ---
+  "route": {
+    "default_domain_resolver": "direct_dns_resolver",
+    
+    "rule_set": [
+	  { "tag": "ru-domains", "type": "inline", "format": "domain_suffix", "rules": [{"domain_suffix":["ru", "xn--p1ai", "su"]}] },
+      { "tag": "ads-all", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ads-all.srs", "download_detour": "direct-out", "update_interval": "24h" },
+      { "tag": "ru-inside", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-ru-available-only-inside.srs", "download_detour": "direct-out", "update_interval": "24h" },
+      { "tag": "ru-blocked-main", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru-blocked.srs", "download_detour": "direct-out", "update_interval": "24h" },
+      { "tag": "ru-blocked-community", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru-blocked-community.srs", "download_detour": "direct-out", "update_interval": "24h" },
+      { "tag": "israel-sites", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-il.srs", "download_detour": "direct-out", "update_interval": "24h" },
+      { "tag": "games", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-games.srs", "download_detour": "direct-out", "update_interval": "24h" },
+	  { "tag": "messengers","type":"inline","format":"domain_suffix","rules":[{ "domain_suffix":["meet.google.com","googlevideo.com","gstatic.com","googleusercontent.com","googleapis.com","web.whatsapp.com","whatsapp.com","whatsapp.net","cdn.whatsapp.net","mmg.whatsapp.net","discord.com","discordapp.com","cdn.discordapp.com","discord.gg","gateway.discord.gg","discord.media","telegram.org","t.me","cdn-telegram.org"] },{ "process_name":["Telegram.exe","Discord.exe","WhatsApp.exe","Signal.exe","Zoom.exe"] }] }
+
+    ],
+
+    "rules": [
+      {
+        "inbound": "tun-in",
+        "action": "resolve",
+        "strategy": "prefer_ipv4"
+      },
+      {
+        "inbound": "tun-in",
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      { "protocol": "dns", "action": "hijack-dns" },
+ 
+      { "action": "reject", "method": "drop", "network": ["udp"], "port": [443] },
+      { "ip_is_private": true, "outbound": "direct-out" },
+      { "domain_suffix": ["local"], "outbound": "direct-out" },
+      { "protocol": ["bittorrent"], "outbound": "direct-out" },
+      { "domain": ["2ip.io"], "outbound": "direct-out" },
+      { "domain": ["2ip.me"], "outbound": "proxy-out" },
+      { "domain": ["2ip.ru"], "outbound": "ruvpn" },
+      { "rule_set": "israel-sites", "outbound": "proxy-out" },
+      { "rule_set": "ru-domains", "outbound": "direct-out" },
+      { "rule_set": "ru-inside", "outbound": "ruvpn" },
+	  { "rule_set": [ "ru-blocked-main", "ru-blocked-community" ], "network": ["tcp","udp"], "outbound": "proxy-out" },
+	  { "rule_set": "games", "network": ["tcp", "udp"], "outbound": "direct-out" },
+	  { "port": [
+		  3659,
+		  1935,
+		  5001,
+		  5795, 5796,
+		  7000,
+		  7777,
+		  9000,
+		  10039, 10040
+		],
+		"port_range": "27000:27100",
+		"network": ["tcp", "udp"], "outbound": "direct-out" 
+	  },
+	  
+	  { "rule_set": "messengers", "network": ["tcp","udp"], "outbound": "proxy-out" },
+	  
+	  { "ip_cidr": ["162.254.192.0/18", "208.64.200.0/22", "205.196.6.0/24", "208.64.204.0/22", "146.66.152.0/24"], "outbound": "direct-out" },
+	  
+    ], 
+    "final": "proxy-out",
+    "auto_detect_interface": true
+  },
+  
+  "experimental": {
+	  "clash_api": {
+		"external_controller": "127.0.0.1:9090",
+		"secret": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN" 
+	  }
+  }
+}
+
