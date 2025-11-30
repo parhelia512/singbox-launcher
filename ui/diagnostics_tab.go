@@ -16,27 +16,6 @@ import (
 	"singbox-launcher/internal/platform"
 )
 
-// CreateMainContent creates and returns the content for the "Control" tab.
-func CreateMainContent(ac *core.AppController) fyne.CanvasObject {
-	ac.StatusLabel = widget.NewLabelWithData(ac.StatusText)
-
-	ac.StartButton = widget.NewButton("Start VPN (Sing-Box)", func() {
-		ac.StartSingBox()
-	})
-	ac.StopButton = widget.NewButton("Stop VPN (Sing-Box)", func() {
-		ac.StopSingBox()
-	})
-	exitButton := widget.NewButton("Exit", ac.GracefulExit)
-
-	return container.NewVBox(
-		widget.NewLabel("Main Control"),
-		ac.StatusLabel,
-		ac.StartButton,
-		ac.StopButton,
-		exitButton,
-	)
-}
-
 // checkSTUN performs a STUN request to determine the external IP address.
 func checkSTUN(serverAddr string) (string, error) {
 	// Создаем UDP соединение
@@ -94,11 +73,11 @@ func checkSTUN(serverAddr string) (string, error) {
 	}
 }
 
-// CreateDiagnosticsContent creates and returns the content for the "Diagnostics" tab.
-func CreateDiagnosticsContent(ac *core.AppController) fyne.CanvasObject {
+// CreateDiagnosticsTab creates and returns the content for the "Diagnostics" tab.
+func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 	checkFilesButton := widget.NewButton("Check Files", ac.CheckFiles)
 
-	// ДОБАВЛЕНО: Кнопка для проверки STUN
+	// Кнопка для проверки STUN
 	stunButton := widget.NewButton("Check STUN", func() {
 		// Показываем диалог ожидания
 		waitDialog := dialog.NewCustomWithoutButtons("STUN Check", widget.NewLabel("Checking, please wait..."), ac.MainWindow)
@@ -106,30 +85,24 @@ func CreateDiagnosticsContent(ac *core.AppController) fyne.CanvasObject {
 
 		go func() {
 			stunServer := "stun.l.google.com:19302"
-			/*
-				stun1.l.google.com:19302
-				stun2.l.google.com:19302
-				stun3.l.google.com:19302
-				stun4.l.google.com:19302
-			*/
 			ip, err := checkSTUN(stunServer)
 
 			// Закрываем диалог ожидания и показываем результат
 			fyne.Do(func() {
 				waitDialog.Hide()
 				if err != nil {
-					log.Printf("diagnosticsContent: STUN check failed: %v", err)
-					dialog.ShowError(err, ac.MainWindow)
+					log.Printf("diagnosticsTab: STUN check failed: %v", err)
+					ShowError(ac.MainWindow, err)
 				} else {
-					log.Printf("diagnosticsContent: STUN check successful, IP: %s", ip)
-					// ИЗМЕНЕНО: Создаем кастомный диалог с кнопкой "Copy"
+					log.Printf("diagnosticsTab: STUN check successful, IP: %s", ip)
+					// Создаем кастомный диалог с кнопкой "Copy"
 					resultLabel := widget.NewLabel(fmt.Sprintf("Your External IP: %s\n(determined via [UDP]%s)", ip, stunServer))
 					copyButton := widget.NewButton("Copy IP", func() {
 						ac.MainWindow.Clipboard().SetContent(ip)
 						ac.ShowAutoHideInfo("Copied", "IP address copied to clipboard.")
 					})
 
-					dialog.ShowCustom("STUN Check Result", "Close", container.NewVBox(resultLabel, copyButton), ac.MainWindow)
+					ShowCustom(ac.MainWindow, "STUN Check Result", "Close", container.NewVBox(resultLabel, copyButton))
 				}
 			})
 		}()
@@ -139,8 +112,8 @@ func CreateDiagnosticsContent(ac *core.AppController) fyne.CanvasObject {
 	openBrowserButton := func(label, url string) fyne.CanvasObject {
 		return widget.NewButton(label, func() {
 			if err := platform.OpenURL(url); err != nil {
-				log.Printf("diagnosticsContent: Failed to open URL %s: %v", url, err)
-				ac.ShowAutoHideInfo("Error", fmt.Sprintf("Failed to open URL:\n%s\n%v", url, err))
+				log.Printf("diagnosticsTab: Failed to open URL %s: %v", url, err)
+				ShowError(ac.MainWindow, err)
 			}
 		})
 	}
@@ -148,7 +121,7 @@ func CreateDiagnosticsContent(ac *core.AppController) fyne.CanvasObject {
 	return container.NewVBox(
 		widget.NewLabel("Diagnostics"),
 		checkFilesButton,
-		stunButton, // ДОБАВЛЕНО: Кнопка STUN
+		stunButton,
 		widget.NewSeparator(),
 		widget.NewLabel("IP Check Services:"),
 		openBrowserButton("2ip.ru", "https://2ip.ru"),
@@ -160,38 +133,3 @@ func CreateDiagnosticsContent(ac *core.AppController) fyne.CanvasObject {
 	)
 }
 
-// CreateToolsContent creates and returns the content for the "Tools" tab.
-func CreateToolsContent(ac *core.AppController) fyne.CanvasObject {
-	logsButton := widget.NewButton("Open Logs Folder", func() {
-		logsDir := platform.GetLogsDir(ac.ExecDir)
-		if err := platform.OpenFolder(logsDir); err != nil {
-			log.Printf("toolsContent: Failed to open logs folder: %v", err)
-			ac.ShowAutoHideInfo("Error", fmt.Sprintf("Failed to open logs folder:\n%v", err))
-		}
-	})
-	updateButton := widget.NewButton("Update Config", ac.RunParser)
-	configButton := widget.NewButton("Open Config Folder", func() {
-		binDir := platform.GetBinDir(ac.ExecDir)
-		if err := platform.OpenFolder(binDir); err != nil {
-			log.Printf("toolsContent: Failed to open config folder: %v", err)
-			ac.ShowAutoHideInfo("Error", fmt.Sprintf("Failed to open config folder:\n%v", err))
-		}
-	})
-	killButton := widget.NewButton("Kill Sing-Box", func() {
-		go func() {
-			processName := platform.GetProcessNameForCheck()
-			_ = platform.KillProcess(processName)
-			fyne.Do(func() {
-				ac.ShowAutoHideInfo("Kill", "Sing-Box killed if running.")
-				ac.RunningState.Set(false)
-			})
-		}()
-	})
-
-	return container.NewVBox(
-		logsButton,
-		updateButton,
-		configButton,
-		killButton,
-	)
-}

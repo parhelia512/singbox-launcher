@@ -62,10 +62,10 @@ func main() {
 
 	// Create tabs for the main window: "Control", "Diagnostics", "Tools", "Clash API"
 	tabs := container.NewAppTabs(
-		container.NewTabItem("Control", ui.CreateMainContent(controller)),
-		container.NewTabItem("Diagnostics", ui.CreateDiagnosticsContent(controller)),
-		container.NewTabItem("Tools", ui.CreateToolsContent(controller)),
-		container.NewTabItem("Clash API", ui.CreateClashAPIContent(controller)),
+		container.NewTabItem("Control", ui.CreateControlTab(controller)),
+		container.NewTabItem("Diagnostics", ui.CreateDiagnosticsTab(controller)),
+		container.NewTabItem("Tools", ui.CreateToolsTab(controller)),
+		container.NewTabItem("Clash API", ui.CreateClashAPITab(controller)),
 	)
 
 	tabs.OnSelected = func(item *container.TabItem) {

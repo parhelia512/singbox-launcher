@@ -15,15 +15,16 @@ import (
 	"singbox-launcher/core"
 )
 
-// CreateClashAPIContent creates and returns the content for the "Clash API" tab.
-func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
+// CreateClashAPITab creates and returns the content for the "Clash API" tab.
+func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	ac.ApiStatusLabel = widget.NewLabel("Status: Not checked")
 	status := widget.NewLabel("Click 'Load Proxies' or 'Test API'")
 	ac.ListStatusLabel = status
 
 	selectorOptions, defaultSelector, err := core.GetSelectorGroupsFromConfig(ac.ConfigPath)
 	if err != nil {
-		log.Printf("clash_api_ui: failed to get selector groups: %v", err)
+		log.Printf("clash_api_tab: failed to get selector groups: %v", err)
+		ShowError(ac.MainWindow, err)
 	}
 	if len(selectorOptions) == 0 {
 		selectorOptions = []string{"proxy-out"}
@@ -43,7 +44,7 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 
 	onLoadAndRefreshProxies := func() {
 		if !ac.ClashAPIEnabled {
-			ac.ShowAutoHideInfo("Clash API", "API is disabled: config error")
+			ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
 			if ac.ListStatusLabel != nil {
 				ac.ListStatusLabel.SetText("Clash API disabled due to config error")
 			}
@@ -60,7 +61,7 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 			proxies, now, err := api.GetProxiesInGroup(ac.ClashAPIBaseURL, ac.ClashAPIToken, group, ac.ApiLogFile)
 			fyne.Do(func() {
 				if err != nil {
-					ac.ShowAutoHideInfo("Clash API Error", "Failed to load proxies: "+err.Error())
+					ShowError(ac.MainWindow, err)
 					if ac.ListStatusLabel != nil {
 						ac.ListStatusLabel.SetText("Error: " + err.Error())
 					}
@@ -84,7 +85,7 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 	onTestAPIConnection := func() {
 		if !ac.ClashAPIEnabled {
 			ac.ApiStatusLabel.SetText("❌ API Off (Config Error)")
-			ac.ShowAutoHideInfo("Clash API", "API is disabled: config error")
+			ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
 			return
 		}
 		go func() {
@@ -92,7 +93,7 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 			fyne.Do(func() {
 				if err != nil {
 					ac.ApiStatusLabel.SetText("❌ API Off (Error)")
-					ac.ShowAutoHideInfo("Clash API Error", "API connection failed: "+err.Error())
+					ShowError(ac.MainWindow, err)
 					return
 				}
 				ac.ApiStatusLabel.SetText("✅ API On")
@@ -102,7 +103,7 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	onResetAPIState := func() {
-		log.Println("clash_api_ui: Resetting API state.")
+		log.Println("clash_api_tab: Resetting API state.")
 		ac.SetProxiesList([]api.ProxyInfo{})
 		ac.SetActiveProxyName("")
 		ac.SetSelectedIndex(-1)
@@ -130,6 +131,7 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 				if err != nil {
 					button.SetText("Error")
 					status.SetText("Delay error: " + err.Error())
+					ShowError(ac.MainWindow, err)
 				} else {
 					button.SetText(fmt.Sprintf("%d ms", delay))
 					status.SetText(fmt.Sprintf("Delay: %d ms for %s", delay, proxyName))
@@ -150,9 +152,8 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 		pingButton := widget.NewButton("Ping", nil)
 		switchButton := widget.NewButton("▶️", nil)
 
-		// ИЗМЕНЕНО: Убрали VBox и метку трафика.
 		content := container.NewHBox(
-			nameLabel, // Сразу метка с именем
+			nameLabel,
 			layout.NewSpacer(),
 			pingButton,
 			switchButton,
@@ -180,7 +181,6 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 
 		nameLabel.SetText(proxyInfo.Name)
 
-		// ИЗМЕНЕНО: Устанавливаем начальное значение пинга, если оно есть.
 		if proxyInfo.Delay > 0 {
 			pingButton.SetText(fmt.Sprintf("%d ms", proxyInfo.Delay))
 		} else {
@@ -204,24 +204,20 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 			pingProxy(proxyNameForCallback, pingButton)
 		}
 
-		// ИЗМЕНЕНО: Новая логика переключения.
 		switchButton.OnTapped = func() {
 			if !ac.ClashAPIEnabled {
-				ac.ShowAutoHideInfo("Clash API", "API is disabled: config error")
+				ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
 				return
 			}
 			go func(group string) {
 				err := api.SwitchProxy(ac.ClashAPIBaseURL, ac.ClashAPIToken, group, proxyNameForCallback, ac.ApiLogFile)
 				fyne.Do(func() {
 					if err != nil {
-						ac.ShowAutoHideInfo("Clash API Error", "Switch error: "+err.Error())
+						ShowError(ac.MainWindow, err)
 						status.SetText("Switch error: " + err.Error())
 					} else {
-						// 1. Обновляем состояние в контроллере
 						ac.SetActiveProxyName(proxyNameForCallback)
-						// 2. Перерисовываем список для обновления выделения
 						ac.ProxiesListWidget.Refresh()
-						// 3. Сразу запускаем пинг для этого прокси
 						pingProxy(proxyNameForCallback, pingButton)
 						if ac.ListStatusLabel != nil {
 							ac.ListStatusLabel.SetText(fmt.Sprintf("Switched '%s' to %s", group, proxyNameForCallback))
@@ -293,3 +289,4 @@ func CreateClashAPIContent(ac *core.AppController) fyne.CanvasObject {
 
 	return contentContainer
 }
+
