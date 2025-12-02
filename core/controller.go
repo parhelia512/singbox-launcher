@@ -15,7 +15,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
@@ -46,8 +45,6 @@ type AppController struct {
 	Application    fyne.App
 	MainWindow     fyne.Window
 	TrayIcon       fyne.Resource
-	StatusLabel    *widget.Label
-	StatusText     binding.String
 	ApiStatusLabel *widget.Label
 
 	// --- UI State Fields ---
@@ -57,13 +54,11 @@ type AppController struct {
 	ProxiesList       []api.ProxyInfo
 	ListStatusLabel   *widget.Label
 
-	StartButton *widget.Button
-	StopButton  *widget.Button
-
 	// --- Icon Resources ---
 	AppIconData   fyne.Resource
 	GreenIconData fyne.Resource
 	GreyIconData  fyne.Resource
+	RedIconData   fyne.Resource // Иконка для состояния ошибки
 
 	// --- Process State ---
 	SingboxCmd               *exec.Cmd
@@ -96,8 +91,9 @@ type AppController struct {
 	SelectedClashGroup string
 
 	// --- Callbacks for UI logic ---
-	RefreshAPIFunc    func()
-	ResetAPIStateFunc func()
+	RefreshAPIFunc       func()
+	ResetAPIStateFunc    func()
+	UpdateCoreStatusFunc func() // Callback для обновления статуса в Core Dashboard
 }
 
 // RunningState - structure for tracking the VPN's running state.
@@ -136,7 +132,7 @@ func openLogFileWithRotation(logPath string) (*os.File, error) {
 }
 
 // NewAppController creates and initializes a new AppController instance.
-func NewAppController(appIconData, greyIconData, greenIconData []byte) (*AppController, error) {
+func NewAppController(appIconData, greyIconData, greenIconData, redIconData []byte) (*AppController, error) {
 	ac := &AppController{}
 
 	ex, err := os.Executable()
@@ -183,12 +179,11 @@ func NewAppController(appIconData, greyIconData, greenIconData []byte) (*AppCont
 	ac.AppIconData = fyne.NewStaticResource("appIcon", appIconData)
 	ac.GreyIconData = fyne.NewStaticResource("trayIcon", greyIconData)
 	ac.GreenIconData = fyne.NewStaticResource("runningIcon", greenIconData)
+	ac.RedIconData = fyne.NewStaticResource("errorIcon", redIconData)
 
 	log.Println("Application initializing...")
 	ac.Application = app.NewWithID("com.singbox.launcher")
 	ac.Application.SetIcon(ac.AppIconData)
-	ac.StatusText = binding.NewString()
-	ac.StatusText.Set("❌ Down")
 	ac.RunningState = &RunningState{controller: ac}
 	ac.RunningState.Set(false) // Use Set() method instead of direct assignment
 	ac.ConsecutiveCrashAttempts = 0
@@ -211,6 +206,7 @@ func NewAppController(appIconData, greyIconData, greenIconData []byte) (*AppCont
 
 	ac.RefreshAPIFunc = func() { log.Println("RefreshAPIFunc handler is not set yet.") }
 	ac.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
+	ac.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
 
 	return ac, nil
 }
@@ -218,35 +214,39 @@ func NewAppController(appIconData, greyIconData, greenIconData []byte) (*AppCont
 // UpdateUI updates all UI elements based on the current application state.
 func (ac *AppController) UpdateUI() {
 	fyne.Do(func() {
+		// Обновляем иконку трея (это системная функция, не UI виджет)
 		if desk, ok := ac.Application.(desktop.App); ok {
+			// Проверяем, что иконки инициализированы
+			if ac.GreenIconData == nil || ac.GreyIconData == nil || ac.RedIconData == nil {
+				log.Printf("UpdateUI: Icons not initialized, skipping icon update")
+				return
+			}
+
+			var iconToSet fyne.Resource
+
 			if ac.RunningState.IsRunning() {
-				desk.SetSystemTrayIcon(ac.GreenIconData)
+				// Зеленая иконка - если запущен
+				iconToSet = ac.GreenIconData
 			} else {
-				desk.SetSystemTrayIcon(ac.GreyIconData)
+				// Проверяем наличие бинарника для определения ошибки (простая проверка файла)
+				if _, err := os.Stat(ac.SingboxPath); os.IsNotExist(err) {
+					// Красная иконка - при ошибке (бинарник не найден)
+					iconToSet = ac.RedIconData
+				} else {
+					// Черная иконка - при штатной остановке
+					iconToSet = ac.GreyIconData
+				}
+			}
+
+			if iconToSet != nil {
+				desk.SetSystemTrayIcon(iconToSet)
 			}
 		}
 
-		if ac.RunningState.IsRunning() {
-			ac.StatusText.Set("✅ Up")
-			if ac.StartButton != nil {
-				ac.StartButton.Disable()
-			}
-			if ac.StopButton != nil {
-				ac.StopButton.Enable()
-			}
-		} else {
-			ac.StatusText.Set("❌ Down")
-			if ac.StartButton != nil {
-				ac.StartButton.Enable()
-			}
-			if ac.StopButton != nil {
-				ac.StopButton.Disable()
-			}
-
-			if ac.ResetAPIStateFunc != nil {
-				log.Println("UpdateUI: Triggering API state reset because state is 'Down'.")
-				ac.ResetAPIStateFunc()
-			}
+		// Если состояние Down, сбрасываем API состояние
+		if !ac.RunningState.IsRunning() && ac.ResetAPIStateFunc != nil {
+			log.Println("UpdateUI: Triggering API state reset because state is 'Down'.")
+			ac.ResetAPIStateFunc()
 		}
 	})
 }
@@ -384,6 +384,12 @@ func (r *RunningState) Set(value bool) {
 	r.Unlock()
 
 	r.controller.UpdateUI()
+
+	// Вызываем callback для обновления статуса в Core Dashboard
+	if r.controller.UpdateCoreStatusFunc != nil {
+		r.controller.UpdateCoreStatusFunc()
+	}
+
 }
 
 // IsRunning checks if the VPN is running.

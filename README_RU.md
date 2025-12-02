@@ -73,13 +73,14 @@
 
 1. Скачайте последний релиз с [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
 2. Распакуйте архив в любую папку (например, `C:\Program Files\singbox-launcher`)
-3. Поместите следующие файлы в папку `bin\`:
-   - `sing-box.exe` - из [релизов sing-box](https://github.com/SagerNet/sing-box/releases)
-   - `wintun.dll` - из [релизов WinTun](https://www.wintun.net/) (лицензия MIT, можно распространять)
-     * **Примечание:** В релизах GitHub `wintun.dll` может быть уже включен для удобства
-   - `config.json` - скопируйте `config.json.example` в `config.json` и настройте под себя
-
+3. Поместите `config.json` в папку `bin\`:
+   - Скопируйте `config.json.example` в `config.json` и настройте под себя
 4. Запустите `singbox-launcher.exe`
+5. **Автоматическое скачивание** (рекомендуется):
+   - Перейдите на вкладку **"Core"**
+   - Нажмите **"Download"** для скачивания `sing-box.exe` (автоматически скачает правильную версию для вашей системы)
+   - Нажмите **"Download wintun.dll"** при необходимости (автоматически скачает правильную архитектуру)
+   - Лаунчер автоматически скачает с GitHub или зеркала SourceForge, если GitHub недоступен
 
 ### macOS
 
@@ -112,16 +113,23 @@
 
 ### Первый запуск
 
-1. Убедитесь, что файлы `sing-box` и `config.json` находятся в папке `bin/`
-2. Запустите лаунчер
-3. Нажмите кнопку **"Start VPN"** для запуска sing-box
+1. Настройте `config.json` (см. раздел [Конфигурация](#-конфигурация))
+2. **Скачайте sing-box и wintun.dll** (если еще не установлены):
+   - Откройте вкладку **"Core"**
+   - Нажмите **"Download"** для скачивания `sing-box` (автоматически определит вашу платформу)
+   - На Windows нажмите **"Download wintun.dll"** при необходимости
+   - Файлы будут автоматически скачаны в папку `bin/`
+3. Нажмите кнопку **"Start"** на вкладке **"Core"** для запуска sing-box
 
 ### Основные функции
 
-#### Вкладка "Control"
-- **Start VPN** - Запустить sing-box
-- **Stop VPN** - Остановить sing-box
-- **Exit** - Выход из приложения
+#### Вкладка "Core"
+- **Core Status** - Показывает статус работы sing-box (Running/Stopped/Error)
+- Кнопки **Start/Stop** - Управление процессом sing-box
+- **Sing-box Ver.** - Отображает установленную версию (кликабельно на Windows для открытия расположения файла)
+- Кнопка **"Update"** - Скачать или обновить бинарник sing-box
+- **WinTun DLL** (только Windows) - Показывает статус wintun.dll и кнопку скачивания
+- Автоматический fallback на зеркало SourceForge, если GitHub недоступен
 
 #### Вкладка "Diagnostics"
 - **Check Files** - Проверить наличие необходимых файлов
@@ -154,8 +162,8 @@
 ```
 singbox-launcher/
 ├── bin/
-│   ├── sing-box.exe (или sing-box для Unix) - скачать отдельно
-│   ├── wintun.dll (только Windows) - скачать отдельно
+│   ├── sing-box.exe (или sing-box для Unix) - автоматически скачивается через вкладку Core
+│   ├── wintun.dll (только Windows) - автоматически скачивается через вкладку Core
 │   └── config.json - создать из config.json.example
 ├── logs/
 │   ├── singbox-launcher.log
@@ -163,6 +171,11 @@ singbox-launcher/
 │   └── api.log
 └── singbox-launcher.exe (или singbox-launcher для Unix)
 ```
+
+**Примечание:** `sing-box` и `wintun.dll` можно скачать автоматически через вкладку **Core**. Лаунчер:
+- Автоматически определит вашу платформу (Windows/macOS/Linux) и архитектуру (amd64/arm64)
+- Скачает правильную версию с GitHub или зеркала SourceForge (если GitHub заблокирован)
+- Установит файлы в правильное расположение
 
 ### Настройка config.json
 
@@ -477,7 +490,11 @@ singbox-launcher/
 
 ### Sing-box не запускается
 
-1. Проверьте наличие файла `sing-box.exe` (или `sing-box`) в папке `bin/`
+1. **Скачайте sing-box**, если он отсутствует:
+   - Перейдите на вкладку **"Core"**
+   - Нажмите **"Download"** для автоматического скачивания sing-box
+   - На Windows также скачайте `wintun.dll`, если используется TUN режим
+2. Проверьте наличие файла `sing-box.exe` (или `sing-box`) в папке `bin/`
 2. Проверьте корректность `config.json`
 3. Посмотрите логи в папке `logs/`
 

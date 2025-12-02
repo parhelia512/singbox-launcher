@@ -1,0 +1,200 @@
+package core
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"singbox-launcher/internal/platform"
+)
+
+// GetInstalledCoreVersion получает установленную версию sing-box
+func (ac *AppController) GetInstalledCoreVersion() (string, error) {
+	// Проверяем существование бинарника
+	if _, err := os.Stat(ac.SingboxPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("sing-box not found at %s", ac.SingboxPath)
+	}
+
+	// Запускаем sing-box version
+	cmd := exec.Command(ac.SingboxPath, "version")
+	platform.PrepareCommand(cmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("GetInstalledCoreVersion: command failed: %v, output: %q", err, string(output))
+		return "", fmt.Errorf("failed to get version: %w", err)
+	}
+
+	// Парсим вывод - формат: "sing-box version 1.12.12"
+	outputStr := strings.TrimSpace(string(output))
+	log.Printf("GetInstalledCoreVersion: raw output: %q", outputStr)
+
+	// Ищем версию после "sing-box version" до конца строки
+	versionRegex := regexp.MustCompile(`sing-box version\s+(\S+)`)
+	matches := versionRegex.FindStringSubmatch(outputStr)
+	if len(matches) > 1 {
+		version := matches[1]
+		log.Printf("GetInstalledCoreVersion: found version: %s", version)
+		return version, nil
+	}
+
+	log.Printf("GetInstalledCoreVersion: unable to parse version from output: %q", outputStr)
+	return "", fmt.Errorf("unable to parse version from output: %s", outputStr)
+}
+
+// GetCoreBinaryPath возвращает путь к бинарнику sing-box для отображения
+func (ac *AppController) GetCoreBinaryPath() string {
+	singboxName, _ := platform.GetExecutableNames()
+	// Для отображения убираем полный путь, оставляем только bin/sing-box.exe или bin/sing-box
+	binDir := platform.GetBinDir(ac.ExecDir)
+	relPath, err := filepath.Rel(ac.ExecDir, binDir)
+	if err != nil {
+		// Если не удалось получить относительный путь, возвращаем просто имя
+		return singboxName
+	}
+	return filepath.Join(relPath, singboxName)
+}
+
+// CoreVersionInfo содержит информацию о версии sing-box
+type CoreVersionInfo struct {
+	InstalledVersion string
+	LatestVersion    string
+	UpdateAvailable  bool
+	Error            string
+}
+
+// FallbackVersion - фиксированная версия для использования, если не удается получить последнюю
+const FallbackVersion = "1.12.12"
+
+// GetLatestCoreVersion получает последнюю версию sing-box (с fallback на фиксированную версию)
+func (ac *AppController) GetLatestCoreVersion() (string, error) {
+	sources := []struct {
+		name string
+		url  string
+	}{
+		{"GitHub API", "https://api.github.com/repos/SagerNet/sing-box/releases/latest"},
+		{"GitHub Mirror (ghproxy)", "https://ghproxy.com/https://api.github.com/repos/SagerNet/sing-box/releases/latest"},
+	}
+
+	for _, source := range sources {
+		log.Printf("Trying to get latest version from %s...", source.name)
+		version, err := ac.getLatestVersionFromURL(source.url)
+		if err == nil {
+			log.Printf("Successfully got latest version %s from %s", version, source.name)
+			return version, nil
+		}
+		log.Printf("Failed to get latest version from %s: %v", source.name, err)
+	}
+
+	// Если GitHub недоступен, используем фиксированную версию для скачивания с SourceForge
+	log.Printf("All GitHub sources failed, using fallback version %s from SourceForge", FallbackVersion)
+	return FallbackVersion, nil
+}
+
+// getLatestVersionFromURL получает последнюю версию по конкретному URL
+func (ac *AppController) getLatestVersionFromURL(url string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "singbox-launcher/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("check failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("check failed: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+
+	if err := json.Unmarshal(body, &release); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Убираем префикс "v" если есть
+	version := strings.TrimPrefix(release.TagName, "v")
+	return version, nil
+}
+
+// GetCoreVersionInfo получает полную информацию о версии
+func (ac *AppController) GetCoreVersionInfo() CoreVersionInfo {
+	info := CoreVersionInfo{}
+
+	// Получаем установленную версию
+	installed, err := ac.GetInstalledCoreVersion()
+	if err != nil {
+		info.Error = err.Error()
+		return info
+	}
+	info.InstalledVersion = installed
+
+	// Получаем последнюю версию
+	latest, err := ac.GetLatestCoreVersion()
+	if err != nil {
+		// Не критично, если не удалось получить последнюю версию
+		log.Printf("GetCoreVersionInfo: failed to get latest version: %v", err)
+		info.LatestVersion = ""
+		return info
+	}
+	info.LatestVersion = latest
+
+	// Сравниваем версии
+	info.UpdateAvailable = compareVersions(installed, latest) < 0
+
+	return info
+}
+
+// compareVersions сравнивает две версии (формат X.Y.Z)
+// Возвращает: -1 если v1 < v2, 0 если v1 == v2, 1 если v1 > v2
+func compareVersions(v1, v2 string) int {
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	maxLen := len(parts1)
+	if len(parts2) > maxLen {
+		maxLen = len(parts2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		var num1, num2 int
+		if i < len(parts1) {
+			fmt.Sscanf(parts1[i], "%d", &num1)
+		}
+		if i < len(parts2) {
+			fmt.Sscanf(parts2[i], "%d", &num2)
+		}
+
+		if num1 < num2 {
+			return -1
+		}
+		if num1 > num2 {
+			return 1
+		}
+	}
+
+	return 0
+}

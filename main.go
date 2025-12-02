@@ -27,7 +27,8 @@ var greenIconData []byte // Icon for "on" state
 // main is the application's entry point. It simply creates and runs the AppController.
 func main() {
 	// Create the application controller. If an error occurs, print it and exit the program.
-	controller, err := core.NewAppController(appIconData, greyIconData, greenIconData)
+	// Используем greyIconData для красной иконки (пока нет отдельной красной иконки)
+	controller, err := core.NewAppController(appIconData, greyIconData, greenIconData, greyIconData)
 	if err != nil {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
@@ -45,7 +46,7 @@ func main() {
 				})
 			}()
 			// Create the menu for the system tray.
-			desk.SetSystemTrayMenu(fyne.NewMenu("Simple Sing-Box Launcher",
+			desk.SetSystemTrayMenu(fyne.NewMenu("Singbox Launcher",
 				fyne.NewMenuItem("Open", func() { controller.MainWindow.Show() }),
 				fyne.NewMenuItemSeparator(),
 				fyne.NewMenuItem("Start VPN", controller.StartSingBox),
@@ -56,12 +57,12 @@ func main() {
 		})
 	}
 
-	controller.MainWindow = controller.Application.NewWindow("Simple Sing-Box Launcher") // Create the main application window
+	controller.MainWindow = controller.Application.NewWindow("Singbox Launcher") // Create the main application window
 	controller.MainWindow.SetIcon(controller.AppIconData)
 
 	// Create App structure to manage UI
 	app := ui.NewApp(controller.MainWindow, controller)
-	controller.MainWindow.SetContent(app.GetTabs())               // Set the window's content
+	controller.MainWindow.SetContent(app.GetTabs())      // Set the window's content
 	controller.MainWindow.Resize(fyne.NewSize(350, 450)) // initial window size
 	controller.MainWindow.CenterOnScreen()               // Center the window on the screen
 

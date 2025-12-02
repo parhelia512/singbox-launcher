@@ -73,13 +73,14 @@ This launcher solves all of that. Everything is controlled from one clean GUI:
 
 1. Download the latest release from [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
 2. Extract the archive to any folder (e.g., `C:\Program Files\singbox-launcher`)
-3. Place the following files in the `bin\` folder:
-   - `sing-box.exe` - from [sing-box releases](https://github.com/SagerNet/sing-box/releases)
-   - `wintun.dll` - from [WinTun releases](https://www.wintun.net/) (MIT license, can be distributed)
-     * **Note:** In GitHub releases, `wintun.dll` may already be included for convenience
-   - `config.json` - copy `config.json.example` to `config.json` and configure it
-
+3. Place `config.json` in the `bin\` folder:
+   - Copy `config.json.example` to `config.json` and configure it
 4. Run `singbox-launcher.exe`
+5. **Automatic download** (recommended):
+   - Go to the **"Core"** tab
+   - Click **"Download"** to download `sing-box.exe` (automatically downloads the correct version for your system)
+   - Click **"Download wintun.dll"** if needed (automatically downloads the correct architecture)
+   - The launcher will automatically download from GitHub or SourceForge mirror if GitHub is unavailable
 
 ### macOS
 
@@ -112,16 +113,22 @@ This launcher solves all of that. Everything is controlled from one clean GUI:
 
 ### First Launch
 
-1. Make sure `sing-box` and `config.json` files are in the `bin/` folder
-2. Launch the launcher
-3. Click the **"Start VPN"** button to start sing-box
+1. Configure `config.json` (see [Configuration](#-configuration) section)
+2. **Download sing-box and wintun.dll** (if not already present):
+   - Open the **"Core"** tab
+   - Click **"Download"** to download `sing-box` (automatically detects your platform)
+   - On Windows, click **"Download wintun.dll"** if needed
+   - Files will be downloaded to the `bin/` folder automatically
+3. Click the **"Start"** button in the **"Core"** tab to start sing-box
 
 ### Main Features
 
-#### "Control" Tab
-- **Start VPN** - Start sing-box
-- **Stop VPN** - Stop sing-box
-- **Exit** - Exit the application
+#### "Core" Tab
+- **Core Status** - Shows sing-box running status (Running/Stopped/Error)
+- **Sing-box Ver.** - Displays installed version (clickable on Windows to open file location)
+- **Update** button - Download or update sing-box binary
+- **WinTun DLL** (Windows only) - Shows wintun.dll status and download button
+- Automatic fallback to SourceForge mirror if GitHub is unavailable
 
 #### "Diagnostics" Tab
 - **Check Files** - Check for required files
@@ -154,8 +161,8 @@ The application runs in the system tray. Click the icon to:
 ```
 singbox-launcher/
 ├── bin/
-│   ├── sing-box.exe (or sing-box for Unix) - download separately
-│   ├── wintun.dll (Windows only) - download separately
+│   ├── sing-box.exe (or sing-box for Unix) - auto-downloaded via Core tab
+│   ├── wintun.dll (Windows only) - auto-downloaded via Core tab
 │   └── config.json - create from config.json.example
 ├── logs/
 │   ├── singbox-launcher.log
@@ -163,6 +170,11 @@ singbox-launcher/
 │   └── api.log
 └── singbox-launcher.exe (or singbox-launcher for Unix)
 ```
+
+**Note:** `sing-box` and `wintun.dll` can be downloaded automatically through the **Core** tab. The launcher will:
+- Automatically detect your platform (Windows/macOS/Linux) and architecture (amd64/arm64)
+- Download the correct version from GitHub or SourceForge mirror (if GitHub is blocked)
+- Install files to the correct location
 
 ### Configuring config.json
 
@@ -396,7 +408,11 @@ Platform-specific functions are in the `internal/platform` package.
 
 ### Sing-box won't start
 
-1. Check that `sing-box.exe` (or `sing-box`) file exists in the `bin/` folder
+1. **Download sing-box** if missing:
+   - Go to the **"Core"** tab
+   - Click **"Download"** to download sing-box automatically
+   - On Windows, also download `wintun.dll` if TUN mode is used
+2. Check that `sing-box.exe` (or `sing-box`) file exists in the `bin/` folder
 2. Check `config.json` correctness
 3. Check logs in the `logs/` folder
 

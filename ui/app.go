@@ -21,9 +21,9 @@ func NewApp(window fyne.Window, controller *core.AppController) *App {
 		core:   controller,
 	}
 
-	// Create tabs
+	// Create tabs - Core is first (opens on startup)
 	app.tabs = container.NewAppTabs(
-		container.NewTabItem("Control", CreateControlTab(controller)),
+		container.NewTabItem("Core", CreateCoreDashboardTab(controller)),
 		container.NewTabItem("Diagnostics", CreateDiagnosticsTab(controller)),
 		container.NewTabItem("Tools", CreateToolsTab(controller)),
 		container.NewTabItem("Clash API", CreateClashAPITab(controller)),
@@ -53,4 +53,3 @@ func (a *App) GetWindow() fyne.Window {
 func (a *App) GetController() *core.AppController {
 	return a.core
 }
-
