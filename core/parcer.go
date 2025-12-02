@@ -1,0 +1,780 @@
+package core
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/url"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// ParsedNode represents a parsed proxy node
+type ParsedNode struct {
+	Tag      string
+	Scheme   string
+	Server   string
+	Port     int
+	UUID     string
+	Flow     string
+	Label    string
+	Comment  string
+	Query    url.Values
+	Outbound map[string]interface{}
+}
+
+// UpdateConfigFromSubscriptions updates config.json by fetching subscriptions and parsing nodes
+func UpdateConfigFromSubscriptions(ac *AppController) error {
+	log.Println("Parser: Starting configuration update...")
+
+	// Step 1: Extract configuration
+	config, err := ExtractParcerConfig(ac.ConfigPath)
+	if err != nil {
+		if ac.UpdateParserProgressFunc != nil {
+			ac.UpdateParserProgressFunc(-1, fmt.Sprintf("Ошибка: %v", err))
+		}
+		return fmt.Errorf("failed to extract parser config: %w", err)
+	}
+	
+	// Update progress: Step 1 completed
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(5, "Разобран блок ParcerConfig")
+	}
+	
+	// Wait 0.1 sec before showing connection message
+	time.Sleep(100 * time.Millisecond)
+	
+	// Show connection message
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(5, "Соединяюсь...")
+	}
+	
+	// Small delay before starting to fetch subscriptions
+	time.Sleep(100 * time.Millisecond)
+
+	// Step 2: Load and parse subscriptions
+	allNodes := make([]*ParsedNode, 0)
+	successfulSubscriptions := 0
+	totalSubscriptions := len(config.ParserConfig.Proxies)
+
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(20, fmt.Sprintf("Загрузка подписок (0/%d)...", totalSubscriptions))
+	}
+
+	for i, proxySource := range config.ParserConfig.Proxies {
+		log.Printf("Parser: Downloading subscription %d/%d from: %s", i+1, totalSubscriptions, proxySource.Source)
+		
+		// Update progress: downloading subscription
+		if ac.UpdateParserProgressFunc != nil {
+			progress := 20 + float64(i)*50.0/float64(totalSubscriptions)
+			ac.UpdateParserProgressFunc(progress, fmt.Sprintf("Загрузка подписки %d/%d: %s", i+1, totalSubscriptions, proxySource.Source))
+		}
+
+		content, err := FetchSubscription(proxySource.Source)
+		if err != nil {
+			log.Printf("Parser: Error: Failed to fetch subscription from %s: %v", proxySource.Source, err)
+			continue
+		}
+
+		// Check if content is empty
+		if len(content) == 0 {
+			log.Printf("Parser: Warning: Subscription from %s returned empty content", proxySource.Source)
+			continue
+		}
+
+		// Update progress: parsing subscription
+		if ac.UpdateParserProgressFunc != nil {
+			progress := 20 + float64(i)*50.0/float64(totalSubscriptions) + 10.0/float64(totalSubscriptions)
+			ac.UpdateParserProgressFunc(progress, fmt.Sprintf("Парсинг подписки %d/%d: %s", i+1, totalSubscriptions, proxySource.Source))
+		}
+
+		// Parse subscription content
+		lines := strings.Split(string(content), "\n")
+		nodesFromThisSubscription := 0
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			node, err := parseNode(line, proxySource.Skip)
+			if err != nil {
+				log.Printf("Parser: Warning: Failed to parse node from %s: %v", proxySource.Source, err)
+				continue
+			}
+
+			if node != nil {
+				allNodes = append(allNodes, node)
+				nodesFromThisSubscription++
+			}
+		}
+
+		if nodesFromThisSubscription > 0 {
+			successfulSubscriptions++
+			log.Printf("Parser: Successfully parsed %d nodes from %s", nodesFromThisSubscription, proxySource.Source)
+		} else {
+			log.Printf("Parser: Warning: No valid nodes parsed from %s", proxySource.Source)
+		}
+		
+		// Update progress after parsing subscription
+		if ac.UpdateParserProgressFunc != nil {
+			progress := 20 + float64(i+1)*50.0/float64(totalSubscriptions)
+			ac.UpdateParserProgressFunc(progress, fmt.Sprintf("Обработано подписок: %d/%d, узлов: %d", i+1, totalSubscriptions, len(allNodes)))
+		}
+	}
+
+	// Check if we successfully loaded at least one subscription
+	if successfulSubscriptions == 0 {
+		if ac.UpdateParserProgressFunc != nil {
+			ac.UpdateParserProgressFunc(-1, "Ошибка: не удалось загрузить ни одной подписки")
+		}
+		return fmt.Errorf("failed to load any subscriptions - check internet connection and subscription URLs")
+	}
+
+	log.Printf("Parser: Parsed %d nodes from subscriptions", len(allNodes))
+	
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(70, fmt.Sprintf("Обработано узлов: %d. Генерация JSON...", len(allNodes)))
+	}
+
+	// Check if we have any nodes before proceeding
+	if len(allNodes) == 0 {
+		if ac.UpdateParserProgressFunc != nil {
+			ac.UpdateParserProgressFunc(-1, "Ошибка: не найдено узлов в подписках")
+		}
+		return fmt.Errorf("no nodes parsed from subscriptions - check internet connection and subscription URLs")
+	}
+
+	// Step 3: Generate selectors
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(75, "Генерация JSON для узлов...")
+	}
+	
+	selectorsJSON := make([]string, 0)
+
+	// First, generate JSON for all nodes
+	for _, node := range allNodes {
+		nodeJSON, err := generateNodeJSON(node)
+		if err != nil {
+			log.Printf("Parser: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
+			continue
+		}
+		selectorsJSON = append(selectorsJSON, nodeJSON)
+	}
+
+	// Check if we have any node JSON before generating selectors
+	if len(selectorsJSON) == 0 {
+		if ac.UpdateParserProgressFunc != nil {
+			ac.UpdateParserProgressFunc(-1, "Ошибка: не удалось сгенерировать JSON для узлов")
+		}
+		return fmt.Errorf("failed to generate JSON for any nodes")
+	}
+
+	// Then, generate selectors
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(85, "Генерация селекторов...")
+	}
+	
+	for _, outboundConfig := range config.ParserConfig.Outbounds {
+		selectorJSON, err := generateSelector(allNodes, outboundConfig)
+		if err != nil {
+			log.Printf("Parser: Warning: Failed to generate selector %s: %v", outboundConfig.Tag, err)
+			continue
+		}
+		if selectorJSON != "" {
+			selectorsJSON = append(selectorsJSON, selectorJSON)
+		}
+	}
+
+	// Final check: ensure we have content to write
+	if len(selectorsJSON) == 0 {
+		if ac.UpdateParserProgressFunc != nil {
+			ac.UpdateParserProgressFunc(-1, "Ошибка: нечего записывать в конфигурацию")
+		}
+		return fmt.Errorf("no content generated - cannot write empty result to config")
+	}
+
+	// Step 4: Write to file
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(90, "Запись в файл конфигурации...")
+	}
+	
+	content := strings.Join(selectorsJSON, "\n")
+	if err := writeToConfig(ac.ConfigPath, content); err != nil {
+		if ac.UpdateParserProgressFunc != nil {
+			ac.UpdateParserProgressFunc(-1, fmt.Sprintf("Ошибка записи: %v", err))
+		}
+		return fmt.Errorf("failed to write to config: %w", err)
+	}
+
+	log.Printf("Parser: Done! File %s successfully updated.", ac.ConfigPath)
+	
+	if ac.UpdateParserProgressFunc != nil {
+		ac.UpdateParserProgressFunc(100, "Конфигурация успешно обновлена!")
+	}
+	
+	return nil
+}
+
+// parseNode parses a single node URI and applies skip filters
+func parseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error) {
+	// Determine scheme
+	scheme := ""
+	uriToParse := uri
+
+	// Handle VMess base64 format
+	if strings.HasPrefix(uri, "vmess://") {
+		scheme = "vmess"
+		// VMess might be in base64 format, decode if needed
+		base64Part := strings.TrimPrefix(uri, "vmess://")
+		decoded, err := DecodeSubscriptionContent([]byte(base64Part))
+		if err == nil && len(decoded) > 0 {
+			// Try to parse as JSON VMess config
+			var vmessConfig map[string]interface{}
+			if err := json.Unmarshal(decoded, &vmessConfig); err == nil {
+				// Convert VMess JSON to URI format (simplified)
+				// For now, we'll handle it as a special case
+				return parseVMessJSON(vmessConfig, skipFilters)
+			}
+		}
+	} else if strings.HasPrefix(uri, "vless://") {
+		scheme = "vless"
+	} else if strings.HasPrefix(uri, "trojan://") {
+		scheme = "trojan"
+	} else if strings.HasPrefix(uri, "ss://") {
+		scheme = "ss"
+	} else {
+		return nil, fmt.Errorf("unsupported scheme")
+	}
+
+	// Parse URI
+	parsedURL, err := url.Parse(uriToParse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URI: %w", err)
+	}
+
+	// Extract components
+	node := &ParsedNode{
+		Scheme: scheme,
+		Server: parsedURL.Hostname(),
+		Query:  parsedURL.Query(),
+	}
+
+	// Extract port
+	port := parsedURL.Port()
+	if port == "" {
+		// Default ports
+		switch scheme {
+		case "vless", "vmess":
+			node.Port = 443
+		case "trojan":
+			node.Port = 443
+		case "ss":
+			node.Port = 443
+		}
+	} else {
+		if p, err := strconv.Atoi(port); err == nil {
+			node.Port = p
+		} else {
+			node.Port = 443 // Fallback
+		}
+	}
+
+	// Extract UUID/user
+	if parsedURL.User != nil {
+		node.UUID = parsedURL.User.Username()
+	}
+
+	// Extract fragment (label)
+	node.Label = parsedURL.Fragment
+
+	// For some formats, label might be in path or userinfo
+	if node.Label == "" {
+		// Try to extract from path (some formats use path for label)
+		if parsedURL.Path != "" && parsedURL.Path != "/" {
+			node.Label = strings.TrimPrefix(parsedURL.Path, "/")
+		} else if parsedURL.User != nil {
+			// Some formats encode label in username
+			node.Label = parsedURL.User.Username()
+		}
+	}
+
+	// Extract tag and comment from label
+	node.Tag, node.Comment = extractTagAndComment(node.Label)
+
+	// Normalize flag
+	node.Tag = normalizeFlagTag(node.Tag)
+
+	// Extract flow
+	node.Flow = parsedURL.Query().Get("flow")
+
+	// Apply skip filters
+	if shouldSkipNode(node, skipFilters) {
+		return nil, nil // Node should be skipped
+	}
+
+	// Build outbound JSON based on scheme
+	node.Outbound = buildOutbound(node)
+
+	return node, nil
+}
+
+// extractTagAndComment extracts tag and comment from label
+func extractTagAndComment(label string) (tag, comment string) {
+	parts := strings.Split(label, "|")
+	if len(parts) > 1 {
+		tag = parts[0]
+		comment = label // Full label as comment
+	} else {
+		tag = label
+		comment = label
+	}
+	return strings.TrimSpace(tag), strings.TrimSpace(comment)
+}
+
+// normalizeFlagTag normalizes flag tags (e.g., 🇪🇳 -> 🇬🇧)
+func normalizeFlagTag(tag string) string {
+	return strings.ReplaceAll(tag, "🇪🇳", "🇬🇧")
+}
+
+// shouldSkipNode checks if node should be skipped based on filters
+func shouldSkipNode(node *ParsedNode, skipFilters []map[string]string) bool {
+	// OR between filters: if at least one matches, skip
+	for _, filter := range skipFilters {
+		// AND inside filter: all keys must match
+		allKeysMatch := true
+		for key, pattern := range filter {
+			value := getNodeValue(node, key)
+			if !matchesPattern(value, pattern) {
+				allKeysMatch = false
+				break
+			}
+		}
+		if allKeysMatch {
+			return true // Skip node
+		}
+	}
+	return false // Don't skip
+}
+
+// getNodeValue extracts value from node by key
+func getNodeValue(node *ParsedNode, key string) string {
+	switch key {
+	case "tag":
+		return node.Tag
+	case "host":
+		return node.Server
+	case "label":
+		return node.Label
+	case "scheme":
+		return node.Scheme
+	case "fragment":
+		return node.Label // fragment == label
+	case "comment":
+		return node.Comment
+	default:
+		return ""
+	}
+}
+
+// matchesPattern checks if value matches pattern
+func matchesPattern(value, pattern string) bool {
+	// Negation literal: !literal
+	if strings.HasPrefix(pattern, "!") && !strings.HasPrefix(pattern, "!/") {
+		literal := strings.TrimPrefix(pattern, "!")
+		return value != literal
+	}
+
+	// Negation regex: !/regex/i
+	if strings.HasPrefix(pattern, "!/") && strings.HasSuffix(pattern, "/i") {
+		regexStr := strings.TrimPrefix(pattern, "!/")
+		regexStr = strings.TrimSuffix(regexStr, "/i")
+		re, err := regexp.Compile("(?i)" + regexStr)
+		if err != nil {
+			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
+			return false
+		}
+		return !re.MatchString(value)
+	}
+
+	// Regex: /regex/i
+	if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/i") {
+		regexStr := strings.TrimPrefix(pattern, "/")
+		regexStr = strings.TrimSuffix(regexStr, "/i")
+		re, err := regexp.Compile("(?i)" + regexStr)
+		if err != nil {
+			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
+			return false
+		}
+		return re.MatchString(value)
+	}
+
+	// Literal match
+	return value == pattern
+}
+
+// buildOutbound builds outbound JSON structure for node
+func buildOutbound(node *ParsedNode) map[string]interface{} {
+	outbound := make(map[string]interface{})
+	outbound["tag"] = node.Tag
+	outbound["type"] = node.Scheme
+	outbound["server"] = node.Server
+	outbound["server_port"] = node.Port
+
+	if node.Scheme == "vless" {
+		outbound["uuid"] = node.UUID
+		if node.Flow != "" {
+			outbound["flow"] = node.Flow
+		}
+
+		// Build TLS structure with correct field order
+		// Store TLS data for ordered serialization
+		sni := node.Query.Get("sni")
+		if sni == "" {
+			sni = node.Server // Fallback to server hostname
+		}
+		fp := node.Query.Get("fp")
+		if fp == "" {
+			fp = "random"
+		}
+		pbk := node.Query.Get("pbk")
+		sid := node.Query.Get("sid")
+
+		// Store TLS components for ordered serialization
+		tlsData := map[string]interface{}{
+			"enabled":     true,
+			"server_name": sni,
+			"utls": map[string]interface{}{
+				"enabled":     true,
+				"fingerprint": fp,
+			},
+			"reality": map[string]interface{}{
+				"enabled":    true,
+				"public_key": pbk,
+				"short_id":   sid,
+			},
+		}
+		outbound["tls"] = tlsData
+	} else if node.Scheme == "vmess" {
+		outbound["uuid"] = node.UUID
+		// Add VMess-specific fields if needed
+	} else if node.Scheme == "trojan" {
+		outbound["password"] = node.UUID
+		// Add Trojan-specific fields if needed
+	} else if node.Scheme == "ss" {
+		// Add Shadowsocks-specific fields if needed
+	}
+
+	return outbound
+}
+
+// generateNodeJSON generates JSON string for a node with correct field order
+func generateNodeJSON(node *ParsedNode) (string, error) {
+	// Build JSON with correct field order
+	var parts []string
+
+	// 1. tag
+	parts = append(parts, fmt.Sprintf(`"tag":%q`, node.Tag))
+
+	// 2. type
+	parts = append(parts, fmt.Sprintf(`"type":%q`, node.Scheme))
+
+	// 3. server
+	parts = append(parts, fmt.Sprintf(`"server":%q`, node.Server))
+
+	// 4. server_port
+	parts = append(parts, fmt.Sprintf(`"server_port":%d`, node.Port))
+
+	// 5. uuid (for vless/vmess) or password (for trojan)
+	if node.Scheme == "vless" || node.Scheme == "vmess" {
+		parts = append(parts, fmt.Sprintf(`"uuid":%q`, node.UUID))
+	} else if node.Scheme == "trojan" {
+		parts = append(parts, fmt.Sprintf(`"password":%q`, node.UUID))
+	}
+
+	// 6. flow (if present)
+	if node.Flow != "" {
+		parts = append(parts, fmt.Sprintf(`"flow":%q`, node.Flow))
+	}
+
+	// 7. tls (if present) - with correct field order
+	if tlsData, ok := node.Outbound["tls"].(map[string]interface{}); ok {
+		var tlsParts []string
+
+		// enabled
+		if enabled, ok := tlsData["enabled"].(bool); ok {
+			tlsParts = append(tlsParts, fmt.Sprintf(`"enabled":%v`, enabled))
+		}
+
+		// server_name
+		if serverName, ok := tlsData["server_name"].(string); ok {
+			tlsParts = append(tlsParts, fmt.Sprintf(`"server_name":%q`, serverName))
+		}
+
+		// utls
+		if utls, ok := tlsData["utls"].(map[string]interface{}); ok {
+			var utlsParts []string
+			if utlsEnabled, ok := utls["enabled"].(bool); ok {
+				utlsParts = append(utlsParts, fmt.Sprintf(`"enabled":%v`, utlsEnabled))
+			}
+			if fingerprint, ok := utls["fingerprint"].(string); ok {
+				utlsParts = append(utlsParts, fmt.Sprintf(`"fingerprint":%q`, fingerprint))
+			}
+			utlsJSON := "{" + strings.Join(utlsParts, ",") + "}"
+			tlsParts = append(tlsParts, fmt.Sprintf(`"utls":%s`, utlsJSON))
+		}
+
+		// reality
+		if reality, ok := tlsData["reality"].(map[string]interface{}); ok {
+			var realityParts []string
+			if realityEnabled, ok := reality["enabled"].(bool); ok {
+				realityParts = append(realityParts, fmt.Sprintf(`"enabled":%v`, realityEnabled))
+			}
+			if publicKey, ok := reality["public_key"].(string); ok {
+				realityParts = append(realityParts, fmt.Sprintf(`"public_key":%q`, publicKey))
+			}
+			if shortID, ok := reality["short_id"].(string); ok {
+				realityParts = append(realityParts, fmt.Sprintf(`"short_id":%q`, shortID))
+			}
+			realityJSON := "{" + strings.Join(realityParts, ",") + "}"
+			tlsParts = append(tlsParts, fmt.Sprintf(`"reality":%s`, realityJSON))
+		}
+
+		tlsJSON := "{" + strings.Join(tlsParts, ",") + "}"
+		parts = append(parts, fmt.Sprintf(`"tls":%s`, tlsJSON))
+	}
+
+	// Build final JSON
+	jsonStr := "{" + strings.Join(parts, ",") + "}"
+	return fmt.Sprintf("\t// %s\n\t%s,", node.Label, jsonStr), nil
+}
+
+// generateSelector generates JSON string for a selector
+func generateSelector(allNodes []*ParsedNode, outboundConfig OutboundConfig) (string, error) {
+	// Filter nodes based on outbounds.proxies
+	filteredNodes := filterNodesForSelector(allNodes, outboundConfig.Outbounds.Proxies)
+
+	if len(filteredNodes) == 0 {
+		log.Printf("Parser: No nodes matched filter for selector %s", outboundConfig.Tag)
+		return "", nil
+	}
+
+	// Build outbounds list
+	outboundsList := make([]string, 0)
+
+	// Add addOutbounds first
+	if len(outboundConfig.Outbounds.AddOutbounds) > 0 {
+		outboundsList = append(outboundsList, outboundConfig.Outbounds.AddOutbounds...)
+	}
+
+	// Add filtered node tags
+	for _, node := range filteredNodes {
+		outboundsList = append(outboundsList, node.Tag)
+	}
+
+	// Determine default
+	defaultTag := ""
+	if len(outboundConfig.Outbounds.PreferredDefault) > 0 {
+		// Find first node matching preferredDefault filter
+		preferredFilter := convertFilterToStringMap(outboundConfig.Outbounds.PreferredDefault)
+		for _, node := range filteredNodes {
+			if matchesFilter(node, preferredFilter) {
+				defaultTag = node.Tag
+				break
+			}
+		}
+	}
+
+	// If no preferredDefault match, use first node
+	if defaultTag == "" && len(filteredNodes) > 0 {
+		defaultTag = filteredNodes[0].Tag
+	}
+
+	// Build selector JSON with correct field order
+	var parts []string
+
+	// 1. tag
+	parts = append(parts, fmt.Sprintf(`"tag":%q`, outboundConfig.Tag))
+
+	// 2. type
+	parts = append(parts, fmt.Sprintf(`"type":%q`, outboundConfig.Type))
+
+	// 3. default (if present) - BEFORE outbounds
+	if defaultTag != "" {
+		parts = append(parts, fmt.Sprintf(`"default":%q`, defaultTag))
+	}
+
+	// 4. outbounds
+	outboundsJSON, _ := json.Marshal(outboundsList)
+	parts = append(parts, fmt.Sprintf(`"outbounds":%s`, string(outboundsJSON)))
+
+	// 5. interrupt_exist_connections (if present)
+	if val, ok := outboundConfig.Options["interrupt_exist_connections"]; ok {
+		if boolVal, ok := val.(bool); ok {
+			parts = append(parts, fmt.Sprintf(`"interrupt_exist_connections":%v`, boolVal))
+		} else {
+			valJSON, _ := json.Marshal(val)
+			parts = append(parts, fmt.Sprintf(`"interrupt_exist_connections":%s`, string(valJSON)))
+		}
+	}
+
+	// 6. Other options (in order they appear)
+	for key, value := range outboundConfig.Options {
+		if key != "interrupt_exist_connections" {
+			valJSON, _ := json.Marshal(value)
+			parts = append(parts, fmt.Sprintf(`%q:%s`, key, string(valJSON)))
+		}
+	}
+
+	// Build final JSON
+	jsonStr := "{" + strings.Join(parts, ",") + "}"
+
+	// Add comment if present
+	result := ""
+	if outboundConfig.Comment != "" {
+		result = fmt.Sprintf("\t// %s\n", outboundConfig.Comment)
+	}
+	result += fmt.Sprintf("\t%s,", jsonStr)
+
+	return result, nil
+}
+
+// filterNodesForSelector filters nodes based on outbounds.proxies filter
+// Filter can be a single object (AND between keys) or array of objects (OR between objects, AND inside)
+func filterNodesForSelector(allNodes []*ParsedNode, filter interface{}) []*ParsedNode {
+	if filter == nil {
+		return allNodes // No filter, return all nodes
+	}
+
+	filtered := make([]*ParsedNode, 0)
+
+	// Check if filter is an array
+	if filterArray, ok := filter.([]interface{}); ok {
+		// OR between filter objects
+		for _, node := range allNodes {
+			for _, filterObj := range filterArray {
+				if filterMap, ok := filterObj.(map[string]interface{}); ok {
+					filterStrMap := convertFilterToStringMap(filterMap)
+					if matchesFilter(node, filterStrMap) {
+						filtered = append(filtered, node)
+						break // Node matched at least one filter, add it
+					}
+				}
+			}
+		}
+	} else if filterMap, ok := filter.(map[string]interface{}); ok {
+		// Single filter object (AND between keys)
+		filterStrMap := convertFilterToStringMap(filterMap)
+		for _, node := range allNodes {
+			if matchesFilter(node, filterStrMap) {
+				filtered = append(filtered, node)
+			}
+		}
+	}
+
+	return filtered
+}
+
+// parseVMessJSON parses VMess JSON configuration
+func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string]string) (*ParsedNode, error) {
+	node := &ParsedNode{
+		Scheme: "vmess",
+		Query:  make(url.Values),
+	}
+
+	// Extract common fields
+	if add, ok := vmessConfig["add"].(string); ok {
+		node.Server = add
+	}
+	if port, ok := vmessConfig["port"].(float64); ok {
+		node.Port = int(port)
+	} else {
+		node.Port = 443
+	}
+	if id, ok := vmessConfig["id"].(string); ok {
+		node.UUID = id
+	}
+	if ps, ok := vmessConfig["ps"].(string); ok {
+		node.Label = ps
+		node.Tag, node.Comment = extractTagAndComment(ps)
+		node.Tag = normalizeFlagTag(node.Tag)
+	}
+
+	// Extract TLS settings
+	if tls, ok := vmessConfig["tls"].(string); ok && tls == "tls" {
+		if sni, ok := vmessConfig["sni"].(string); ok {
+			node.Query.Set("sni", sni)
+		}
+	}
+
+	// Apply skip filters
+	if shouldSkipNode(node, skipFilters) {
+		return nil, nil
+	}
+
+	// Build outbound
+	node.Outbound = buildOutbound(node)
+	return node, nil
+}
+
+// convertFilterToStringMap converts filter map to string map
+func convertFilterToStringMap(filter map[string]interface{}) map[string]string {
+	result := make(map[string]string)
+	for k, v := range filter {
+		if str, ok := v.(string); ok {
+			result[k] = str
+		}
+	}
+	return result
+}
+
+// matchesFilter checks if node matches filter (AND between keys)
+func matchesFilter(node *ParsedNode, filter map[string]string) bool {
+	for key, pattern := range filter {
+		value := getNodeValue(node, key)
+		if !matchesPattern(value, pattern) {
+			return false // At least one key doesn't match
+		}
+	}
+	return true // All keys match
+}
+
+// writeToConfig writes content between @ParserSTART and @ParserEND markers
+func writeToConfig(configPath string, content string) error {
+	// Read config file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	configStr := string(data)
+
+	// Find markers
+	startMarker := "/** @ParserSTART */"
+	endMarker := "/** @ParserEND */"
+
+	startIdx := strings.Index(configStr, startMarker)
+	endIdx := strings.Index(configStr, endMarker)
+
+	if startIdx == -1 || endIdx == -1 {
+		return fmt.Errorf("markers @ParserSTART or @ParserEND not found in config.json")
+	}
+
+	if endIdx <= startIdx {
+		return fmt.Errorf("invalid marker positions")
+	}
+
+	// Build new content
+	newContent := configStr[:startIdx+len(startMarker)] + "\n" + content + "\n" + configStr[endIdx:]
+
+	// Write to file
+	if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}

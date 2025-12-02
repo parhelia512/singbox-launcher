@@ -98,6 +98,11 @@ type AppController struct {
 	ResetAPIStateFunc    func()
 	UpdateCoreStatusFunc func() // Callback для обновления статуса в Core Dashboard
 	UpdateTrayMenuFunc   func() // Callback для обновления меню трея
+
+	// --- Parser progress UI ---
+	ParserProgressBar *widget.ProgressBar
+	ParserStatusLabel *widget.Label
+	UpdateParserProgressFunc func(progress float64, status string) // Callback для обновления прогресса парсера
 }
 
 // RunningState - structure for tracking the VPN's running state.
@@ -224,6 +229,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
 	ac.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
 	ac.UpdateTrayMenuFunc = func() { log.Println("UpdateTrayMenuFunc handler is not set yet.") }
+	ac.UpdateParserProgressFunc = func(progress float64, status string) { log.Printf("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status) }
 
 	return ac, nil
 }
@@ -813,9 +819,11 @@ func RunParserProcess(ac *AppController) {
 	// Обрабатываем результат
 	if err != nil {
 		log.Printf("RunParser: Failed to update config: %v", err)
+		// Progress already updated in UpdateConfigFromSubscriptions with error status
 		ac.ShowParserError(fmt.Errorf("failed to update config: %w", err))
 	} else {
 		log.Println("RunParser: Config updated successfully.")
+		// Progress already updated in UpdateConfigFromSubscriptions with success status
 		ac.ShowAutoHideInfo("Parser", "Config updated successfully!")
 	}
 }
