@@ -11,6 +11,33 @@ Cross-platform GUI launcher for [sing-box](https://github.com/SagerNet/sing-box)
 
 **🌐 Languages**: [English](README.md) | [Русский](README_RU.md)
 
+## 📑 Table of Contents
+
+- [📸 Screenshots](#-screenshots)
+- [🚀 Features](#-features)
+- [💡 Why this launcher?](#-why-this-launcher)
+- [📋 Requirements](#-requirements)
+- [📦 Installation](#-installation)
+- [📖 Usage](#-usage)
+  - [First Launch](#first-launch)
+  - [Main Features](#main-features)
+  - [Config Wizard (v0.2.0)](#config-wizard-v020)
+  - [System Tray](#system-tray)
+- [⚙️ Configuration](#️-configuration)
+  - [Config Template (config_template.json)](#config-template-config_templatejson)
+  - [Enabling Clash API](#enabling-clash-api)
+  - [Subscription Parser Configuration](#subscription-parser-configuration)
+- [🔄 Subscription Parser - Detailed Logic](#-subscription-parser---detailed-logic)
+- [🏗️ Project Architecture](#️-project-architecture)
+- [🐛 Troubleshooting](#-troubleshooting)
+- [🔁 Auto-restart & Stability](#-auto-restart--stability)
+- [🔨 Building from Source](#-building-from-source)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+- [📞 Support](#-support)
+- [🔮 Future Plans](#-future-plans)
+
 ## 📸 Screenshots
 
 ### Core Dashboard
@@ -26,7 +53,7 @@ Cross-platform GUI launcher for [sing-box](https://github.com/SagerNet/sing-box)
 
 ## 🚀 Features
 
-- ✅ **Cross-platform**: Windows, macOS, Linux (Android in development)
+- ✅ **Cross-platform**: Windows (fully tested), macOS and Linux (testing needed - help welcome!)
 - 🎯 **Simple Control**: Start/stop VPN with one button
 - 🧙 **Config Wizard** (v0.2.0): Visual step-by-step configuration without editing JSON
 - 📊 **Clash API Integration**: Manage proxies via Clash-compatible API
@@ -76,13 +103,15 @@ This launcher solves all of that. Everything is controlled from one clean GUI:
 - [sing-box](https://github.com/SagerNet/sing-box/releases) (executable file)
 - [WinTun](https://www.wintun.net/) (wintun.dll) - MIT license, can be distributed
 
-### macOS
-- macOS 10.15+ (Catalina or newer)
+### macOS & Linux
+
+**⚠️ Testing Needed**: macOS and Linux support is implemented but not yet fully tested. We're looking for help with testing and feedback!
+
+**Requirements:**
+- macOS 10.15+ (Catalina or newer) or modern Linux distribution (x64)
 - [sing-box](https://github.com/SagerNet/sing-box/releases) (executable file)
 
-### Linux
-- Modern Linux distribution (x64)
-- [sing-box](https://github.com/SagerNet/sing-box/releases) (executable file)
+If you can help test on macOS or Linux, please open an issue or pull request on GitHub!
 
 ## 📦 Installation
 
@@ -99,32 +128,23 @@ This launcher solves all of that. Everything is controlled from one clean GUI:
    - Click **"Download wintun.dll"** if needed (automatically downloads the correct architecture)
    - The launcher will automatically download from GitHub or SourceForge mirror if GitHub is unavailable
 
-### macOS
+### macOS & Linux
 
-1. Download the latest release for macOS
+**⚠️ Note**: macOS and Linux builds are available but need testing. If you encounter issues, please report them on GitHub.
+
+1. Download the latest release for your platform
 2. Extract the archive
 3. Place files in the `bin/` folder:
-   - `sing-box` - executable file for macOS
-   - `config.json` - configuration file
-
-4. Run the application:
-   ```bash
-   ./singbox-launcher
-   ```
-
-### Linux
-
-1. Download the latest release for Linux
-2. Extract the archive
-3. Place files in the `bin/` folder:
-   - `sing-box` - executable file for Linux
-   - `config.json` - configuration file
+   - `sing-box` - executable file for your platform
+   - `config.json` - configuration file (create from `config.example.json`)
 
 4. Make executable and run:
    ```bash
    chmod +x singbox-launcher
    ./singbox-launcher
    ```
+
+**We're looking for help**: If you can test on macOS or Linux and provide feedback, please open an issue on [GitHub Issues](https://github.com/Leadaxe/singbox-launcher/issues)!
 
 ## 📖 Usage
 
@@ -628,13 +648,15 @@ Platform-specific functions are in the `internal/platform` package.
 
 ### Permission issues (Linux/macOS)
 
+**Note**: macOS and Linux support needs testing. If you encounter issues, please report them.
+
 On Linux/macOS, administrator rights may be required to create TUN interface:
 
 ```bash
 sudo ./singbox-launcher
 ```
 
-Or configure permissions via `setcap`:
+Or configure permissions via `setcap` (Linux):
 
 ```bash
 sudo setcap cap_net_admin+ep ./singbox-launcher
@@ -697,8 +719,11 @@ go build -buildvcs=false -ldflags="-H windowsgui -s -w" -o singbox-launcher.exe
 
 **Detailed instructions:** See [BUILD_WINDOWS.md](BUILD_WINDOWS.md)
 
-### macOS
+### macOS & Linux
 
+**⚠️ Testing Needed**: macOS and Linux builds need testing. Help is welcome!
+
+**macOS:**
 ```bash
 # Clone the repository
 git clone https://github.com/Leadaxe/singbox-launcher.git
@@ -717,7 +742,7 @@ Or manually:
 GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-launcher
 ```
 
-### Linux
+**Linux:**
 
 ```bash
 # Clone the repository
@@ -736,6 +761,8 @@ Or manually:
 ```bash
 GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-launcher
 ```
+
+**Help Wanted**: If you can test builds on macOS or Linux, please share your feedback on [GitHub Issues](https://github.com/Leadaxe/singbox-launcher/issues)!
 
 ## 🤝 Contributing
 
