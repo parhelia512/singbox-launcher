@@ -105,6 +105,10 @@ type AppController struct {
 	ParserProgressBar        *widget.ProgressBar
 	ParserStatusLabel        *widget.Label
 	UpdateParserProgressFunc func(progress float64, status string) // Callback to update parser progress
+
+	// --- Wizard window state ---
+	WizardWindow    fyne.Window
+	WizardWindowMutex sync.Mutex // Mutex for WizardWindow
 }
 
 // RunningState - structure for tracking the VPN's running state.
@@ -833,6 +837,10 @@ func RunParserProcess(ac *AppController) {
 		log.Println("RunParser: Config updated successfully.")
 		// Progress already updated in UpdateConfigFromSubscriptions with success status
 		dialogs.ShowAutoHideInfo(ac.Application, ac.MainWindow, "Parser", "Config updated successfully!")
+		// Update config status in UI (to show new modification date)
+		if ac.UpdateConfigStatusFunc != nil {
+			ac.UpdateConfigStatusFunc()
+		}
 	}
 }
 

@@ -180,7 +180,18 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 
 	// Кнопки будут внизу под статусом
 	tab.updateConfigButton = widget.NewButton("🔄 Update", func() {
-		tab.updateConfigInfo()
+		// Check if parser is already running
+		tab.controller.ParserMutex.Lock()
+		isRunning := tab.controller.ParserRunning
+		tab.controller.ParserMutex.Unlock()
+		
+		if isRunning {
+			dialog.ShowInformation("Parser", "Configuration update is already in progress...", tab.controller.MainWindow)
+			return
+		}
+		
+		// Run parser to update configuration
+		go core.RunParserProcess(tab.controller)
 	})
 	tab.updateConfigButton.Importance = widget.MediumImportance
 

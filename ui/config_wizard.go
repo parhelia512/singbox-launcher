@@ -80,6 +80,16 @@ const (
 
 // ShowConfigWizard открывает окно мастера конфигурации
 func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
+	// Check if wizard is already open
+	controller.WizardWindowMutex.Lock()
+	if controller.WizardWindow != nil {
+		// Wizard is already open, bring it to front
+		controller.WizardWindowMutex.Unlock()
+		controller.WizardWindow.RequestFocus()
+		ShowAutoHideInfo(controller.Application, controller.MainWindow, "Config Wizard", "Wizard is already open!")
+		return
+	}
+
 	state := &WizardState{
 		Controller:        controller,
 		previewNeedsParse: true,
@@ -90,6 +100,18 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	wizardWindow.Resize(fyne.NewSize(920, 720))
 	wizardWindow.CenterOnScreen()
 	state.Window = wizardWindow
+	
+	// Store reference to wizard window
+	controller.WizardWindow = wizardWindow
+	controller.WizardWindowMutex.Unlock()
+	
+	// Clean up reference when window is closed
+	wizardWindow.SetCloseIntercept(func() {
+		controller.WizardWindowMutex.Lock()
+		controller.WizardWindow = nil
+		controller.WizardWindowMutex.Unlock()
+		wizardWindow.Close()
+	})
 
 	if templateData, err := loadTemplateData(controller.ExecDir); err != nil {
 		log.Printf("ConfigWizard: failed to load config_template.json from %s: %v", filepath.Join(controller.ExecDir, "bin", "config_template.json"), err)
@@ -142,6 +164,9 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 
 	// Создаем кнопки навигации
 	state.CloseButton = widget.NewButton("Close", func() {
+		controller.WizardWindowMutex.Lock()
+		controller.WizardWindow = nil
+		controller.WizardWindowMutex.Unlock()
 		wizardWindow.Close()
 	})
 	state.CloseButton.Importance = widget.HighImportance
@@ -773,29 +798,21 @@ func parseAndPreview(state *WizardState) {
 		setPreviewText(state, "Parsing nodes from subscription...")
 	})
 
-	allNodes := make([]*core.ParsedNode, 0)
-	lines := strings.Split(string(content), "\n")
+	// Get skip filters
+	var skipFilters []map[string]string
+	if len(parserConfig.ParserConfig.Proxies) > 0 {
+		skipFilters = parserConfig.ParserConfig.Proxies[0].Skip
+	}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		var skipFilters []map[string]string
-		if len(parserConfig.ParserConfig.Proxies) > 0 {
-			skipFilters = parserConfig.ParserConfig.Proxies[0].Skip
-		}
-
-		node, err := parseNodeFromString(line, skipFilters)
-		if err != nil {
-			log.Printf("ConfigWizard: Failed to parse node: %v", err)
-			continue
-		}
-
-		if node != nil {
-			allNodes = append(allNodes, node)
-		}
+	// Parse subscription content using shared function
+	allNodes, _, _, err := core.ParseSubscriptionContent(content, skipFilters, "ConfigWizard", url)
+	if err != nil {
+		fyne.Do(func() {
+			setPreviewText(state, fmt.Sprintf("Error: %v", err))
+			state.ParseButton.Enable()
+			state.ParseButton.SetText("Parse")
+		})
+		return
 	}
 
 	if len(allNodes) == 0 {
@@ -812,28 +829,15 @@ func parseAndPreview(state *WizardState) {
 		setPreviewText(state, "Generating outbounds...")
 	})
 
-	selectorsJSON := make([]string, 0)
-
-	// Генерируем JSON для всех узлов
-	for _, node := range allNodes {
-		nodeJSON, err := generateNodeJSONForPreview(node)
-		if err != nil {
-			log.Printf("ConfigWizard: Failed to generate JSON for node: %v", err)
-			continue
-		}
-		selectorsJSON = append(selectorsJSON, nodeJSON)
-	}
-
-	// Генерируем селекторы
-	for _, outboundConfig := range parserConfig.ParserConfig.Outbounds {
-		selectorJSON, err := generateSelectorForPreview(allNodes, outboundConfig)
-		if err != nil {
-			log.Printf("ConfigWizard: Failed to generate selector: %v", err)
-			continue
-		}
-		if selectorJSON != "" {
-			selectorsJSON = append(selectorsJSON, selectorJSON)
-		}
+	// Generate JSON for nodes and selectors using shared function
+	selectorsJSON, err := core.GenerateOutboundsJSON(allNodes, parserConfig.ParserConfig.Outbounds)
+	if err != nil {
+		fyne.Do(func() {
+			setPreviewText(state, fmt.Sprintf("Error: %v", err))
+			state.ParseButton.Enable()
+			state.ParseButton.SetText("Parse")
+		})
+		return
 	}
 
 	// Формируем итоговый текст для предпросмотра
@@ -1257,20 +1261,6 @@ func (state *WizardState) getAvailableOutbounds() []string {
 	return result
 }
 
-// parseNodeFromString парсит узел из строки (обертка над core.ParseNode)
-func parseNodeFromString(uri string, skipFilters []map[string]string) (*core.ParsedNode, error) {
-	return core.ParseNode(uri, skipFilters)
-}
-
-// generateNodeJSONForPreview генерирует JSON для узла (обертка над core.GenerateNodeJSON)
-func generateNodeJSONForPreview(node *core.ParsedNode) (string, error) {
-	return core.GenerateNodeJSON(node)
-}
-
-// generateSelectorForPreview генерирует JSON для селектора (обертка над core.GenerateSelector)
-func generateSelectorForPreview(allNodes []*core.ParsedNode, outboundConfig core.OutboundConfig) (string, error) {
-	return core.GenerateSelector(allNodes, outboundConfig)
-}
 
 func serializeParserConfig(parserConfig *core.ParserConfig) (string, error) {
 	if parserConfig == nil {
