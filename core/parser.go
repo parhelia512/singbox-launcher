@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -352,11 +353,32 @@ func UpdateConfigFromSubscriptions(ac *AppController) error {
 	return nil
 }
 
+// decodeBase64WithPadding decodes a base64 string, adding padding if needed
+// This is necessary because some SS links may have base64 strings without padding
+func decodeBase64WithPadding(s string) ([]byte, error) {
+	// Add padding if needed
+	switch len(s) % 4 {
+	case 2:
+		s += "=="
+	case 3:
+		s += "="
+	}
+
+	// Try URL-safe encoding first
+	decoded, err := base64.URLEncoding.DecodeString(s)
+	if err != nil {
+		// Try standard encoding
+		decoded, err = base64.StdEncoding.DecodeString(s)
+	}
+	return decoded, err
+}
+
 // ParseNode parses a single node URI and applies skip filters (exported for use in UI)
 func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error) {
 	// Determine scheme
 	scheme := ""
 	uriToParse := uri
+	var ssMethod, ssPassword string // For SS links: method and password extracted from base64
 
 	// Handle VMess base64 format
 	if strings.HasPrefix(uri, "vmess://") {
@@ -379,6 +401,38 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 		scheme = "trojan"
 	} else if strings.HasPrefix(uri, "ss://") {
 		scheme = "ss"
+
+		// SS links in SIP002 format: ss://base64(method:password)@server:port#tag
+		ssPart := strings.TrimPrefix(uri, "ss://")
+
+		// Check if it's SIP002 format (has @)
+		if atIdx := strings.Index(ssPart, "@"); atIdx > 0 {
+			// SIP002: ss://base64(method:password)@server:port#tag
+			encodedUserinfo := ssPart[:atIdx]
+			rest := ssPart[atIdx+1:]
+
+			// Decode base64 userinfo (with padding support)
+			decoded, err := decodeBase64WithPadding(encodedUserinfo)
+			if err != nil {
+				log.Printf("Parser: Error: Failed to decode SS base64 userinfo. Encoded: %s, Error: %v", encodedUserinfo, err)
+			} else {
+				// Split method:password
+				decodedStr := string(decoded)
+				userinfoParts := strings.SplitN(decodedStr, ":", 2)
+				if len(userinfoParts) == 2 {
+					ssMethod = userinfoParts[0]
+					ssPassword = userinfoParts[1]
+					log.Printf("Parser: Successfully extracted SS credentials: method=%s, password length=%d", ssMethod, len(ssPassword))
+				} else {
+					log.Printf("Parser: Error: SS decoded userinfo doesn't contain ':' separator. Decoded: %s", decodedStr)
+				}
+			}
+
+			// Reconstruct URI for standard parsing
+			uriToParse = "ss://" + rest
+		} else {
+			log.Printf("Parser: Warning: SS link is not in SIP002 format (no @ found): %s", uri)
+		}
 	} else {
 		return nil, fmt.Errorf("unsupported scheme")
 	}
@@ -394,6 +448,16 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 		Scheme: scheme,
 		Server: parsedURL.Hostname(),
 		Query:  parsedURL.Query(),
+	}
+
+	// For SS, store method and password in Query (if extracted during parsing)
+	if scheme == "ss" {
+		if ssMethod == "" || ssPassword == "" {
+			log.Printf("Parser: Error: SS link missing method or password. URI: %s", uri)
+			return nil, fmt.Errorf("SS link missing required method or password")
+		}
+		node.Query.Set("method", ssMethod)
+		node.Query.Set("password", ssPassword)
 	}
 
 	// Extract port
@@ -559,7 +623,12 @@ func matchesPattern(value, pattern string) bool {
 func buildOutbound(node *ParsedNode) map[string]interface{} {
 	outbound := make(map[string]interface{})
 	outbound["tag"] = node.Tag
-	outbound["type"] = node.Scheme
+	// Use "shadowsocks" instead of "ss" for sing-box
+	if node.Scheme == "ss" {
+		outbound["type"] = "shadowsocks"
+	} else {
+		outbound["type"] = node.Scheme
+	}
 	outbound["server"] = node.Server
 	outbound["server_port"] = node.Port
 
@@ -610,7 +679,13 @@ func buildOutbound(node *ParsedNode) map[string]interface{} {
 		outbound["password"] = node.UUID
 		// Add Trojan-specific fields if needed
 	} else if node.Scheme == "ss" {
-		// Add Shadowsocks-specific fields if needed
+		// Extract method and password from Query
+		if method := node.Query.Get("method"); method != "" {
+			outbound["method"] = method
+		}
+		if password := node.Query.Get("password"); password != "" {
+			outbound["password"] = password
+		}
 	}
 
 	return outbound
@@ -625,7 +700,11 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 	parts = append(parts, fmt.Sprintf(`"tag":%q`, node.Tag))
 
 	// 2. type
-	parts = append(parts, fmt.Sprintf(`"type":%q`, node.Scheme))
+	if node.Scheme == "ss" {
+		parts = append(parts, fmt.Sprintf(`"type":%q`, "shadowsocks"))
+	} else {
+		parts = append(parts, fmt.Sprintf(`"type":%q`, node.Scheme))
+	}
 
 	// 3. server
 	parts = append(parts, fmt.Sprintf(`"server":%q`, node.Server))
@@ -633,11 +712,19 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 	// 4. server_port
 	parts = append(parts, fmt.Sprintf(`"server_port":%d`, node.Port))
 
-	// 5. uuid (for vless/vmess) or password (for trojan)
+	// 5. uuid (for vless/vmess) or password (for trojan) or method/password (for ss)
 	if node.Scheme == "vless" || node.Scheme == "vmess" {
 		parts = append(parts, fmt.Sprintf(`"uuid":%q`, node.UUID))
 	} else if node.Scheme == "trojan" {
 		parts = append(parts, fmt.Sprintf(`"password":%q`, node.UUID))
+	} else if node.Scheme == "ss" {
+		// Extract method and password from outbound
+		if method, ok := node.Outbound["method"].(string); ok && method != "" {
+			parts = append(parts, fmt.Sprintf(`"method":%q`, method))
+		}
+		if password, ok := node.Outbound["password"].(string); ok && password != "" {
+			parts = append(parts, fmt.Sprintf(`"password":%q`, password))
+		}
 	}
 
 	// 6. flow (if present)
