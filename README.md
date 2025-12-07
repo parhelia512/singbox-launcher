@@ -230,7 +230,8 @@ The Config Wizard provides a visual interface for configuring sing-box without m
 **Wizard Tabs:**
 
 1. **VLESS Sources & ParserConfig**
-   - Enter subscription URL and validate connectivity
+   - Enter subscription URL or direct links (vless://, vmess://, trojan://, ss://) and validate connectivity
+   - Supports both subscription URLs and direct links (can be combined, separated by line breaks)
    - Configure ParserConfig JSON with visual editor
    - Preview generated outbounds
    - Parse subscription and generate proxy list
@@ -419,7 +420,11 @@ For automatic configuration updates from subscriptions, add at the beginning of 
       "version": 2,
       "proxies": [
         {
-          "source": "https://your-subscription-url.com/subscription"
+          "source": "https://your-subscription-url.com/subscription",
+          "connections": [
+            "vless://uuid@server.com:443?security=reality&...#ServerName",
+            "vmess://eyJ2IjoiMiIsInBzIjoi..."
+          ]
         }
       ],
       "outbounds": [
@@ -472,6 +477,10 @@ At the beginning of the `config.json` file, there should be a `/** @ParcerConfig
       "proxies": [
         {
           "source": "https://your-subscription-url.com/subscription",
+          "connections": [
+            "vless://uuid@server.com:443?security=reality&...#ServerName",
+            "vmess://eyJ2IjoiMiIsInBzIjoi..."
+          ],
           "skip": [ { "tag": "!/🇷🇺/i" } ]
         }
       ],
@@ -504,11 +513,14 @@ When you click the **"Update Config"** button in the "Core" tab (or use the Conf
 1. **Reading Configuration**
    - Parser finds the `@ParcerConfig` block in `config.json`
    - Extracts subscription URLs from the `proxies[].source` field
+   - Extracts direct links from the `proxies[].connections` field
 
 2. **Loading Subscriptions**
    - For each URL from `proxies[].source`:
      - Downloads subscription content (Base64 and plain text supported)
      - Decodes and parses the proxy server list
+   - For each direct link from `proxies[].connections`:
+     - Parses the direct link (vless://, vmess://, trojan://, ss://) and adds it to the proxy list
 
 3. **Supported Protocols**
    - ✅ VLESS

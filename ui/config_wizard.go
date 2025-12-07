@@ -2,11 +2,14 @@ package ui
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -58,16 +61,18 @@ type WizardState struct {
 	GeneratedOutbounds []string
 
 	// Template data for second tab
-	TemplateData              *TemplateData
-	TemplateSectionSelections map[string]bool
-	SelectableRuleStates      []*SelectableRuleState
-	TemplatePreviewEntry      *widget.Entry
-	TemplatePreviewText       string
-	templatePreviewUpdating   bool
-	FinalOutboundSelect       *widget.Select
-	SelectedFinalOutbound     string
-	previewNeedsParse         bool
-	autoParseInProgress       bool
+	TemplateData                *TemplateData
+	TemplateSectionSelections   map[string]bool
+	SelectableRuleStates        []*SelectableRuleState
+	TemplatePreviewEntry        *widget.Entry
+	TemplatePreviewText         string
+	templatePreviewUpdating     bool
+	TemplatePreviewStatusLabel  *widget.Label
+	FinalOutboundSelect         *widget.Select
+	SelectedFinalOutbound       string
+	previewNeedsParse           bool
+	autoParseInProgress         bool
+	previewGenerationInProgress bool
 
 	// Debounce timer for template preview updates
 	previewUpdateTimer *time.Timer
@@ -78,6 +83,9 @@ type WizardState struct {
 	PrevButton       *widget.Button
 	NextButton       *widget.Button
 	SaveButton       *widget.Button
+	SaveProgress     *widget.ProgressBar
+	SavePlaceholder  *canvas.Rectangle
+	saveInProgress   bool
 	ButtonsContainer fyne.CanvasObject
 	tabs             *container.AppTabs
 }
@@ -206,31 +214,134 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 			dialog.ShowError(fmt.Errorf("VLESS URL is empty"), state.Window)
 			return
 		}
-		if state.previewNeedsParse {
-			state.triggerParseForPreview()
-			dialog.ShowInformation("Parsing", "Parsing subscription... Please save once it completes.", state.Window)
+		if state.saveInProgress {
+			dialog.ShowInformation("Saving", "Save operation already in progress... Please wait.", state.Window)
+			return
+		}
+		if state.previewGenerationInProgress {
+			dialog.ShowInformation("Generating", "Preview generation in progress... Please wait.", state.Window)
 			return
 		}
 		if state.autoParseInProgress {
 			dialog.ShowInformation("Parsing", "Parsing in progress... Please wait.", state.Window)
 			return
 		}
-		text, err := buildTemplateConfig(state)
-		if err != nil {
-			dialog.ShowError(err, state.Window)
-			return
-		}
-		if path, err := state.saveConfigWithBackup(text); err != nil {
-			dialog.ShowError(err, state.Window)
-		} else {
-			dialog.ShowInformation("Config Saved", fmt.Sprintf("Config written to %s", path), state.Window)
-			state.Window.Close()
-		}
+
+		// Начинаем асинхронное сохранение с индикацией прогресса
+		state.setSaveState("", 0.0) // Показываем прогресс-бар
+		go func() {
+			defer safeFyneDo(state.Window, func() {
+				state.setSaveState("Save", -1) // Скрываем прогресс, показываем кнопку
+			})
+
+			// Шаг 0: Проверяем и ждем парсинг, если нужно (0-40%)
+			if state.previewNeedsParse || state.autoParseInProgress {
+				safeFyneDo(state.Window, func() {
+					state.SaveProgress.SetValue(0.05)
+				})
+
+				// Если парсинг еще не запущен, запускаем его
+				if !state.autoParseInProgress {
+					state.autoParseInProgress = true
+					go parseAndPreview(state)
+				}
+
+				// Ждем завершения парсинга (проверяем каждые 100мс)
+				maxWaitTime := 60 * time.Second // Максимальное время ожидания
+				startTime := time.Now()
+				iterations := 0
+				for state.autoParseInProgress {
+					if time.Since(startTime) > maxWaitTime {
+						safeFyneDo(state.Window, func() {
+							dialog.ShowError(fmt.Errorf("Parsing timeout: operation took too long"), state.Window)
+						})
+						return
+					}
+					time.Sleep(100 * time.Millisecond)
+					iterations++
+					// Обновляем прогресс плавно (0.05 - 0.40)
+					// Показываем, что процесс идет
+					progressRange := 0.35
+					baseProgress := 0.05
+					// Плавное движение вперед с циклическим эффектом
+					cycleProgress := float64(iterations%40) / 40.0
+					currentProgress := baseProgress + cycleProgress*progressRange
+					safeFyneDo(state.Window, func() {
+						state.SaveProgress.SetValue(currentProgress)
+					})
+				}
+				safeFyneDo(state.Window, func() {
+					state.SaveProgress.SetValue(0.4)
+				})
+			}
+
+			// Шаг 1: Строим конфиг (40-80%)
+			safeFyneDo(state.Window, func() {
+				state.SaveProgress.SetValue(0.4)
+			})
+			text, err := buildTemplateConfig(state)
+			if err != nil {
+				safeFyneDo(state.Window, func() {
+					dialog.ShowError(err, state.Window)
+				})
+				return
+			}
+			safeFyneDo(state.Window, func() {
+				state.SaveProgress.SetValue(0.8)
+			})
+
+			// Шаг 2: Сохраняем файл (80-95%)
+			path, err := state.saveConfigWithBackup(text)
+			if err != nil {
+				safeFyneDo(state.Window, func() {
+					dialog.ShowError(err, state.Window)
+				})
+				return
+			}
+			safeFyneDo(state.Window, func() {
+				state.SaveProgress.SetValue(0.95)
+			})
+
+			// Шаг 3: Завершение (95-100%)
+			time.Sleep(100 * time.Millisecond)
+			safeFyneDo(state.Window, func() {
+				state.SaveProgress.SetValue(1.0)
+			})
+			// Небольшая задержка, чтобы пользователь увидел прогресс
+			time.Sleep(200 * time.Millisecond)
+
+			// Успешно сохранено
+			safeFyneDo(state.Window, func() {
+				dialog.ShowInformation("Config Saved", fmt.Sprintf("Config written to %s", path), state.Window)
+				state.Window.Close()
+			})
+		}()
 	})
 	state.SaveButton.Importance = widget.HighImportance
 
+	// Создаем ProgressBar для кнопки Save
+	state.SaveProgress = widget.NewProgressBar()
+	state.SaveProgress.Hide()
+	state.SaveProgress.SetValue(0)
+
+	// Устанавливаем фиксированный размер через placeholder (такой же как кнопка)
+	saveButtonWidth := state.SaveButton.MinSize().Width
+	saveButtonHeight := state.SaveButton.MinSize().Height
+
+	// Создаем placeholder для сохранения размера
+	state.SavePlaceholder = canvas.NewRectangle(color.Transparent)
+	state.SavePlaceholder.SetMinSize(fyne.NewSize(saveButtonWidth, saveButtonHeight))
+	state.SavePlaceholder.Show()
+
 	// Сохраняем ссылку на tabs в state
 	state.tabs = tabs
+
+	// Создаем контейнер со стеком для кнопки Save (placeholder, button, progress)
+	saveButtonStack := container.NewStack(
+		state.SavePlaceholder,
+		state.SaveButton,
+		state.SaveProgress,
+	)
 
 	// Функция обновления кнопок в зависимости от вкладки
 	updateNavigationButtons := func() {
@@ -243,7 +354,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 				state.CloseButton,
 				layout.NewSpacer(),
 				state.PrevButton,
-				state.SaveButton,
+				saveButtonStack, // Используем стек с ProgressBar
 			)
 		} else if currentTabIndex == 0 {
 			// Первая вкладка: Close слева, Next справа (Prev скрыта)
@@ -277,7 +388,21 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 			}
 		}
 		if item == previewTabItem {
+			// Показываем индикацию загрузки сразу
+			if state.TemplatePreviewEntry != nil {
+				state.setTemplatePreviewText("Loading preview...")
+			}
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText("⏳ Loading...")
+			}
+			// Отключаем кнопку Save на время загрузки
+			if state.SaveButton != nil {
+				state.SaveButton.Disable()
+			}
+			// Запускаем парсинг асинхронно
 			state.triggerParseForPreview()
+			// Обновляем превью шаблона асинхронно (функция уже асинхронна внутри)
+			state.updateTemplatePreviewAsync()
 		}
 		updateNavigationButtons()
 		// Обновляем Border контейнер с новыми кнопками
@@ -645,9 +770,14 @@ func createPreviewTab(state *WizardState) fyne.CanvasObject {
 	}
 	previewScroll.SetMinSize(fyne.NewSize(0, maxHeight))
 
+	// Создаем статус-лейбл под полем превью
+	state.TemplatePreviewStatusLabel = widget.NewLabel("Ready")
+	state.TemplatePreviewStatusLabel.Wrapping = fyne.TextWrapWord
+
 	return container.NewVBox(
 		widget.NewLabel("Preview"),
 		previewScroll,
+		state.TemplatePreviewStatusLabel,
 	)
 }
 
@@ -661,12 +791,78 @@ func createRulesScroll(state *WizardState, content fyne.CanvasObject) fyne.Canva
 	return scroll
 }
 
+// generateRandomSecret генерирует случайную строку для secret
+func generateRandomSecret(length int) string {
+	if length <= 0 {
+		length = 24 // По умолчанию 24 символа
+	}
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback на простую генерацию, если crypto/rand не работает
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	// Используем base64 URL-safe encoding, но убираем padding и ограничиваем длину
+	secret := base64.URLEncoding.EncodeToString(bytes)
+	// Убираем padding и ограничиваем длину
+	secret = strings.TrimRight(secret, "=")
+	if len(secret) > length {
+		secret = secret[:length]
+	}
+	return secret
+}
+
 func (state *WizardState) saveConfigWithBackup(text string) (string, error) {
 	// Validate JSON before saving (support JSONC with comments)
 	jsonBytes := jsonc.ToJSON([]byte(text))
-	var testJSON interface{}
-	if err := json.Unmarshal(jsonBytes, &testJSON); err != nil {
+	var configJSON map[string]interface{}
+	if err := json.Unmarshal(jsonBytes, &configJSON); err != nil {
 		return "", fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	// Генерируем случайный secret
+	randomSecret := generateRandomSecret(24)
+
+	// Пытаемся заменить secret в оригинальном тексте, сохраняя комментарии
+	// Ищем secret внутри clash_api блока
+	finalText := text
+	secretReplaced := false
+
+	// Пробуем найти и заменить secret с помощью регулярного выражения
+	simpleSecretPattern := regexp.MustCompile(`("secret"\s*:\s*)"[^"]*"`)
+	if simpleSecretPattern.MatchString(text) && strings.Contains(text, "clash_api") {
+		// Заменяем существующий secret (предполагаем, что он в clash_api)
+		finalText = simpleSecretPattern.ReplaceAllString(text, fmt.Sprintf(`$1"%s"`, randomSecret))
+		secretReplaced = true
+	}
+
+	if !secretReplaced {
+		// Secret не найден, нужно добавить его через JSON парсинг
+		if experimental, ok := configJSON["experimental"].(map[string]interface{}); ok {
+			if clashAPI, ok := experimental["clash_api"].(map[string]interface{}); ok {
+				clashAPI["secret"] = randomSecret
+			} else {
+				// Если clash_api не существует, создаем его
+				experimental["clash_api"] = map[string]interface{}{
+					"external_controller": "127.0.0.1:9090",
+					"secret":              randomSecret,
+				}
+			}
+		} else {
+			// Если experimental не существует, создаем его
+			configJSON["experimental"] = map[string]interface{}{
+				"clash_api": map[string]interface{}{
+					"external_controller": "127.0.0.1:9090",
+					"secret":              randomSecret,
+				},
+			}
+		}
+
+		// Сериализуем обратно в JSON с форматированием
+		finalJSONBytes, err := json.MarshalIndent(configJSON, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal config: %w", err)
+		}
+		finalText = string(finalJSONBytes)
 	}
 
 	configPath := state.Controller.ConfigPath
@@ -681,7 +877,7 @@ func (state *WizardState) saveConfigWithBackup(text string) (string, error) {
 	} else if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	if err := os.WriteFile(configPath, []byte(text), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(finalText), 0o644); err != nil {
 		return "", err
 	}
 	// Update config status in Core Dashboard if callback is set
@@ -801,6 +997,59 @@ func (state *WizardState) setCheckURLState(statusText string, buttonText string,
 			state.CheckURLPlaceholder.Show()
 		} else {
 			state.CheckURLPlaceholder.Hide()
+		}
+	}
+}
+
+// setSaveState управляет состоянием кнопки Save и прогресс-бара
+func (state *WizardState) setSaveState(buttonText string, progress float64) {
+	progressVisible := false
+	if progress < 0 {
+		// Скрыть прогресс
+		if state.SaveProgress != nil {
+			state.SaveProgress.Hide()
+			state.SaveProgress.SetValue(0)
+		}
+		state.saveInProgress = false
+	} else {
+		// Показать прогресс
+		if state.SaveProgress != nil {
+			state.SaveProgress.SetValue(progress)
+			state.SaveProgress.Show()
+		}
+		progressVisible = true
+		state.saveInProgress = true
+	}
+
+	buttonVisible := false
+	if progressVisible {
+		// Если показываем прогресс, кнопка скрыта
+		if state.SaveButton != nil {
+			state.SaveButton.Hide()
+			state.SaveButton.Disable()
+		}
+	} else if buttonText == "" {
+		// Скрыть кнопку
+		if state.SaveButton != nil {
+			state.SaveButton.Hide()
+			state.SaveButton.Disable()
+		}
+	} else {
+		// Показать кнопку
+		if state.SaveButton != nil {
+			state.SaveButton.SetText(buttonText)
+			state.SaveButton.Show()
+			state.SaveButton.Enable()
+		}
+		buttonVisible = true
+	}
+
+	// Управление placeholder
+	if state.SavePlaceholder != nil {
+		if buttonVisible || progressVisible {
+			state.SavePlaceholder.Show()
+		} else {
+			state.SavePlaceholder.Hide()
 		}
 	}
 }
@@ -934,6 +1183,12 @@ func parseAndPreview(state *WizardState) {
 			setPreviewText(state, "Error: ParserConfig is empty")
 			state.ParseButton.Enable()
 			state.ParseButton.SetText("Parse")
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText("❌ Error: ParserConfig is empty")
+			}
+			if state.SaveButton != nil {
+				state.SaveButton.Enable()
+			}
 		})
 		return
 	}
@@ -944,6 +1199,12 @@ func parseAndPreview(state *WizardState) {
 			setPreviewText(state, fmt.Sprintf("Error: Failed to parse ParserConfig JSON: %v", err))
 			state.ParseButton.Enable()
 			state.ParseButton.SetText("Parse")
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: Failed to parse ParserConfig JSON: %v", err))
+			}
+			if state.SaveButton != nil {
+				state.SaveButton.Enable()
+			}
 		})
 		return
 	}
@@ -955,6 +1216,12 @@ func parseAndPreview(state *WizardState) {
 			setPreviewText(state, "Error: VLESS URL or direct links are empty")
 			state.ParseButton.Enable()
 			state.ParseButton.SetText("Parse")
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText("❌ Error: VLESS URL or direct links are empty")
+			}
+			if state.SaveButton != nil {
+				state.SaveButton.Enable()
+			}
 		})
 		return
 	}
@@ -970,6 +1237,12 @@ func parseAndPreview(state *WizardState) {
 				setPreviewText(state, fmt.Sprintf("Error: Failed to parse updated ParserConfig JSON: %v", err))
 				state.ParseButton.Enable()
 				state.ParseButton.SetText("Parse")
+				if state.TemplatePreviewStatusLabel != nil {
+					state.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: Failed to parse updated ParserConfig JSON: %v", err))
+				}
+				if state.SaveButton != nil {
+					state.SaveButton.Enable()
+				}
 			})
 			return
 		}
@@ -978,6 +1251,9 @@ func parseAndPreview(state *WizardState) {
 	// Парсим узлы используя новую логику (поддерживает и подписки и прямые ссылки)
 	safeFyneDo(state.Window, func() {
 		setPreviewText(state, "Processing sources...")
+		if state.TemplatePreviewStatusLabel != nil {
+			state.TemplatePreviewStatusLabel.SetText("⏳ Processing subscription sources...")
+		}
 	})
 
 	// Map to track unique tags and their counts (same logic as UpdateConfigFromSubscriptions)
@@ -988,8 +1264,12 @@ func parseAndPreview(state *WizardState) {
 	totalSources := len(parserConfig.ParserConfig.Proxies)
 
 	for i, proxySource := range parserConfig.ParserConfig.Proxies {
+		sourceNum := i + 1
 		safeFyneDo(state.Window, func() {
-			setPreviewText(state, fmt.Sprintf("Processing source %d/%d...", i+1, totalSources))
+			setPreviewText(state, fmt.Sprintf("Processing source %d/%d...", sourceNum, totalSources))
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("⏳ Processing source %d/%d...", sourceNum, totalSources))
+			}
 		})
 
 		// Используем processProxySource для обработки (поддерживает подписки и прямые ссылки)
@@ -1004,6 +1284,12 @@ func parseAndPreview(state *WizardState) {
 				setPreviewText(state, fmt.Sprintf("Error: Failed to process source: %v", err))
 				state.ParseButton.Enable()
 				state.ParseButton.SetText("Parse")
+				if state.TemplatePreviewStatusLabel != nil {
+					state.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: Failed to process source: %v", err))
+				}
+				if state.SaveButton != nil {
+					state.SaveButton.Enable()
+				}
 			})
 			return
 		}
@@ -1020,6 +1306,12 @@ func parseAndPreview(state *WizardState) {
 			setPreviewText(state, "Error: No valid nodes found in subscription")
 			state.ParseButton.Enable()
 			state.ParseButton.SetText("Parse")
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText("❌ Error: No valid nodes found in subscription")
+			}
+			if state.SaveButton != nil {
+				state.SaveButton.Enable()
+			}
 		})
 		return
 	}
@@ -1027,6 +1319,9 @@ func parseAndPreview(state *WizardState) {
 	// Генерируем JSON для узлов
 	safeFyneDo(state.Window, func() {
 		setPreviewText(state, "Generating outbounds...")
+		if state.TemplatePreviewStatusLabel != nil {
+			state.TemplatePreviewStatusLabel.SetText("⏳ Generating outbounds...")
+		}
 	})
 
 	selectorsJSON := make([]string, 0)
@@ -1064,6 +1359,11 @@ func parseAndPreview(state *WizardState) {
 		state.ParserConfig = &parserConfig
 		state.previewNeedsParse = false
 		state.refreshOutboundOptions()
+		// Обновляем статус после завершения парсинга
+		if state.TemplatePreviewStatusLabel != nil {
+			state.TemplatePreviewStatusLabel.SetText("✅ Parsing complete, generating preview...")
+		}
+		// Кнопка Save будет включена после завершения генерации превью
 		state.updateTemplatePreview()
 	})
 }
@@ -1202,19 +1502,81 @@ func (state *WizardState) triggerParseForPreview() {
 		return
 	}
 	state.autoParseInProgress = true
+	// Обновляем статус и отключаем кнопку Save при начале парсинга
+	safeFyneDo(state.Window, func() {
+		if state.TemplatePreviewStatusLabel != nil {
+			state.TemplatePreviewStatusLabel.SetText("⏳ Parsing subscription links...")
+		}
+		if state.SaveButton != nil {
+			state.SaveButton.Disable()
+		}
+	})
 	go parseAndPreview(state)
 }
 
 func (state *WizardState) updateTemplatePreview() {
+	// Синхронная версия для вызова из других мест (не блокирует UI)
+	state.updateTemplatePreviewAsync()
+}
+
+func (state *WizardState) updateTemplatePreviewAsync() {
 	if state.TemplateData == nil || state.TemplatePreviewEntry == nil {
 		return
 	}
-	text, err := buildTemplateConfig(state)
-	if err != nil {
-		state.setTemplatePreviewText(fmt.Sprintf("Preview error: %v", err))
-		return
-	}
-	state.setTemplatePreviewText(text)
+
+	// Устанавливаем флаг генерации и отключаем кнопку Save
+	state.previewGenerationInProgress = true
+	safeFyneDo(state.Window, func() {
+		if state.TemplatePreviewEntry != nil {
+			state.setTemplatePreviewText("Building preview...")
+		}
+		if state.TemplatePreviewStatusLabel != nil {
+			state.TemplatePreviewStatusLabel.SetText("⏳ Building preview configuration...")
+		}
+		// Отключаем кнопку Save во время генерации
+		if state.SaveButton != nil {
+			state.SaveButton.Disable()
+		}
+	})
+
+	// Строим конфиг асинхронно
+	go func() {
+		defer func() {
+			state.previewGenerationInProgress = false
+			safeFyneDo(state.Window, func() {
+				// Включаем кнопку Save после завершения
+				if state.SaveButton != nil {
+					state.SaveButton.Enable()
+				}
+			})
+		}()
+
+		// Обновляем статус: парсинг ParserConfig
+		safeFyneDo(state.Window, func() {
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
+			}
+		})
+
+		text, err := buildTemplateConfig(state)
+		if err != nil {
+			safeFyneDo(state.Window, func() {
+				state.setTemplatePreviewText(fmt.Sprintf("Preview error: %v", err))
+				if state.TemplatePreviewStatusLabel != nil {
+					state.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
+				}
+			})
+			return
+		}
+
+		// Обновляем статус: готово
+		safeFyneDo(state.Window, func() {
+			state.setTemplatePreviewText(text)
+			if state.TemplatePreviewStatusLabel != nil {
+				state.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
+			}
+		})
+	}()
 }
 
 func buildTemplateConfig(state *WizardState) (string, error) {
