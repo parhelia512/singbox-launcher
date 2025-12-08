@@ -100,4 +100,3 @@ func GetNetworkErrorMessage(err error) string {
 
 	return fmt.Sprintf("Network error: %s", err.Error())
 }
-

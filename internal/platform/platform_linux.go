@@ -85,12 +85,12 @@ func CheckSingBoxCapabilities(singboxPath string) bool {
 		// getcap returns error if no capabilities are set
 		return false
 	}
-	
+
 	// Check if output contains required capabilities
 	outputStr := string(output)
 	hasNetAdmin := strings.Contains(outputStr, "cap_net_admin")
 	hasNetBind := strings.Contains(outputStr, "cap_net_bind_service")
-	
+
 	return hasNetAdmin && hasNetBind
 }
 
@@ -119,11 +119,10 @@ func CheckAndSuggestCapabilities(singboxPath string) string {
 	if _, err := os.Stat(singboxPath); os.IsNotExist(err) {
 		return "" // File doesn't exist yet, skip check
 	}
-	
+
 	if !CheckSingBoxCapabilities(singboxPath) {
 		return SuggestCapabilities(singboxPath)
 	}
-	
+
 	return "" // Capabilities are OK
 }
-

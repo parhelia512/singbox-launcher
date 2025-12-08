@@ -51,4 +51,3 @@ func CreateToolsTab(ac *core.AppController) fyne.CanvasObject {
 		checkUpdatesButton,
 	)
 }
-

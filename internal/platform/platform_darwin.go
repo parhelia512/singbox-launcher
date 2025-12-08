@@ -75,4 +75,3 @@ func GetBuildFlags() string {
 func CheckAndSuggestCapabilities(singboxPath string) string {
 	return "" // Capabilities are Linux-specific, not needed on macOS
 }
-

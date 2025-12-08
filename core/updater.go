@@ -12,7 +12,7 @@ import (
 // This is a placeholder for future update functionality
 func (ac *AppController) CheckForUpdates() {
 	log.Println("CheckForUpdates: Update checking not yet implemented")
-	
+
 	dialogs.ShowInfo(ac.MainWindow, "Updates",
 		"Automatic updates are not yet implemented.\n\n"+
 			"Please check GitHub releases for updates:\n"+
@@ -28,7 +28,7 @@ func (ac *AppController) UpdateAvailable(version string, downloadURL string) {
 		version,
 		downloadURL,
 	)
-	
+
 	dialogs.ShowConfirm(ac.MainWindow, "Update Available", message, func(download bool) {
 		if download {
 			// Open download URL in browser
@@ -49,7 +49,7 @@ func GetCurrentVersion() string {
 // GetUpdateURL returns the URL to check for updates based on platform
 func GetUpdateURL() string {
 	baseURL := "https://github.com/Leadaxe/singbox-launcher/releases/latest"
-	
+
 	// Platform-specific download URLs would go here
 	switch runtime.GOOS {
 	case "windows":
@@ -62,4 +62,3 @@ func GetUpdateURL() string {
 		return baseURL
 	}
 }
-
