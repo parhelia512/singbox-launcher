@@ -77,4 +77,3 @@ func GetBuildFlags() string {
 func CheckAndSuggestCapabilities(singboxPath string) string {
 	return "" // Capabilities are Windows-specific, not needed here
 }
-

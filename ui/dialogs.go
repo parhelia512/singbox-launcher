@@ -69,4 +69,3 @@ func ShowAutoHideInfo(app fyne.App, window fyne.Window, title, message string) {
 		}()
 	})
 }
-

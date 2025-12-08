@@ -35,4 +35,3 @@ func EnsureDirectories(execDir string) error {
 	}
 	return nil
 }
-

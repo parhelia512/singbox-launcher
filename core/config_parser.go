@@ -101,4 +101,3 @@ func GetSelectorGroupsFromConfig(configPath string) ([]string, string, error) {
 
 	return selectorGroups, defaultSelector, nil
 }
-

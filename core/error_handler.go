@@ -33,4 +33,3 @@ func (ac *AppController) ShowConfigValidationError(err error) {
 	dialogs.ShowError(ac.MainWindow, fmt.Errorf(message))
 	log.Printf("ConfigValidationError: %v", err)
 }
-

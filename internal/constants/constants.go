@@ -34,4 +34,3 @@ const (
 const (
 	DefaultSTUNServer = "stun.l.google.com:19302"
 )
-

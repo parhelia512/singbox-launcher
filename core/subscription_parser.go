@@ -46,7 +46,7 @@ func DecodeSubscriptionContent(content []byte) ([]byte, error) {
 func FetchSubscription(url string) ([]byte, error) {
 	startTime := time.Now()
 	log.Printf("[DEBUG] FetchSubscription: START at %s, URL: %s", startTime.Format("15:04:05.000"), url)
-	
+
 	// Создаем контекст с таймаутом
 	ctx, cancel := context.WithTimeout(context.Background(), NetworkRequestTimeout)
 	defer cancel()
@@ -78,7 +78,7 @@ func FetchSubscription(url string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to fetch subscription: %w", err)
 	}
 	defer resp.Body.Close()
-	log.Printf("[DEBUG] FetchSubscription: Received HTTP response in %v (status: %d, content-length: %d)", 
+	log.Printf("[DEBUG] FetchSubscription: Received HTTP response in %v (status: %d, content-length: %d)",
 		doDuration, resp.StatusCode, resp.ContentLength)
 
 	if resp.StatusCode != http.StatusOK {
@@ -111,9 +111,9 @@ func FetchSubscription(url string) ([]byte, error) {
 		log.Printf("[DEBUG] FetchSubscription: Failed to decode content (took %v): %v", decodeDuration, err)
 		return nil, fmt.Errorf("failed to decode subscription content: %w", err)
 	}
-	log.Printf("[DEBUG] FetchSubscription: Decoded content in %v (original: %d bytes, decoded: %d bytes)", 
+	log.Printf("[DEBUG] FetchSubscription: Decoded content in %v (original: %d bytes, decoded: %d bytes)",
 		decodeDuration, len(content), len(decoded))
-	
+
 	totalDuration := time.Since(startTime)
 	log.Printf("[DEBUG] FetchSubscription: END (total duration: %v)", totalDuration)
 	return decoded, nil

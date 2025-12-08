@@ -62,4 +62,3 @@ func (eb *ErrorBanner) Show() {
 func (eb *ErrorBanner) IsVisible() bool {
 	return eb.container.Visible()
 }
-
