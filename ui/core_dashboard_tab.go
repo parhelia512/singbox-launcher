@@ -597,11 +597,14 @@ func (tab *CoreDashboardTab) updateVersionInfoAsync() {
 			return
 		}
 
-		// Запускаем проверку в фоне (внутри функции есть проверки на дубликаты и необходимость проверки)
-		tab.controller.CheckVersionInBackground()
-
 		// Используем кешированную версию для отображения
 		latest := tab.controller.GetCachedVersion()
+
+		// Проверяем, нужно ли обновить кеш (только если кеша нет или он устарел)
+		if tab.controller.ShouldCheckVersion() {
+			// Запускаем проверку в фоне только если нужно
+			tab.controller.CheckVersionInBackground()
+		}
 
 		// Обновляем UI с результатом
 		fyne.Do(func() {
