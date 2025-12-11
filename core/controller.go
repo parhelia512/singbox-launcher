@@ -740,8 +740,13 @@ func CheckConfigFileExists(ac *AppController) {
 			"⚠️ Configuration file not found!\n\n"+
 				"The file %s is missing from the bin/ folder.\n\n"+
 				"To get started:\n"+
+<<<<<<< HEAD
 				"1. download Wizard\n"+
 				"2. use Wizard to generate a configuration file\n"+
+=======
+				"1. download Wisard\n"+
+				"2. use Wisard to generate a configuration file\n"+
+>>>>>>> drop-parser-ue8gs
 				"3. press Start\n",
 			constants.ConfigFileName,
 		)
