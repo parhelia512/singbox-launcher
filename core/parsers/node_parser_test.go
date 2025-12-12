@@ -319,6 +319,51 @@ func TestParseNode_SkipFilters(t *testing.T) {
 			t.Error("Expected node to be parsed, but got nil")
 		}
 	})
+
+	t.Run("Skip by flow - exact match", func(t *testing.T) {
+		uriWithFlow := "vless://uuid@example.com:443?flow=xtls-rprx-vision-udp443#🇩🇪 Germany"
+		skipFilters := []map[string]string{
+			{"flow": "xtls-rprx-vision-udp443"},
+		}
+		node, err := ParseNode(uriWithFlow, skipFilters)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if node != nil {
+			t.Error("Expected node to be skipped, but got node")
+		}
+	})
+
+	t.Run("Skip by flow - regex match", func(t *testing.T) {
+		uriWithFlow := "vless://uuid@example.com:443?flow=xtls-rprx-vision-udp443#🇩🇪 Germany"
+		skipFilters := []map[string]string{
+			{"flow": "/xtls-rprx-vision-udp443/i"},
+		}
+		node, err := ParseNode(uriWithFlow, skipFilters)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if node != nil {
+			t.Error("Expected node to be skipped, but got node")
+		}
+	})
+
+	t.Run("No skip by flow - different flow value", func(t *testing.T) {
+		uriWithFlow := "vless://uuid@example.com:443?flow=xtls-rprx-vision#🇩🇪 Germany"
+		skipFilters := []map[string]string{
+			{"flow": "xtls-rprx-vision-udp443"},
+		}
+		node, err := ParseNode(uriWithFlow, skipFilters)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if node == nil {
+			t.Error("Expected node to be parsed, but got nil")
+		}
+		if node != nil && node.Flow != "xtls-rprx-vision" {
+			t.Errorf("Expected flow 'xtls-rprx-vision', got '%s'", node.Flow)
+		}
+	})
 }
 
 // TestParseNode_RealWorldExamples tests with real-world examples from subscription

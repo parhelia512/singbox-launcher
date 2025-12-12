@@ -274,6 +274,8 @@ func getNodeValue(node *ParsedNode, key string) string {
 		return node.Label // fragment == label
 	case "comment":
 		return node.Comment
+	case "flow":
+		return node.Flow
 	default:
 		return ""
 	}
