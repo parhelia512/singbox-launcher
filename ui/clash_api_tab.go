@@ -55,6 +55,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			}
 			return
 		}
+
 		group := selectedGroup
 		if group == "" {
 			return
@@ -92,6 +93,35 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}(group)
 	}
 
+	// Функция для обновления списка селекторов из конфига (вызывается когда sing-box запущен и конфиг загружен)
+	updateSelectorList := func() {
+		updatedSelectorOptions, updatedDefaultSelector, err := core.GetSelectorGroupsFromConfig(ac.ConfigPath)
+		if err == nil && len(updatedSelectorOptions) > 0 && groupSelect != nil {
+			groupSelect.SetOptions(updatedSelectorOptions)
+
+			// Обновить selectedGroup если текущий выбор больше не доступен
+			currentSelected := selectedGroup
+			found := false
+			for _, opt := range updatedSelectorOptions {
+				if opt == currentSelected {
+					found = true
+					break
+				}
+			}
+			if !found {
+				if updatedDefaultSelector != "" {
+					selectedGroup = updatedDefaultSelector
+				} else if len(updatedSelectorOptions) > 0 {
+					selectedGroup = updatedSelectorOptions[0]
+				}
+				suppressSelectCallback = true
+				groupSelect.SetSelected(selectedGroup)
+				suppressSelectCallback = false
+				ac.SelectedClashGroup = selectedGroup
+			}
+		}
+	}
+
 	onTestAPIConnection := func() {
 		if !ac.ClashAPIEnabled {
 			ac.ApiStatusLabel.SetText("❌ ClashAPI Off (Config Error)")
@@ -107,6 +137,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 					return
 				}
 				ac.ApiStatusLabel.SetText("✅ Clash API On")
+				// Обновить список селекторов после успешного подключения (sing-box запущен, конфиг загружен)
+				updateSelectorList()
 				onLoadAndRefreshProxies()
 			})
 		}()
