@@ -16,6 +16,14 @@ import (
 // This prevents memory issues with very large subscriptions
 const MaxNodesPerSubscription = 500
 
+// OutboundGenerationResult contains the result of outbound generation with statistics
+type OutboundGenerationResult struct {
+	OutboundsJSON        []string // Array of generated JSON strings (nodes + selectors)
+	NodesCount           int      // Number of generated nodes
+	LocalSelectorsCount  int      // Number of local selectors
+	GlobalSelectorsCount int      // Number of global selectors
+}
+
 // MakeTagUnique makes a tag unique by appending a number if it already exists in tagCounts.
 // Updates tagCounts map and returns the unique tag.
 // logPrefix is used for logging (e.g., "Parser" or "ConfigWizard").
@@ -427,11 +435,21 @@ func (svc *ConfigService) GenerateNodeJSON(node *parsers.ParsedNode) (string, er
 		parts = append(parts, fmt.Sprintf(`"password":%q`, node.UUID))
 	} else if node.Scheme == "ss" {
 		// Extract method and password from outbound
+		// Use json.Marshal to properly escape strings for JSON (handles binary data correctly)
+		// This prevents invalid \xXX escape sequences that JSON doesn't support
 		if method, ok := node.Outbound["method"].(string); ok && method != "" {
-			parts = append(parts, fmt.Sprintf(`"method":%q`, method))
+			methodJSON, err := json.Marshal(method)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal shadowsocks method: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"method":%s`, string(methodJSON)))
 		}
 		if password, ok := node.Outbound["password"].(string); ok && password != "" {
-			parts = append(parts, fmt.Sprintf(`"password":%q`, password))
+			passwordJSON, err := json.Marshal(password)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal shadowsocks password: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"password":%s`, string(passwordJSON)))
 		}
 	}
 
@@ -624,6 +642,124 @@ func matchesPattern(value, pattern string) bool {
 	return value == pattern
 }
 
+// GenerateOutboundsFromParserConfig processes ParserConfig and generates all outbounds.
+// Returns array of JSON strings: first all nodes, then local selectors (per source), then global selectors.
+// This function eliminates code duplication between UpdateConfigFromSubscriptions and parseAndPreview.
+func (svc *ConfigService) GenerateOutboundsFromParserConfig(
+	config *ParserConfig,
+	tagCounts map[string]int,
+	progressCallback func(float64, string),
+) (*OutboundGenerationResult, error) {
+	// Step 1: Process all proxy sources and collect nodes
+	allNodes := make([]*parsers.ParsedNode, 0)
+	nodesBySource := make(map[int][]*parsers.ParsedNode) // Map source index to its nodes
+
+	totalSources := len(config.ParserConfig.Proxies)
+	if progressCallback != nil {
+		progressCallback(10, fmt.Sprintf("Processing %d sources...", totalSources))
+	}
+
+	for i, proxySource := range config.ParserConfig.Proxies {
+		if progressCallback != nil {
+			progressCallback(10+float64(i)*30.0/float64(totalSources),
+				fmt.Sprintf("Processing source %d/%d...", i+1, totalSources))
+		}
+
+		nodesFromSource, err := svc.ProcessProxySource(proxySource, tagCounts, progressCallback, i, totalSources)
+		if err != nil {
+			log.Printf("GenerateOutboundsFromParserConfig: Error processing source %d/%d: %v", i+1, totalSources, err)
+			continue
+		}
+
+		if len(nodesFromSource) > 0 {
+			allNodes = append(allNodes, nodesFromSource...)
+			nodesBySource[i] = nodesFromSource
+		}
+	}
+
+	if len(allNodes) == 0 {
+		return nil, fmt.Errorf("no nodes parsed from any source")
+	}
+
+	// Step 2: Generate JSON for all nodes
+	if progressCallback != nil {
+		progressCallback(40, fmt.Sprintf("Generating JSON for %d nodes...", len(allNodes)))
+	}
+
+	selectorsJSON := make([]string, 0)
+	nodesCount := 0
+
+	for _, node := range allNodes {
+		nodeJSON, err := svc.GenerateNodeJSON(node)
+		if err != nil {
+			log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
+			continue
+		}
+		selectorsJSON = append(selectorsJSON, nodeJSON)
+		nodesCount++
+	}
+
+	// Step 3: Generate local selectors for each source (if they have local outbounds)
+	localSelectorsCount := 0
+	if progressCallback != nil {
+		progressCallback(60, "Generating local selectors...")
+	}
+
+	for i, proxySource := range config.ParserConfig.Proxies {
+		if len(proxySource.Outbounds) == 0 {
+			continue
+		}
+
+		sourceNodes, ok := nodesBySource[i]
+		if !ok || len(sourceNodes) == 0 {
+			continue
+		}
+
+		for _, outboundConfig := range proxySource.Outbounds {
+			selectorJSON, err := svc.GenerateSelector(sourceNodes, outboundConfig)
+			if err != nil {
+				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate local selector %s for source %d: %v",
+					outboundConfig.Tag, i+1, err)
+				continue
+			}
+			if selectorJSON != "" {
+				selectorsJSON = append(selectorsJSON, selectorJSON)
+				localSelectorsCount++
+			}
+		}
+	}
+
+	// Step 4: Generate global selectors
+	globalSelectorsCount := 0
+	if progressCallback != nil {
+		progressCallback(80, "Generating global selectors...")
+	}
+
+	for _, outboundConfig := range config.ParserConfig.Outbounds {
+		selectorJSON, err := svc.GenerateSelector(allNodes, outboundConfig)
+		if err != nil {
+			log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate global selector %s: %v",
+				outboundConfig.Tag, err)
+			continue
+		}
+		if selectorJSON != "" {
+			selectorsJSON = append(selectorsJSON, selectorJSON)
+			globalSelectorsCount++
+		}
+	}
+
+	if progressCallback != nil {
+		progressCallback(100, "Generation complete")
+	}
+
+	return &OutboundGenerationResult{
+		OutboundsJSON:        selectorsJSON,
+		NodesCount:           nodesCount,
+		LocalSelectorsCount:  localSelectorsCount,
+		GlobalSelectorsCount: globalSelectorsCount,
+	}, nil
+}
+
 // UpdateConfigFromSubscriptions updates config.json by fetching subscriptions and parsing nodes.
 // This is the main entry point for configuration updates.
 // It extracts parser configuration, processes all proxy sources, generates outbound JSON,
@@ -651,94 +787,28 @@ func (svc *ConfigService) UpdateConfigFromSubscriptions() error {
 	// Small delay before starting to fetch subscriptions
 	time.Sleep(100 * time.Millisecond)
 
-	// Step 2: Load and parse subscriptions
-	allNodes := make([]*parsers.ParsedNode, 0)
-	successfulSubscriptions := 0
-	totalSubscriptions := len(config.ParserConfig.Proxies)
-
+	// Step 2: Generate all outbounds using unified function
 	// Map to track unique tags and their counts
 	tagCounts := make(map[string]int)
 	log.Printf("Parser: Initializing tag deduplication tracker")
 
-	updateParserProgress(ac, 20, fmt.Sprintf("Loading subscriptions (0/%d)...", totalSubscriptions))
-
-	for i, proxySource := range config.ParserConfig.Proxies {
-		progressCallback := func(p float64, s string) {
-			updateParserProgress(ac, p, s)
-		}
-
-		nodesFromThisSource, err := svc.ProcessProxySource(proxySource, tagCounts, progressCallback, i, totalSubscriptions)
-		if err != nil {
-			log.Printf("Parser: Error processing source %d/%d: %v", i+1, totalSubscriptions, err)
-			continue
-		}
-
-		if len(nodesFromThisSource) > 0 {
-			allNodes = append(allNodes, nodesFromThisSource...)
-			successfulSubscriptions++
-			log.Printf("Parser: Successfully parsed %d nodes from source %d/%d: %s", len(nodesFromThisSource), i+1, totalSubscriptions, proxySource.Source)
-		} else {
-			log.Printf("Parser: Warning: No valid nodes parsed from source %d/%d: %s", i+1, totalSubscriptions, proxySource.Source)
-		}
-
-		// Update progress after parsing source
-		progress := 20 + float64(i+1)*50.0/float64(totalSubscriptions)
-		updateParserProgress(ac, progress, fmt.Sprintf("Processed sources: %d/%d, nodes: %d", i+1, totalSubscriptions, len(allNodes)))
+	progressCallback := func(p float64, s string) {
+		updateParserProgress(ac, p, s)
 	}
 
-	// Check if we successfully loaded at least one subscription
-	if successfulSubscriptions == 0 {
-		updateParserProgress(ac, -1, "Error: failed to load any subscriptions")
-		return fmt.Errorf("failed to load any subscriptions - check internet connection and subscription URLs")
+	result, err := svc.GenerateOutboundsFromParserConfig(config, tagCounts, progressCallback)
+	if err != nil {
+		updateParserProgress(ac, -1, fmt.Sprintf("Error: %v", err))
+		return fmt.Errorf("failed to generate outbounds: %w", err)
 	}
-
-	log.Printf("Parser: Parsed %d nodes from subscriptions", len(allNodes))
 
 	// Log statistics about duplicates
 	LogDuplicateTagStatistics(tagCounts, "Parser")
 
-	updateParserProgress(ac, 70, fmt.Sprintf("Processed nodes: %d. Generating JSON...", len(allNodes)))
+	log.Printf("Parser: Generated %d nodes, %d local selectors, %d global selectors",
+		result.NodesCount, result.LocalSelectorsCount, result.GlobalSelectorsCount)
 
-	// Check if we have any nodes before proceeding
-	if len(allNodes) == 0 {
-		updateParserProgress(ac, -1, "Error: no nodes found in subscriptions")
-		return fmt.Errorf("no nodes parsed from subscriptions - check internet connection and subscription URLs")
-	}
-
-	// Step 3: Generate selectors
-	updateParserProgress(ac, 75, "Generating JSON for nodes...")
-
-	selectorsJSON := make([]string, 0)
-
-	// First, generate JSON for all nodes
-	for _, node := range allNodes {
-		nodeJSON, err := svc.GenerateNodeJSON(node)
-		if err != nil {
-			log.Printf("Parser: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
-			continue
-		}
-		selectorsJSON = append(selectorsJSON, nodeJSON)
-	}
-
-	// Check if we have any node JSON before generating selectors
-	if len(selectorsJSON) == 0 {
-		updateParserProgress(ac, -1, "Error: failed to generate JSON for nodes")
-		return fmt.Errorf("failed to generate JSON for any nodes")
-	}
-
-	// Then, generate selectors
-	updateParserProgress(ac, 85, "Generating selectors...")
-
-	for _, outboundConfig := range config.ParserConfig.Outbounds {
-		selectorJSON, err := svc.GenerateSelector(allNodes, outboundConfig)
-		if err != nil {
-			log.Printf("Parser: Warning: Failed to generate selector %s: %v", outboundConfig.Tag, err)
-			continue
-		}
-		if selectorJSON != "" {
-			selectorsJSON = append(selectorsJSON, selectorJSON)
-		}
-	}
+	selectorsJSON := result.OutboundsJSON
 
 	// Final check: ensure we have content to write
 	if len(selectorsJSON) == 0 {

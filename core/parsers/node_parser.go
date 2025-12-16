@@ -107,6 +107,12 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 					ssMethod = userinfoParts[0]
 					ssPassword = userinfoParts[1]
 					log.Printf("Parser: Successfully extracted SS credentials: method=%s, password length=%d", ssMethod, len(ssPassword))
+
+					// Validate encryption method to prevent sing-box crashes
+					if !isValidShadowsocksMethod(ssMethod) {
+						log.Printf("Parser: Warning: Invalid or unsupported Shadowsocks method '%s'. Skipping node.", ssMethod)
+						return nil, fmt.Errorf("unsupported Shadowsocks encryption method: %s", ssMethod)
+					}
 				} else {
 					log.Printf("Parser: Error: SS decoded userinfo doesn't contain ':' separator. Decoded: %s", decodedStr)
 				}
@@ -223,6 +229,26 @@ func decodeBase64WithPadding(s string) ([]byte, error) {
 		decoded, err = base64.StdEncoding.DecodeString(s)
 	}
 	return decoded, err
+}
+
+// isValidShadowsocksMethod checks if the encryption method is supported by sing-box
+// This prevents invalid methods (like binary data) from causing sing-box to crash
+// Only methods supported by sing-box are allowed (see sing-box documentation)
+func isValidShadowsocksMethod(method string) bool {
+	validMethods := map[string]bool{
+		// 2022 edition (modern, best security)
+		"2022-blake3-aes-128-gcm":       true,
+		"2022-blake3-aes-256-gcm":       true,
+		"2022-blake3-chacha20-poly1305": true,
+		// AEAD ciphers
+		"none":                    true,
+		"aes-128-gcm":             true,
+		"aes-192-gcm":             true,
+		"aes-256-gcm":             true,
+		"chacha20-ietf-poly1305":  true,
+		"xchacha20-ietf-poly1305": true,
+	}
+	return validMethods[method]
 }
 
 func extractTagAndComment(label string) (tag, comment string) {

@@ -29,6 +29,10 @@ import (
 	"singbox-launcher/internal/platform"
 )
 
+// maxNodesForFullPreview is the maximum number of nodes to show full preview.
+// If nodes count exceeds this value, statistics comment will be shown instead.
+const maxNodesForFullPreview = 20
+
 // ShowConfigWizard открывает окно мастера конфигурации
 func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	state := &WizardState{
@@ -185,7 +189,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 			safeFyneDo(state.Window, func() {
 				state.SaveProgress.SetValue(0.4)
 			})
-			text, err := buildTemplateConfig(state)
+			text, err := buildTemplateConfig(state, false)
 			if err != nil {
 				safeFyneDo(state.Window, func() {
 					dialog.ShowError(err, state.Window)
@@ -842,14 +846,15 @@ func loadConfigFromFile(state *WizardState) (bool, error) {
 
 			state.ParserConfig = &templateParserConfig
 
-			// Заполняем поле URL - объединяем Source и Connections
+			// Заполняем поле URL - объединяем все Source и Connections из всех proxies
 			if len(templateParserConfig.ParserConfig.Proxies) > 0 {
-				proxySource := templateParserConfig.ParserConfig.Proxies[0]
 				lines := make([]string, 0)
-				if proxySource.Source != "" {
-					lines = append(lines, proxySource.Source)
+				for _, proxySource := range templateParserConfig.ParserConfig.Proxies {
+					if proxySource.Source != "" {
+						lines = append(lines, proxySource.Source)
+					}
+					lines = append(lines, proxySource.Connections...)
 				}
-				lines = append(lines, proxySource.Connections...)
 				state.VLESSURLEntry.SetText(strings.Join(lines, "\n"))
 			}
 
@@ -883,14 +888,15 @@ func loadConfigFromFile(state *WizardState) (bool, error) {
 
 	state.ParserConfig = parserConfig
 
-	// Заполняем поле URL - объединяем Source и Connections
+	// Заполняем поле URL - объединяем все Source и Connections из всех proxies
 	if len(parserConfig.ParserConfig.Proxies) > 0 {
-		proxySource := parserConfig.ParserConfig.Proxies[0]
 		lines := make([]string, 0)
-		if proxySource.Source != "" {
-			lines = append(lines, proxySource.Source)
+		for _, proxySource := range parserConfig.ParserConfig.Proxies {
+			if proxySource.Source != "" {
+				lines = append(lines, proxySource.Source)
+			}
+			lines = append(lines, proxySource.Connections...)
 		}
-		lines = append(lines, proxySource.Connections...)
 		state.VLESSURLEntry.SetText(strings.Join(lines, "\n"))
 	}
 
@@ -1252,66 +1258,35 @@ func parseAndPreview(state *WizardState) {
 			time.Since(reloadStartTime), len(parserConfig.ParserConfig.Proxies))
 	}
 
-	// Парсим узлы используя новую логику (поддерживает и подписки и прямые ссылки)
-	safeFyneDo(state.Window, func() {
-		setPreviewText(state, "Processing sources...")
-	})
+	// Генерируем все outbounds используя unified функцию
+	// Это устраняет дублирование кода и добавляет поддержку локальных outbounds
+	generateStartTime := time.Now()
+	debugLog("parseAndPreview: Starting outbound generation using unified function")
 
-	// Map to track unique tags and their counts (same logic as UpdateConfigFromSubscriptions)
+	// Map to track unique tags and their counts
 	tagCounts := make(map[string]int)
 	debugLog("parseAndPreview: Initializing tag deduplication tracker")
 
-	allNodes := make([]*parsers.ParsedNode, 0)
-	totalSources := len(parserConfig.ParserConfig.Proxies)
-	debugLog("parseAndPreview: Processing %d sources", totalSources)
-
-	sourcesStartTime := time.Now()
-	for i, proxySource := range parserConfig.ParserConfig.Proxies {
-		sourceStartTime := time.Now()
-		sourceNum := i + 1
-		debugLog("parseAndPreview: Processing source %d/%d (elapsed: %v)",
-			sourceNum, totalSources, time.Since(sourcesStartTime))
-
+	// Progress callback для обновления UI с throttling (не чаще чем раз в 200ms)
+	var lastProgressUpdate time.Time
+	progressCallback := func(p float64, s string) {
+		now := time.Now()
+		if now.Sub(lastProgressUpdate) < 200*time.Millisecond {
+			return // Skip update if less than 200ms passed
+		}
+		lastProgressUpdate = now
 		safeFyneDo(state.Window, func() {
-			setPreviewText(state, fmt.Sprintf("Processing source %d/%d...", sourceNum, totalSources))
+			setPreviewText(state, s)
 		})
-
-		// Используем processProxySource для обработки (поддерживает подписки и прямые ссылки)
-		progressCallback := func(p float64, s string) {
-			// Можно обновлять прогресс, но не обязательно для превью
-		}
-
-		processStartTime := time.Now()
-		// Use ConfigService to process proxy source
-		nodesFromSource, err := state.Controller.ConfigService.ProcessProxySource(proxySource, tagCounts, progressCallback, i, totalSources)
-		processDuration := time.Since(processStartTime)
-		if err != nil {
-			debugLog("parseAndPreview: Error processing source %d/%d (took %v): %v", i+1, totalSources, processDuration, err)
-			safeFyneDo(state.Window, func() {
-				setPreviewText(state, fmt.Sprintf("Error: Failed to process source: %v", err))
-				state.ParseButton.Enable()
-				state.ParseButton.SetText("Parse")
-				if state.SaveButton != nil {
-					state.SaveButton.Enable()
-				}
-			})
-			return
-		}
-
-		allNodes = append(allNodes, nodesFromSource...)
-		debugLog("parseAndPreview: Source %d/%d: parsed %d nodes in %v (total nodes so far: %d, source processing took %v)",
-			i+1, totalSources, len(nodesFromSource), processDuration, len(allNodes), time.Since(sourceStartTime))
 	}
-	debugLog("parseAndPreview: Processed all %d sources in %v (total nodes: %d)",
-		totalSources, time.Since(sourcesStartTime), len(allNodes))
 
-	// Log statistics about duplicates
-	core.LogDuplicateTagStatistics(tagCounts, "ConfigWizard")
-
-	if len(allNodes) == 0 {
-		debugLog("parseAndPreview: No valid nodes found, returning early")
+	// Используем unified функцию для генерации всех outbounds
+	result, err := state.Controller.ConfigService.GenerateOutboundsFromParserConfig(
+		&parserConfig, tagCounts, progressCallback)
+	if err != nil {
+		debugLog("parseAndPreview: Failed to generate outbounds (took %v): %v", time.Since(generateStartTime), err)
 		safeFyneDo(state.Window, func() {
-			setPreviewText(state, "Error: No valid nodes found in subscription")
+			setPreviewText(state, fmt.Sprintf("Error: Failed to generate outbounds: %v", err))
 			state.ParseButton.Enable()
 			state.ParseButton.SetText("Parse")
 			if state.SaveButton != nil {
@@ -1321,66 +1296,45 @@ func parseAndPreview(state *WizardState) {
 		return
 	}
 
-	// Генерируем JSON для узлов
-	generateStartTime := time.Now()
-	debugLog("parseAndPreview: Generating JSON for %d nodes", len(allNodes))
-	safeFyneDo(state.Window, func() {
-		setPreviewText(state, "Generating outbounds...")
-	})
+	// Log statistics about duplicates
+	core.LogDuplicateTagStatistics(tagCounts, "ConfigWizard")
 
-	selectorsJSON := make([]string, 0)
-
-	// Генерируем JSON для всех узлов
-	nodesStartTime := time.Now()
-	for idx, node := range allNodes {
-		nodeStartTime := time.Now()
-		nodeJSON, err := generateNodeJSONForPreview(state, node)
-		if err != nil {
-			debugLog("parseAndPreview: Failed to generate JSON for node %d/%d (took %v): %v",
-				idx+1, len(allNodes), time.Since(nodeStartTime), err)
-			continue
-		}
-		selectorsJSON = append(selectorsJSON, nodeJSON)
-		if (idx+1)%100 == 0 || idx == len(allNodes)-1 {
-			debugLog("parseAndPreview: Generated JSON for %d/%d nodes (elapsed: %v)",
-				idx+1, len(allNodes), time.Since(nodesStartTime))
-		}
-	}
-	debugLog("parseAndPreview: Generated JSON for all %d nodes in %v", len(allNodes), time.Since(nodesStartTime))
-
-	// Генерируем селекторы
-	selectorsStartTime := time.Now()
-	debugLog("parseAndPreview: Generating %d selectors", len(parserConfig.ParserConfig.Outbounds))
-	for idx, outboundConfig := range parserConfig.ParserConfig.Outbounds {
-		selectorStartTime := time.Now()
-		selectorJSON, err := generateSelectorForPreview(state, allNodes, outboundConfig)
-		if err != nil {
-			debugLog("parseAndPreview: Failed to generate selector %d/%d (took %v): %v",
-				idx+1, len(parserConfig.ParserConfig.Outbounds), time.Since(selectorStartTime), err)
-			continue
-		}
-		if selectorJSON != "" {
-			selectorsJSON = append(selectorsJSON, selectorJSON)
-		}
-		debugLog("parseAndPreview: Generated selector %d/%d in %v",
-			idx+1, len(parserConfig.ParserConfig.Outbounds), time.Since(selectorStartTime))
-	}
-	debugLog("parseAndPreview: Generated all %d selectors in %v",
-		len(parserConfig.ParserConfig.Outbounds), time.Since(selectorsStartTime))
+	// Сохраняем статистику для использования в buildParserOutboundsBlock
+	state.OutboundStats.NodesCount = result.NodesCount
+	state.OutboundStats.LocalSelectorsCount = result.LocalSelectorsCount
+	state.OutboundStats.GlobalSelectorsCount = result.GlobalSelectorsCount
+	state.GeneratedOutbounds = result.OutboundsJSON // Store full JSON for later use (e.g., saving)
 
 	// Формируем итоговый текст для предпросмотра
-	joinStartTime := time.Now()
-	previewText := strings.Join(selectorsJSON, "\n")
-	debugLog("parseAndPreview: Joined %d JSON strings in %v (total preview text length: %d bytes)",
-		len(selectorsJSON), time.Since(joinStartTime), len(previewText))
-	debugLog("parseAndPreview: Total JSON generation took %v", time.Since(generateStartTime))
+	// Если узлов больше maxNodesForFullPreview, показываем статистику в виде комментария
+	var previewText string
+	if result.NodesCount > maxNodesForFullPreview {
+		// Формируем статистику в виде комментария
+		joinStartTime := time.Now()
+		statsComment := fmt.Sprintf(`/** @ParserSTART */
+	// Generated: %d nodes, %d local selectors, %d global selectors
+	// Total outbounds: %d
+/** @ParserEND */`,
+			result.NodesCount,
+			result.LocalSelectorsCount,
+			result.GlobalSelectorsCount,
+			len(result.OutboundsJSON))
+		previewText = statsComment
+		debugLog("parseAndPreview: Generated statistics comment in %v (nodes: %d > %d)", time.Since(joinStartTime), result.NodesCount, maxNodesForFullPreview)
+	} else {
+		// Показываем полный текст для малого количества узлов
+		joinStartTime := time.Now()
+		previewText = strings.Join(result.OutboundsJSON, "\n")
+		debugLog("parseAndPreview: Joined %d JSON strings in %v (total preview text length: %d bytes)",
+			len(result.OutboundsJSON), time.Since(joinStartTime), len(previewText))
+	}
+	debugLog("parseAndPreview: Total outbound generation took %v", time.Since(generateStartTime))
 
 	safeFyneDo(state.Window, func() {
 		uiUpdateStartTime := time.Now()
 		setPreviewText(state, previewText)
 		state.ParseButton.Enable()
 		state.ParseButton.SetText("Parse")
-		state.GeneratedOutbounds = selectorsJSON
 		state.ParserConfig = &parserConfig
 		state.previewNeedsParse = false
 		state.refreshOutboundOptions()
@@ -1388,6 +1342,10 @@ func parseAndPreview(state *WizardState) {
 		// Включаем кнопку Save после успешного парсинга (независимо от превью)
 		if state.SaveButton != nil {
 			state.SaveButton.Enable()
+		}
+		// Автоматически генерируем превью на 3-й вкладке после успешного парсинга
+		if state.TemplateData != nil && len(state.GeneratedOutbounds) > 0 {
+			go state.updateTemplatePreviewAsync()
 		}
 	})
 }
@@ -1449,24 +1407,58 @@ func (state *WizardState) applyURLToParserConfig(input string) {
 	debugLog("applyURLToParserConfig: Classified lines: %d subscriptions, %d connections (took %v)",
 		len(subscriptions), len(connections), time.Since(splitStartTime))
 
-	// Обновляем ProxySource
-	if len(parserConfig.ParserConfig.Proxies) == 0 {
-		parserConfig.ParserConfig.Proxies = []core.ProxySource{
-			{},
+	// Сохраняем существующие локальные outbounds для каждого источника
+	// Используем source URL как ключ для сопоставления
+	existingOutboundsMap := make(map[string][]core.OutboundConfig)
+	for i, existingProxy := range parserConfig.ParserConfig.Proxies {
+		if existingProxy.Source != "" {
+			existingOutboundsMap[existingProxy.Source] = existingProxy.Outbounds
+		} else if i == 0 && len(existingProxy.Outbounds) > 0 {
+			// Если первый proxy не имел source, но имел outbounds, сохраняем их
+			// Это может быть случай, когда был только connections без source
+			existingOutboundsMap[""] = existingProxy.Outbounds
 		}
 	}
 
-	proxySource := &parserConfig.ParserConfig.Proxies[0]
+	// Создаем новый массив ProxySource
+	newProxies := make([]core.ProxySource, 0)
 
-	// Сохраняем подписки (если несколько, берем первую или объединяем)
-	if len(subscriptions) > 0 {
-		proxySource.Source = subscriptions[0] // Пока берем первую, можно расширить логику
-	} else {
-		proxySource.Source = ""
+	// Создаем отдельный ProxySource для каждой подписки
+	for _, sub := range subscriptions {
+		proxySource := core.ProxySource{
+			Source: sub,
+		}
+		// Восстанавливаем локальные outbounds, если они были для этого источника
+		if existingOutbounds, ok := existingOutboundsMap[sub]; ok {
+			proxySource.Outbounds = existingOutbounds
+			debugLog("applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), sub)
+		}
+		newProxies = append(newProxies, proxySource)
 	}
 
-	// Сохраняем прямые ссылки в connections
-	proxySource.Connections = connections
+	// Если есть прямые ссылки, создаем отдельный ProxySource для них
+	if len(connections) > 0 {
+		proxySource := core.ProxySource{
+			Connections: connections,
+		}
+		// Если был первый proxy без source, но с outbounds, восстанавливаем их
+		if existingOutbounds, ok := existingOutboundsMap[""]; ok && len(newProxies) == 0 {
+			// Если не было подписок, но были connections с outbounds
+			proxySource.Outbounds = existingOutbounds
+			debugLog("applyURLToParserConfig: Restored %d local outbounds for connections", len(existingOutbounds))
+		}
+		newProxies = append(newProxies, proxySource)
+	}
+
+	// Если нет ни подписок, ни connections, создаем пустой массив
+	if len(newProxies) == 0 {
+		newProxies = []core.ProxySource{{}}
+	}
+
+	// Обновляем массив proxies
+	parserConfig.ParserConfig.Proxies = newProxies
+	debugLog("applyURLToParserConfig: Created %d proxy sources (%d subscriptions, %d with connections)",
+		len(newProxies), len(subscriptions), len(connections))
 
 	serializeStartTime := time.Now()
 	serialized, err := serializeParserConfig(&parserConfig)
@@ -1612,6 +1604,13 @@ func (state *WizardState) triggerParseForPreview() {
 		if state.SaveButton != nil {
 			state.SaveButton.Disable()
 		}
+		// Показываем статус парсинга на 3-й вкладке
+		if state.TemplatePreviewStatusLabel != nil {
+			state.TemplatePreviewStatusLabel.SetText("⏳ Parsing subscriptions and generating outbounds...")
+		}
+		if state.TemplatePreviewEntry != nil {
+			state.setTemplatePreviewText("Parsing configuration... Please wait.")
+		}
 	})
 	go parseAndPreview(state)
 }
@@ -1670,7 +1669,7 @@ func (state *WizardState) updateTemplatePreviewAsync() {
 
 		buildStartTime := time.Now()
 		debugLog("updateTemplatePreviewAsync: Calling buildTemplateConfig")
-		text, err := buildTemplateConfig(state)
+		text, err := buildTemplateConfig(state, true)
 		buildDuration := time.Since(buildStartTime)
 		if err != nil {
 			debugLog("updateTemplatePreviewAsync: buildTemplateConfig failed (took %v): %v", buildDuration, err)
@@ -1710,7 +1709,7 @@ func (state *WizardState) updateTemplatePreviewAsync() {
 	}()
 }
 
-func buildTemplateConfig(state *WizardState) (string, error) {
+func buildTemplateConfig(state *WizardState, forPreview bool) (string, error) {
 	startTime := time.Now()
 	debugLog("buildTemplateConfig: START at %s", startTime.Format("15:04:05.000"))
 
@@ -1773,7 +1772,7 @@ func buildTemplateConfig(state *WizardState) (string, error) {
 			outboundsStartTime := time.Now()
 			debugLog("buildTemplateConfig: Building outbounds block (generated outbounds: %d)",
 				len(state.GeneratedOutbounds))
-			content := state.buildParserOutboundsBlock()
+			content := state.buildParserOutboundsBlock(forPreview)
 			debugLog("buildTemplateConfig: Built outbounds block in %v (content length: %d bytes)",
 				time.Since(outboundsStartTime), len(content))
 
@@ -1916,28 +1915,45 @@ func containsString(items []string, target string) bool {
 	return false
 }
 
-func (state *WizardState) buildParserOutboundsBlock() string {
+func (state *WizardState) buildParserOutboundsBlock(forPreview bool) string {
 	const indent = "    "
 	var builder strings.Builder
 	builder.WriteString(indent + "/** @ParserSTART */\n")
-	count := len(state.GeneratedOutbounds)
-	// Проверяем, есть ли элементы после маркера (любые, не только direct-out)
-	hasAfterMarker := state.TemplateData != nil &&
-		strings.TrimSpace(state.TemplateData.OutboundsAfterMarker) != ""
 
-	for idx, entry := range state.GeneratedOutbounds {
-		// Убираем запятые и пробелы в конце строки, если они есть
-		cleaned := strings.TrimRight(entry, ",\n\r\t ")
-		indented := indentMultiline(cleaned, indent)
-		builder.WriteString(indented)
-		// Добавляем запятую:
-		// - если не последний элемент (всегда)
-		// - или если последний элемент И есть элементы после маркера
-		if idx < count-1 || hasAfterMarker {
-			builder.WriteString(",")
+	// Если это для окна (forPreview == true) И узлов больше maxNodesForFullPreview, показываем статистику
+	if forPreview && state.OutboundStats.NodesCount > maxNodesForFullPreview {
+		statsComment := fmt.Sprintf(`%s// Generated: %d nodes, %d local selectors, %d global selectors
+%s// Total outbounds: %d
+`,
+			indent,
+			state.OutboundStats.NodesCount,
+			state.OutboundStats.LocalSelectorsCount,
+			state.OutboundStats.GlobalSelectorsCount,
+			len(state.GeneratedOutbounds),
+			indent)
+		builder.WriteString(statsComment)
+	} else {
+		// Для файла (forPreview == false) или для малого количества узлов - показываем полный список
+		count := len(state.GeneratedOutbounds)
+		// Проверяем, есть ли элементы после маркера (любые, не только direct-out)
+		hasAfterMarker := state.TemplateData != nil &&
+			strings.TrimSpace(state.TemplateData.OutboundsAfterMarker) != ""
+
+		for idx, entry := range state.GeneratedOutbounds {
+			// Убираем запятые и пробелы в конце строки, если они есть
+			cleaned := strings.TrimRight(entry, ",\n\r\t ")
+			indented := indentMultiline(cleaned, indent)
+			builder.WriteString(indented)
+			// Добавляем запятую:
+			// - если не последний элемент (всегда)
+			// - или если последний элемент И есть элементы после маркера
+			if idx < count-1 || hasAfterMarker {
+				builder.WriteString(",")
+			}
+			builder.WriteString("\n")
 		}
-		builder.WriteString("\n")
 	}
+
 	endLine := indent + "/** @ParserEND */"
 	builder.WriteString(endLine) // Без запятой и без \n
 	return builder.String()

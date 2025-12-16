@@ -134,7 +134,7 @@ type ParserConfig struct {
 }
 
 // ParserConfigVersion is the current version of ParserConfig format
-const ParserConfigVersion = 3
+const ParserConfigVersion = 4
 
 // NormalizeParserConfig normalizes ParserConfig structure:
 // - Ensures version is set to ParserConfigVersion
@@ -169,6 +169,7 @@ type ProxySource struct {
 	Source      string              `json:"source,omitempty"`
 	Connections []string            `json:"connections,omitempty"`
 	Skip        []map[string]string `json:"skip,omitempty"`
+	Outbounds   []OutboundConfig    `json:"outbounds,omitempty"` // Local outbounds for this source (version 4)
 }
 
 // OutboundConfig represents an outbound selector configuration (version 3)

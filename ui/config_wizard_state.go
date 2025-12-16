@@ -54,6 +54,12 @@ type WizardState struct {
 	// Parsed data
 	ParserConfig       *core.ParserConfig
 	GeneratedOutbounds []string
+	// Statistics for preview (used when nodes > maxNodesForFullPreview)
+	OutboundStats struct {
+		NodesCount          int
+		LocalSelectorsCount int
+		GlobalSelectorsCount int
+	}
 
 	// Template data for second tab
 	TemplateData                *TemplateData

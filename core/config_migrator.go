@@ -69,8 +69,7 @@ func NewConfigMigrator() *ConfigMigrator {
 	// Register all migrations
 	migrator.RegisterMigration(1, migrateV1ToV2)
 	migrator.RegisterMigration(2, migrateV2ToV3)
-	// Future migrations can be added here:
-	// migrator.RegisterMigration(3, migrateV3ToV4)
+	migrator.RegisterMigration(3, migrateV3ToV4)
 
 	return migrator
 }
@@ -307,4 +306,21 @@ func convertV2OutboundsToV3(v2Outbounds []v2OutboundConfig) []OutboundConfig {
 		v3Outbounds = append(v3Outbounds, v3)
 	}
 	return v3Outbounds
+}
+
+// migrateV3ToV4 migrates JSON content from version 3 to version 4
+// Version 4 adds local outbounds to ProxySource, but the OutboundConfig structure remains the same.
+// Takes JSON string, returns migrated JSON string
+func migrateV3ToV4(jsonContent string) (string, error) {
+	var v3 ParserConfig
+	if err := json.Unmarshal([]byte(jsonContent), &v3); err != nil {
+		return "", fmt.Errorf("failed to parse version 3 config: %w", err)
+	}
+	v3.ParserConfig.Version = 4 // Update version number
+	resultJSON, err := json.MarshalIndent(v3, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal version 4 config: %w", err)
+	}
+	log.Printf("migrateV3ToV4: Successfully migrated from version 3 to version 4")
+	return string(resultJSON), nil
 }
