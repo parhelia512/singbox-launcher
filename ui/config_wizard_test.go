@@ -199,19 +199,13 @@ func TestGetAvailableOutbounds(t *testing.T) {
 						LastUpdated string `json:"last_updated,omitempty"`
 					} `json:"parser,omitempty"`
 				}{
-					Outbounds: []core.OutboundConfig{
-						{
-							Tag:  "proxy-out",
-							Type: "selector",
-							Outbounds: struct {
-								Proxies          map[string]interface{} `json:"proxies,omitempty"`
-								AddOutbounds     []string               `json:"addOutbounds,omitempty"`
-								PreferredDefault map[string]interface{} `json:"preferredDefault,omitempty"`
-							}{
-								AddOutbounds: []string{"extra-outbound"},
-							},
-						},
+				Outbounds: []core.OutboundConfig{
+					{
+						Tag:          "proxy-out",
+						Type:         "selector",
+						AddOutbounds: []string{"extra-outbound"},
 					},
+				},
 				},
 			},
 		}

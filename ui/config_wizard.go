@@ -2005,7 +2005,7 @@ func (state *WizardState) getAvailableOutbounds() []string {
 			if outbound.Tag != "" {
 				tags[outbound.Tag] = struct{}{}
 			}
-			for _, extra := range outbound.Outbounds.AddOutbounds {
+			for _, extra := range outbound.AddOutbounds {
 				tags[extra] = struct{}{}
 			}
 		}

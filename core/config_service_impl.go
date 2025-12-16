@@ -243,12 +243,8 @@ func (svc *ConfigService) ProcessProxySource(proxySource ProxySource, tagCounts 
 // determines default outbound from preferredDefault if specified, and builds
 // the selector JSON with correct field order.
 func (svc *ConfigService) GenerateSelector(allNodes []*parsers.ParsedNode, outboundConfig OutboundConfig) (string, error) {
-	// Filter nodes based on filters (version 3) or legacy outbounds.proxies (version 2 and below)
+	// Filter nodes based on filters (version 3)
 	filterMap := outboundConfig.Filters
-	if filterMap == nil && outboundConfig.Outbounds.Proxies != nil {
-		// Fallback to legacy structure for backward compatibility during migration
-		filterMap = outboundConfig.Outbounds.Proxies
-	}
 	filteredNodes := filterNodesForSelector(allNodes, filterMap)
 
 	if len(filteredNodes) == 0 {
@@ -261,12 +257,8 @@ func (svc *ConfigService) GenerateSelector(allNodes []*parsers.ParsedNode, outbo
 	seenTags := make(map[string]bool)
 	duplicateCountInSelector := 0
 
-	// Add addOutbounds first (version 3) or legacy outbounds.addOutbounds (version 2 and below)
+	// Add addOutbounds first (version 3)
 	addOutboundsList := outboundConfig.AddOutbounds
-	if len(addOutboundsList) == 0 && len(outboundConfig.Outbounds.AddOutbounds) > 0 {
-		// Fallback to legacy structure for backward compatibility during migration
-		addOutboundsList = outboundConfig.Outbounds.AddOutbounds
-	}
 	if len(addOutboundsList) > 0 {
 		log.Printf("Parser: Adding %d addOutbounds to selector '%s'", len(addOutboundsList), outboundConfig.Tag)
 		for _, tag := range addOutboundsList {
@@ -297,13 +289,8 @@ func (svc *ConfigService) GenerateSelector(allNodes []*parsers.ParsedNode, outbo
 	}
 	log.Printf("Parser: Selector '%s' will have %d unique outbounds", outboundConfig.Tag, len(outboundsList))
 
-	// Determine default - only if preferredDefault is specified in config
-	// Use version 3 preferredDefault or legacy outbounds.preferredDefault (version 2 and below)
+	// Determine default - only if preferredDefault is specified in config (version 3)
 	preferredDefaultMap := outboundConfig.PreferredDefault
-	if len(preferredDefaultMap) == 0 && len(outboundConfig.Outbounds.PreferredDefault) > 0 {
-		// Fallback to legacy structure for backward compatibility during migration
-		preferredDefaultMap = outboundConfig.Outbounds.PreferredDefault
-	}
 	defaultTag := ""
 	if len(preferredDefaultMap) > 0 {
 		// Find first node matching preferredDefault filter
@@ -751,20 +738,13 @@ func (svc *ConfigService) UpdateConfigFromSubscriptions() error {
 	updateParserProgress(ac, 90, "Writing to config file...")
 
 	content := strings.Join(selectorsJSON, "\n")
-	if err := writeToConfig(ac.ConfigPath, content); err != nil {
+	if err := writeToConfig(ac.ConfigPath, content, config); err != nil {
 		updateParserProgress(ac, -1, fmt.Sprintf("Write error: %v", err))
 		return fmt.Errorf("failed to write to config: %w", err)
 	}
 
 	log.Printf("Parser: Done! File %s successfully updated.", ac.ConfigPath)
-
-	// Update last_updated timestamp in @ParserConfig block
-	if err := UpdateLastUpdatedInConfig(ac.ConfigPath, time.Now().UTC()); err != nil {
-		log.Printf("Parser: Warning: Failed to update last_updated timestamp: %v", err)
-		// Don't fail the whole operation if timestamp update fails
-	} else {
-		log.Printf("Parser: Successfully updated last_updated timestamp")
-	}
+	log.Printf("Parser: Successfully updated last_updated timestamp")
 
 	updateParserProgress(ac, 100, "Configuration updated successfully!")
 
@@ -772,7 +752,8 @@ func (svc *ConfigService) UpdateConfigFromSubscriptions() error {
 }
 
 // writeToConfig writes content between @ParserSTART and @ParserEND markers
-func writeToConfig(configPath string, content string) error {
+// Also updates @ParserConfig block with last_updated timestamp in a single file write
+func writeToConfig(configPath string, content string, parserConfig *ParserConfig) error {
 	// Read config file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -796,10 +777,37 @@ func writeToConfig(configPath string, content string) error {
 		return fmt.Errorf("invalid marker positions")
 	}
 
-	// Build new content
+	// Build new content with updated @ParserSTART/@ParserEND section
 	newContent := configStr[:startIdx+len(startMarker)] + "\n" + content + "\n" + configStr[endIdx:]
 
-	// Write to file
+	// Also update @ParserConfig block if parserConfig is provided
+	if parserConfig != nil {
+		// Update last_updated timestamp
+		parserConfig.ParserConfig.Parser.LastUpdated = time.Now().UTC().Format(time.RFC3339)
+
+		// Normalize config (ensures version is set, sets default reload to "4h" if missing)
+		NormalizeParserConfig(parserConfig, false)
+
+		// Find the @ParserConfig block using regex
+		pattern := regexp.MustCompile(`(/\*\*\s*@ParserConfig\s*\n)([\s\S]*?)(\*/)`)
+		matches := pattern.FindSubmatch([]byte(newContent))
+
+		if len(matches) >= 4 {
+			// Serialize parserConfig to JSON with indentation
+			outerJSON := map[string]interface{}{
+				"ParserConfig": parserConfig.ParserConfig,
+			}
+			finalJSON, err := json.MarshalIndent(outerJSON, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal outer @ParserConfig: %w", err)
+			}
+
+			parserConfigBlock := string(matches[1]) + string(finalJSON) + "\n" + string(matches[3])
+			newContent = pattern.ReplaceAllString(newContent, parserConfigBlock)
+		}
+	}
+
+	// Write to file (single write operation)
 	if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}

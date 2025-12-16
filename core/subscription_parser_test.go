@@ -87,7 +87,6 @@ func TestDecodeSubscriptionContent(t *testing.T) {
 func TestNormalizeParserConfig(t *testing.T) {
 	t.Run("Version 1 to version 2 migration", func(t *testing.T) {
 		config := &ParserConfig{
-			Version: 1,
 			ParserConfig: struct {
 				Version   int              `json:"version,omitempty"`
 				Proxies   []ProxySource    `json:"proxies"`
@@ -99,9 +98,6 @@ func TestNormalizeParserConfig(t *testing.T) {
 			}{},
 		}
 		NormalizeParserConfig(config, false)
-		if config.Version != 0 {
-			t.Errorf("Expected Version to be 0 after migration, got %d", config.Version)
-		}
 		if config.ParserConfig.Version != ParserConfigVersion {
 			t.Errorf("Expected ParserConfig.Version to be %d, got %d", ParserConfigVersion, config.ParserConfig.Version)
 		}
@@ -242,67 +238,6 @@ func TestExtractParserConfig(t *testing.T) {
 	})
 }
 
-// TestUpdateLastUpdatedInConfig tests the UpdateLastUpdatedInConfig function
-func TestUpdateLastUpdatedInConfig(t *testing.T) {
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.json")
-
-	parserConfigJSON := `{
-  "ParserConfig": {
-    "version": 3,
-    "proxies": [],
-    "outbounds": [],
-    "parser": {
-      "reload": "4h"
-    }
-  }
-}`
-
-	configContent := `{
-  "log": {},
-  /** @ParserConfig
-` + parserConfigJSON + `
-*/
-  "outbounds": []
-}`
-
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("Failed to create test config file: %v", err)
-	}
-
-	t.Run("Update last_updated", func(t *testing.T) {
-		updateTime := time.Now().UTC()
-		err := UpdateLastUpdatedInConfig(configPath, updateTime)
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-
-		// Verify the update
-		config, err := ExtractParserConfig(configPath)
-		if err != nil {
-			t.Fatalf("Failed to extract config after update: %v", err)
-		}
-		if config.ParserConfig.Parser.LastUpdated == "" {
-			t.Error("Expected last_updated to be set")
-		}
-		parsedTime, err := time.Parse(time.RFC3339, config.ParserConfig.Parser.LastUpdated)
-		if err != nil {
-			t.Fatalf("Failed to parse last_updated: %v", err)
-		}
-		// Allow 1 second tolerance
-		diff := parsedTime.Sub(updateTime)
-		if diff < -time.Second || diff > time.Second {
-			t.Errorf("last_updated time %v differs from expected %v by more than 1 second", parsedTime, updateTime)
-		}
-	})
-
-	t.Run("Update nonexistent config", func(t *testing.T) {
-		err := UpdateLastUpdatedInConfig("/nonexistent/config.json", time.Now())
-		if err == nil {
-			t.Error("Expected error for nonexistent file, got nil")
-		}
-	})
-}
 
 // TestIsSubscriptionURL tests the IsSubscriptionURL function
 func TestIsSubscriptionURL(t *testing.T) {

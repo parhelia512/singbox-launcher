@@ -120,10 +120,8 @@ func FetchSubscription(url string) ([]byte, error) {
 }
 
 // ParserConfig represents the configuration structure from @ParserConfig block
-// Supports versions 1, 2, and 3 (current) with automatic migration
+// Clean structure for version 3 (legacy versions are migrated automatically)
 type ParserConfig struct {
-	// Version 1 structure (legacy support)
-	Version      int `json:"version,omitempty"`
 	ParserConfig struct {
 		Version   int              `json:"version,omitempty"`
 		Proxies   []ProxySource    `json:"proxies"`
@@ -138,149 +136,20 @@ type ParserConfig struct {
 // ParserConfigVersion is the current version of ParserConfig format
 const ParserConfigVersion = 3
 
-// MigrationFunc is a function that migrates config from version N to version N+1
-type MigrationFunc func(*ParserConfig) error
-
-// ConfigMigrator handles automatic migration of ParserConfig between versions
-type ConfigMigrator struct {
-	migrations map[int]MigrationFunc
-}
-
-// NewConfigMigrator creates a new migrator with registered migrations
-func NewConfigMigrator() *ConfigMigrator {
-	migrator := &ConfigMigrator{
-		migrations: make(map[int]MigrationFunc),
-	}
-
-	// Register all migrations
-	migrator.RegisterMigration(1, migrateV1ToV2)
-	migrator.RegisterMigration(2, migrateV2ToV3)
-	// Future migrations can be added here:
-	// migrator.RegisterMigration(3, migrateV3ToV4)
-
-	return migrator
-}
-
-// RegisterMigration registers a migration function for a specific version
-func (m *ConfigMigrator) RegisterMigration(fromVersion int, fn MigrationFunc) {
-	m.migrations[fromVersion] = fn
-}
-
-// Migrate migrates ParserConfig from its current version to the target version
-// Applies migrations sequentially: currentVersion -> currentVersion+1 -> ... -> targetVersion
-func (m *ConfigMigrator) Migrate(config *ParserConfig, targetVersion int) error {
-	if config == nil {
-		return fmt.Errorf("config is nil")
-	}
-
-	currentVersion := config.ParserConfig.Version
-
-	// Handle legacy version 1 format (version at top level)
-	if config.Version > 0 && config.ParserConfig.Version == 0 {
-		currentVersion = config.Version
-		log.Printf("ConfigMigrator: Detected legacy version 1 format, will migrate to version 2")
-	}
-
-	if currentVersion == 0 {
-		// No version specified - treat as version 1 and migrate from there
-		// This ensures all migrations are applied even for new configs
-		currentVersion = 1
-		log.Printf("ConfigMigrator: No version specified, treating as version 1 and migrating to version %d", targetVersion)
-		// Don't set version yet - migrations will set it
-	}
-
-	if currentVersion == targetVersion {
-		// Already at target version
-		return nil
-	}
-
-	if currentVersion > targetVersion {
-		return fmt.Errorf("config version %d is newer than supported version %d. Please update the application",
-			currentVersion, targetVersion)
-	}
-
-	// Apply migrations sequentially
-	for version := currentVersion; version < targetVersion; version++ {
-		migration, exists := m.migrations[version]
-		if !exists {
-			return fmt.Errorf("migration from version %d to %d not found", version, version+1)
-		}
-
-		log.Printf("ConfigMigrator: Migrating from version %d to version %d", version, version+1)
-
-		if err := migration(config); err != nil {
-			return fmt.Errorf("failed to migrate from version %d to %d: %w", version, version+1, err)
-		}
-
-		// Update version after successful migration
-		config.ParserConfig.Version = version + 1
-		log.Printf("ConfigMigrator: Successfully migrated to version %d", version+1)
-	}
-
-	return nil
-}
-
-// migrateV1ToV2 migrates ParserConfig from version 1 to version 2
-// Version 1 had version at top level, version 2 moved it inside ParserConfig
-func migrateV1ToV2(config *ParserConfig) error {
-	// If version is at top level, move it inside ParserConfig
-	if config.Version > 0 && config.ParserConfig.Version == 0 {
-		config.ParserConfig.Version = config.Version
-		config.Version = 0
-		log.Printf("migrateV1ToV2: Moved version from top level to ParserConfig")
-	}
-
-	// Note: reload will be set by NormalizeParserConfig if missing
-
-	return nil
-}
-
-// migrateV2ToV3 migrates ParserConfig from version 2 to version 3
-// Version 3 removes nested "outbounds" object and renames "proxies" to "filters"
-func migrateV2ToV3(config *ParserConfig) error {
-	for i := range config.ParserConfig.Outbounds {
-		outbound := &config.ParserConfig.Outbounds[i]
-
-		// Migrate nested outbounds structure to flat structure
-		if outbound.Outbounds.Proxies != nil {
-			outbound.Filters = outbound.Outbounds.Proxies
-			outbound.Outbounds.Proxies = nil
-			log.Printf("migrateV2ToV3: Migrated 'outbounds.proxies' to 'filters' for outbound '%s'", outbound.Tag)
-		}
-
-		if len(outbound.Outbounds.AddOutbounds) > 0 {
-			// Copy addOutbounds to top level
-			outbound.AddOutbounds = outbound.Outbounds.AddOutbounds
-			outbound.Outbounds.AddOutbounds = nil
-			log.Printf("migrateV2ToV3: Migrated 'outbounds.addOutbounds' to top level for outbound '%s'", outbound.Tag)
-		}
-
-		if len(outbound.Outbounds.PreferredDefault) > 0 {
-			// Copy preferredDefault to top level
-			outbound.PreferredDefault = outbound.Outbounds.PreferredDefault
-			outbound.Outbounds.PreferredDefault = nil
-			log.Printf("migrateV2ToV3: Migrated 'outbounds.preferredDefault' to top level for outbound '%s'", outbound.Tag)
-		}
-	}
-
-	return nil
-}
-
 // NormalizeParserConfig normalizes ParserConfig structure:
-// - Migrates to current version using ConfigMigrator
 // - Ensures version is set to ParserConfigVersion
 // - Sets default reload to "4h" if not specified
 // - Optionally updates last_updated timestamp (if updateLastUpdated is true)
+// Note: Migration is handled in ExtractParserConfig
+// This function works with already-migrated clean ParserConfig
 func NormalizeParserConfig(parserConfig *ParserConfig, updateLastUpdated bool) {
 	if parserConfig == nil {
 		return
 	}
 
-	// Create migrator and apply migrations
-	migrator := NewConfigMigrator()
-	if err := migrator.Migrate(parserConfig, ParserConfigVersion); err != nil {
-		log.Printf("NormalizeParserConfig: Migration error: %v", err)
-		// Continue anyway - try to set defaults
+	// Ensure version is set
+	if parserConfig.ParserConfig.Version == 0 {
+		parserConfig.ParserConfig.Version = ParserConfigVersion
 	}
 
 	// Ensure parser object exists (create if missing)
@@ -302,28 +171,21 @@ type ProxySource struct {
 	Skip        []map[string]string `json:"skip,omitempty"`
 }
 
-// OutboundConfig represents an outbound selector configuration
-// Version 3: flat structure without nested "outbounds" object
+// OutboundConfig represents an outbound selector configuration (version 3)
+// Clean structure without legacy fields - used in main codebase
 type OutboundConfig struct {
 	Tag              string                 `json:"tag"`
 	Type             string                 `json:"type"`
 	Options          map[string]interface{} `json:"options,omitempty"`
-	Filters          map[string]interface{} `json:"filters,omitempty"`          // Version 3: renamed from outbounds.proxies
-	AddOutbounds     []string               `json:"addOutbounds,omitempty"`     // Version 3: moved from outbounds.addOutbounds
-	PreferredDefault map[string]interface{} `json:"preferredDefault,omitempty"` // Version 3: moved from outbounds.preferredDefault
+	Filters          map[string]interface{} `json:"filters,omitempty"`
+	AddOutbounds     []string               `json:"addOutbounds,omitempty"`
+	PreferredDefault map[string]interface{} `json:"preferredDefault,omitempty"`
 	Comment          string                 `json:"comment,omitempty"`
-
-	// Legacy fields for migration (only used during unmarshaling)
-	// These fields are ignored during marshaling if empty
-	Outbounds struct {
-		Proxies          map[string]interface{} `json:"proxies,omitempty"`
-		AddOutbounds     []string               `json:"addOutbounds,omitempty"`
-		PreferredDefault map[string]interface{} `json:"preferredDefault,omitempty"`
-	} `json:"outbounds,omitempty"` // Version 2 and below: nested structure
 }
 
 // ExtractParserConfig extracts the @ParserConfig block from config.json
 // Returns the parsed ParserConfig structure and error if extraction or parsing fails
+// Uses ConfigMigrator for handling legacy versions and migrations
 func ExtractParserConfig(configPath string) (*ParserConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -342,16 +204,24 @@ func ExtractParserConfig(configPath string) (*ParserConfig, error) {
 	// Extract the JSON content from the comment block
 	jsonContent := strings.TrimSpace(string(matches[1]))
 
-	// Parse the JSON
-	var parserConfig ParserConfig
-	if err := json.Unmarshal([]byte(jsonContent), &parserConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse @ParserConfig JSON: %w", err)
-	}
+	// Extract version from JSON to check if migration is needed
+	currentVersion := extractVersion(jsonContent)
 
-	// Automatically migrate to current version
-	migrator := NewConfigMigrator()
-	if err := migrator.Migrate(&parserConfig, ParserConfigVersion); err != nil {
-		return nil, fmt.Errorf("failed to migrate config: %w", err)
+	var parserConfig *ParserConfig
+
+	// If version is already current, parse directly without migration
+	if currentVersion == ParserConfigVersion {
+		if err := json.Unmarshal([]byte(jsonContent), &parserConfig); err != nil {
+			return nil, fmt.Errorf("failed to parse @ParserConfig JSON: %w", err)
+		}
+	} else {
+		// Version needs migration or is 0 - use migrator (it will handle version 0 and check for too new versions)
+		migrator := NewConfigMigrator()
+		var err error
+		parserConfig, err = migrator.MigrateRaw(jsonContent, currentVersion, ParserConfigVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to migrate config: %w", err)
+		}
 	}
 
 	log.Printf("ExtractParserConfig: Successfully extracted @ParserConfig (version %d) with %d proxy sources and %d outbounds",
@@ -359,63 +229,5 @@ func ExtractParserConfig(configPath string) (*ParserConfig, error) {
 		len(parserConfig.ParserConfig.Proxies),
 		len(parserConfig.ParserConfig.Outbounds))
 
-	return &parserConfig, nil
-}
-
-// UpdateLastUpdatedInConfig updates the last_updated field in the @ParserConfig block
-func UpdateLastUpdatedInConfig(configPath string, lastUpdated time.Time) error {
-	log.Printf("UpdateLastUpdatedInConfig: Updating last_updated to %s", lastUpdated.Format(time.RFC3339))
-
-	// Read config file
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	// Find the @ParserConfig block using regex
-	pattern := regexp.MustCompile(`(/\*\*\s*@ParserConfig\s*\n)([\s\S]*?)(\*/)`)
-	matches := pattern.FindSubmatch(data)
-
-	if len(matches) < 4 {
-		return fmt.Errorf("@ParserConfig block not found in config.json")
-	}
-
-	// Extract the JSON content from the comment block
-	jsonContent := strings.TrimSpace(string(matches[2]))
-
-	// Parse the JSON
-	var parserConfig ParserConfig
-	if err := json.Unmarshal([]byte(jsonContent), &parserConfig); err != nil {
-		return fmt.Errorf("failed to parse @ParserConfig JSON: %w", err)
-	}
-
-	// Normalize config (ensures version is set, applies migrations, sets default reload to "4h" if missing)
-	// Pass false to updateLastUpdated because we'll set it explicitly below
-	NormalizeParserConfig(&parserConfig, false)
-
-	// Update last_updated field (always update on each run)
-	parserConfig.ParserConfig.Parser.LastUpdated = lastUpdated.Format(time.RFC3339)
-
-	// Serialize back to JSON with indentation
-	// Wrap ParserConfig in outer object for version 2 format
-	outerJSON := map[string]interface{}{
-		"ParserConfig": parserConfig.ParserConfig,
-	}
-	finalJSON, err := json.MarshalIndent(outerJSON, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal outer @ParserConfig: %w", err)
-	}
-
-	newBlock := string(matches[1]) + string(finalJSON) + "\n" + string(matches[3])
-
-	// Replace the block in the file
-	newContent := pattern.ReplaceAll(data, []byte(newBlock))
-
-	// Write to file
-	if err := os.WriteFile(configPath, newContent, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	log.Printf("UpdateLastUpdatedInConfig: Successfully updated last_updated to %s", parserConfig.ParserConfig.Parser.LastUpdated)
-	return nil
+	return parserConfig, nil
 }
