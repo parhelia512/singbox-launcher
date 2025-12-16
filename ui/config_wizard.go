@@ -33,6 +33,13 @@ import (
 // If nodes count exceeds this value, statistics comment will be shown instead.
 const maxNodesForFullPreview = 20
 
+// generateTagPrefix generates a tag prefix for a subscription based on its index.
+// Format: "1:", "2:", "3:", etc.
+// This function can be easily modified to change the prefix format.
+func generateTagPrefix(index int) string {
+	return fmt.Sprintf("%d:", index)
+}
+
 // ShowConfigWizard открывает окно мастера конфигурации
 func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	state := &WizardState{
@@ -888,7 +895,18 @@ func loadConfigFromFile(state *WizardState) (bool, error) {
 
 	state.ParserConfig = parserConfig
 
-	// Заполняем поле URL - объединяем все Source и Connections из всех proxies
+	// Заполняем поле ParserConfig ПЕРВЫМ, чтобы applyURLToParserConfig мог его прочитать
+	parserConfigJSON, err := serializeParserConfig(parserConfig)
+	if err != nil {
+		errorLog("ConfigWizard: Failed to serialize ParserConfig: %v", err)
+		return false, err
+	}
+
+	state.parserConfigUpdating = true
+	state.ParserConfigEntry.SetText(string(parserConfigJSON))
+	state.parserConfigUpdating = false
+
+	// Теперь заполняем поле URL - это вызовет applyURLToParserConfig, который прочитает уже заполненный ParserConfigEntry
 	if len(parserConfig.ParserConfig.Proxies) > 0 {
 		lines := make([]string, 0)
 		for _, proxySource := range parserConfig.ParserConfig.Proxies {
@@ -900,15 +918,6 @@ func loadConfigFromFile(state *WizardState) (bool, error) {
 		state.VLESSURLEntry.SetText(strings.Join(lines, "\n"))
 	}
 
-	parserConfigJSON, err := serializeParserConfig(parserConfig)
-	if err != nil {
-		errorLog("ConfigWizard: Failed to serialize ParserConfig: %v", err)
-		return false, err
-	}
-
-	state.parserConfigUpdating = true
-	state.ParserConfigEntry.SetText(string(parserConfigJSON))
-	state.parserConfigUpdating = false
 	state.previewNeedsParse = true
 
 	infoLog("ConfigWizard: Successfully loaded config from file")
@@ -1456,7 +1465,7 @@ func (state *WizardState) applyURLToParserConfig(input string) {
 			debugLog("applyURLToParserConfig: Restored tag_prefix '%s' for subscription: %s", existingTagPrefix, sub)
 		} else if autoAddPrefix {
 			// Автоматически добавляем tag_prefix с порядковым номером для новых подписок (только если подписок несколько)
-			proxySource.TagPrefix = fmt.Sprintf("%d — ", idx+1)
+			proxySource.TagPrefix = generateTagPrefix(idx + 1)
 			debugLog("applyURLToParserConfig: Added automatic tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
 		}
 		// Восстанавливаем tag_postfix, если он был установлен для этого источника
@@ -2095,12 +2104,24 @@ func (state *WizardState) getAvailableOutbounds() []string {
 		}
 	}
 	if parserCfg != nil {
+		// Добавляем глобальные outbounds
 		for _, outbound := range parserCfg.ParserConfig.Outbounds {
 			if outbound.Tag != "" {
 				tags[outbound.Tag] = struct{}{}
 			}
 			for _, extra := range outbound.AddOutbounds {
 				tags[extra] = struct{}{}
+			}
+		}
+		// Добавляем локальные outbounds из всех ProxySource
+		for _, proxySource := range parserCfg.ParserConfig.Proxies {
+			for _, outbound := range proxySource.Outbounds {
+				if outbound.Tag != "" {
+					tags[outbound.Tag] = struct{}{}
+				}
+				for _, extra := range outbound.AddOutbounds {
+					tags[extra] = struct{}{}
+				}
 			}
 		}
 	}
