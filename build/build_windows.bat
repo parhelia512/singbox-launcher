@@ -119,6 +119,13 @@ if exist "%OUTPUT_FILENAME%" (
 
 echo Using output file: "%OUTPUT_FILENAME%"
 
+:: Получаем версию из git тега
+echo.
+echo === Getting version from git tag ===
+for /f "delims=" %%v in ('git describe --tags --always --dirty 2^>nul') do set VERSION=%%v
+if "%VERSION%"=="" set VERSION=0.4.1
+echo Version: %VERSION%
+
 :: Собираем проект
 echo.
 echo === Starting Build ===
@@ -126,7 +133,7 @@ echo Building with CGO_ENABLED=%CGO_ENABLED%
 echo GOROOT=%GOROOT%
 echo.
 echo This may take a while on first build...
-go build -v -buildvcs=false -ldflags="-H windowsgui -s -w" -o "%OUTPUT_FILENAME%"
+go build -v -buildvcs=false -ldflags="-H windowsgui -s -w -X singbox-launcher/internal/constants.AppVersion=%VERSION%" -o "%OUTPUT_FILENAME%"
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

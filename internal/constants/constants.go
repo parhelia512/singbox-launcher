@@ -34,6 +34,7 @@ const (
 )
 
 // Application version
-const (
-	AppVersion = "0.4.1"
+// Can be overridden at build time using -ldflags="-X singbox-launcher/internal/constants.AppVersion=..."
+var (
+	AppVersion = "0.4.1" // Default version, overridden by build scripts from git tag
 )

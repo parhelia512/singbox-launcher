@@ -35,8 +35,13 @@ done
 echo "Using output file: $OUTPUT_FILENAME"
 
 echo ""
+echo "=== Getting version from git tag ==="
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.4.1")
+echo "Version: $VERSION"
+
+echo ""
 echo "=== Starting Build ==="
-go build -buildvcs=false -ldflags="-s -w" -o "$OUTPUT_FILENAME"
+go build -buildvcs=false -ldflags="-s -w -X singbox-launcher/internal/constants.AppVersion=$VERSION" -o "$OUTPUT_FILENAME"
 
 if [ $? -eq 0 ]; then
     echo ""
