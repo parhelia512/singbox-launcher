@@ -35,5 +35,5 @@ const (
 
 // Application version
 const (
-	AppVersion = "0.3.1"
+	AppVersion = "0.3.4"
 )
