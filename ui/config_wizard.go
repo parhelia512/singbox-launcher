@@ -380,7 +380,7 @@ func createVLESSSourceTab(state *WizardState) fyne.CanvasObject {
 	urlLabel.Importance = widget.MediumImportance
 
 	state.VLESSURLEntry = widget.NewMultiLineEntry()
-	state.VLESSURLEntry.SetPlaceHolder("https://example.com/subscription\nor\nvless://...\nvmess://...")
+	state.VLESSURLEntry.SetPlaceHolder("https://example.com/subscription\nor\nvless://...\nvmess://...\nhysteria2://...")
 	state.VLESSURLEntry.Wrapping = fyne.TextWrapOff
 	state.VLESSURLEntry.OnChanged = func(value string) {
 		state.previewNeedsParse = true
@@ -388,7 +388,7 @@ func createVLESSSourceTab(state *WizardState) fyne.CanvasObject {
 	}
 
 	// Подсказка под полем ввода с кнопкой Check справа
-	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://).\nFor multiple links, use a new line for each.")
+	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://, hysteria2://).\nFor multiple links, use a new line for each.")
 	hintLabel.Wrapping = fyne.TextWrapWord
 
 	hintRow := container.NewBorder(
@@ -1098,8 +1098,7 @@ func checkURL(state *WizardState) {
 			validInSub := 0
 			for _, subLine := range subLines {
 				subLine = strings.TrimSpace(subLine)
-				if subLine != "" && (strings.HasPrefix(subLine, "vless://") || strings.HasPrefix(subLine, "vmess://") ||
-					strings.HasPrefix(subLine, "trojan://") || strings.HasPrefix(subLine, "ss://")) {
+				if subLine != "" && parsers.IsDirectLink(subLine) {
 					validInSub++
 					totalValid++
 					if len(previewLines) < 10 { // Ограничиваем превью

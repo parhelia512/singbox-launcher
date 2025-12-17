@@ -1,5 +1,5 @@
 // Package parsers provides parsing logic for various proxy node formats.
-// It supports VLESS, VMess, Trojan, and Shadowsocks protocols, handling
+// It supports VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 protocols, handling
 // both direct links and subscription formats.
 package parsers
 
@@ -36,7 +36,8 @@ func IsDirectLink(input string) bool {
 	return strings.HasPrefix(trimmed, "vless://") ||
 		strings.HasPrefix(trimmed, "vmess://") ||
 		strings.HasPrefix(trimmed, "trojan://") ||
-		strings.HasPrefix(trimmed, "ss://")
+		strings.HasPrefix(trimmed, "ss://") ||
+		strings.HasPrefix(trimmed, "hysteria2://")
 }
 
 // ParseNode parses a single node URI and applies skip filters
@@ -85,6 +86,8 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 		scheme = "trojan"
 	} else if strings.HasPrefix(uri, "ss://") {
 		scheme = "ss"
+	} else if strings.HasPrefix(uri, "hysteria2://") {
+		scheme = "hysteria2"
 
 		// SS links in SIP002 format: ss://base64(method:password)@server:port#tag
 		ssPart := strings.TrimPrefix(uri, "ss://")
@@ -153,15 +156,8 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 	// Extract port
 	port := parsedURL.Port()
 	if port == "" {
-		// Default ports
-		switch scheme {
-		case "vless", "vmess":
-			node.Port = 443
-		case "trojan":
-			node.Port = 443
-		case "ss":
-			node.Port = 443
-		}
+		// Default ports for all protocols
+		node.Port = 443
 	} else {
 		if p, err := strconv.Atoi(port); err == nil {
 			node.Port = p
@@ -171,6 +167,7 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 	}
 
 	// Extract UUID/user
+	// For hysteria2, password is in username part of userinfo (hysteria2://password@server:port)
 	if parsedURL.User != nil {
 		node.UUID = parsedURL.User.Username()
 	}
@@ -189,14 +186,20 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 		// Try to extract from path (some formats use path for label)
 		if parsedURL.Path != "" && parsedURL.Path != "/" {
 			node.Label = strings.TrimPrefix(parsedURL.Path, "/")
-		} else if parsedURL.User != nil {
-			// Some formats encode label in username
+		} else if parsedURL.User != nil && scheme != "hysteria2" {
+			// Some formats encode label in username (but not for hysteria2, where it's the password)
 			node.Label = parsedURL.User.Username()
 		}
 	}
 
 	// Extract tag and comment from label
 	node.Tag, node.Comment = extractTagAndComment(node.Label)
+
+	// Generate tag if missing
+	if node.Tag == "" {
+		node.Tag = generateDefaultTag(scheme, node.Server, node.Port)
+		node.Comment = node.Tag
+	}
 
 	// Normalize flag
 	node.Tag = normalizeFlagTag(node.Tag)
@@ -267,6 +270,11 @@ func extractTagAndComment(label string) (tag, comment string) {
 
 func normalizeFlagTag(tag string) string {
 	return strings.ReplaceAll(tag, "🇪🇳", "🇬🇧")
+}
+
+// generateDefaultTag generates a default tag for a node when tag is missing
+func generateDefaultTag(scheme, server string, port int) string {
+	return fmt.Sprintf("%s-%s-%d", scheme, server, port)
 }
 
 func shouldSkipNode(node *ParsedNode, skipFilters []map[string]string) bool {
@@ -474,9 +482,85 @@ func buildOutbound(node *ParsedNode) map[string]interface{} {
 		if password := node.Query.Get("password"); password != "" {
 			outbound["password"] = password
 		}
+	} else if node.Scheme == "hysteria2" {
+		buildHysteria2Outbound(node, outbound)
 	}
 
 	return outbound
+}
+
+// buildHysteria2Outbound builds outbound configuration for Hysteria2 protocol
+func buildHysteria2Outbound(node *ParsedNode, outbound map[string]interface{}) {
+	// Password is required (stored in UUID field from userinfo)
+	if node.UUID != "" {
+		outbound["password"] = node.UUID
+	} else {
+		log.Printf("Parser: Warning: Hysteria2 link missing password. URI might be invalid.")
+	}
+
+	// Optional: ports range (mport parameter)
+	if mport := node.Query.Get("mport"); mport != "" {
+		outbound["ports"] = mport
+	}
+
+	// Optional: obfs (obfuscation)
+	if obfs := node.Query.Get("obfs"); obfs != "" {
+		obfsConfig := map[string]interface{}{
+			"type": obfs,
+		}
+		if obfsPassword := node.Query.Get("obfs-password"); obfsPassword != "" {
+			obfsConfig["password"] = obfsPassword
+		}
+		outbound["obfs"] = obfsConfig
+	}
+
+	// Optional: bandwidth (up/down in Mbps)
+	if up := node.Query.Get("upmbps"); up != "" {
+		if upMBps, err := strconv.Atoi(up); err == nil {
+			outbound["up_mbps"] = upMBps
+		}
+	}
+	if down := node.Query.Get("downmbps"); down != "" {
+		if downMBps, err := strconv.Atoi(down); err == nil {
+			outbound["down_mbps"] = downMBps
+		}
+	}
+
+	// TLS settings (required for hysteria2)
+	buildHysteria2TLS(node, outbound)
+}
+
+// buildHysteria2TLS builds TLS configuration for Hysteria2
+func buildHysteria2TLS(node *ParsedNode, outbound map[string]interface{}) {
+	sni := node.Query.Get("sni")
+
+	// Handle insecure parameter (can be "1" or "true")
+	insecure := node.Query.Get("insecure") == "true" || node.Query.Get("insecure") == "1"
+	skipCertVerify := node.Query.Get("skip-cert-verify") == "true" || node.Query.Get("skip-cert-verify") == "1"
+
+	// Always enable TLS for hysteria2 (required by protocol)
+	tlsData := map[string]interface{}{
+		"enabled": true,
+	}
+
+	// Set SNI if provided and valid (skip emoji or invalid values)
+	if sni != "" && sni != "🔒" && isValidSNI(sni) {
+		tlsData["server_name"] = sni
+	} else if node.Server != "" {
+		// Use server hostname as fallback
+		tlsData["server_name"] = node.Server
+	}
+
+	if insecure || skipCertVerify {
+		tlsData["insecure"] = true
+	}
+
+	outbound["tls"] = tlsData
+}
+
+// isValidSNI checks if SNI value is valid (contains dot or colon for hostname/IP)
+func isValidSNI(sni string) bool {
+	return strings.Contains(sni, ".") || strings.Contains(sni, ":")
 }
 
 func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string]string) (*ParsedNode, error) {
@@ -520,7 +604,7 @@ func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string
 		node.Tag, node.Comment = extractTagAndComment(ps)
 		node.Tag = normalizeFlagTag(node.Tag)
 	} else {
-		node.Tag = fmt.Sprintf("vmess-%s-%d", node.Server, node.Port)
+		node.Tag = generateDefaultTag("vmess", node.Server, node.Port)
 		node.Comment = node.Tag
 	}
 
