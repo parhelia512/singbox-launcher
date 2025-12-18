@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
+	"runtime"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -11,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/pion/stun"
+	"github.com/txthinking/socks5"
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
@@ -18,18 +21,49 @@ import (
 )
 
 // checkSTUN performs a STUN request to determine the external IP address.
-func checkSTUN(serverAddr string) (string, error) {
-	// Создаем UDP соединение
-	conn, err := net.Dial("udp", serverAddr)
-	if err != nil {
-		return "", fmt.Errorf("failed to dial STUN server: %w", err)
+// Returns IP address, whether proxy was used, and error.
+func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
+	var conn net.Conn
+
+	// On macOS, try to use system SOCKS5 proxy if enabled
+	if runtime.GOOS == "darwin" {
+		proxyHost, proxyPort, proxyEnabled, proxyErr := platform.GetSystemSOCKSProxy()
+		if proxyErr == nil && proxyEnabled && proxyHost != "" && proxyPort > 0 {
+			log.Printf("diagnosticsTab: Using system SOCKS5 proxy %s:%d for STUN test", proxyHost, proxyPort)
+			// Create SOCKS5 client
+			socksClient, err := socks5.NewClient(fmt.Sprintf("%s:%d", proxyHost, proxyPort), "", "", 0, 60)
+			if err != nil {
+				return "", false, fmt.Errorf("failed to create SOCKS5 client: %w", err)
+			}
+			// Dial UDP connection through SOCKS5 proxy
+			conn, err = socksClient.Dial("udp", serverAddr)
+			if err != nil {
+				return "", false, fmt.Errorf("failed to dial STUN server via SOCKS5 proxy: %w", err)
+			}
+			usedProxy = true
+		} else {
+			// Proxy not enabled or error getting settings, use direct connection
+			if proxyErr != nil {
+				log.Printf("diagnosticsTab: Failed to get system proxy settings: %v, using direct connection", proxyErr)
+			}
+			conn, err = net.Dial("udp", serverAddr)
+			if err != nil {
+				return "", false, fmt.Errorf("failed to dial STUN server: %w", err)
+			}
+		}
+	} else {
+		// On other platforms, use direct connection
+		conn, err = net.Dial("udp", serverAddr)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to dial STUN server: %w", err)
+		}
 	}
 	defer conn.Close()
 
-	// Создаем STUN клиент
+	// Create STUN client
 	c, err := stun.NewClient(conn)
 	if err != nil {
-		return "", fmt.Errorf("failed to create STUN client: %w", err)
+		return "", usedProxy, fmt.Errorf("failed to create STUN client: %w", err)
 	}
 	// Гарантируем корректное освобождение внутренних горутин и ресурсов клиента
 	defer c.Close()
@@ -63,14 +97,17 @@ func checkSTUN(serverAddr string) (string, error) {
 	}()
 
 	// Ждем результата или таймаута
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	select {
 	case <-done:
 		if errResult != nil {
-			return "", fmt.Errorf("STUN request failed: %w", errResult)
+			return "", usedProxy, fmt.Errorf("STUN request failed: %w", errResult)
 		}
-		return xorAddr.IP.String(), nil
-	case <-time.After(5 * time.Second):
-		return "", fmt.Errorf("STUN request timed out")
+		return xorAddr.IP.String(), usedProxy, nil
+	case <-ctx.Done():
+		return "", usedProxy, fmt.Errorf("STUN request timed out")
 	}
 }
 
@@ -84,7 +121,7 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 
 		go func() {
 			stunServer := constants.DefaultSTUNServer
-			ip, err := checkSTUN(stunServer)
+			ip, usedProxy, err := checkSTUN(stunServer)
 
 			// Закрываем диалог ожидания и показываем результат
 			fyne.Do(func() {
@@ -93,9 +130,16 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 					log.Printf("diagnosticsTab: STUN check failed: %v", err)
 					ShowError(ac.MainWindow, err)
 				} else {
-					log.Printf("diagnosticsTab: STUN check successful, IP: %s", ip)
+					var connectionInfo string
+					if usedProxy {
+						log.Printf("diagnosticsTab: STUN check successful via SOCKS5 proxy, IP: %s", ip)
+						connectionInfo = fmt.Sprintf("(determined via [UDP]%s)\nvia system proxy SOCKS5", stunServer)
+					} else {
+						log.Printf("diagnosticsTab: STUN check successful, IP: %s", ip)
+						connectionInfo = fmt.Sprintf("(determined via [UDP]%s, direct connection)", stunServer)
+					}
 					// Создаем кастомный диалог с кнопкой "Copy"
-					resultLabel := widget.NewLabel(fmt.Sprintf("Your External IP: %s\n(determined via [UDP]%s)", ip, stunServer))
+					resultLabel := widget.NewLabel(fmt.Sprintf("Your External IP: %s\n%s", ip, connectionInfo))
 					copyButton := widget.NewButton("Copy IP", func() {
 						ac.MainWindow.Clipboard().SetContent(ip)
 						ShowAutoHideInfo(ac.Application, ac.MainWindow, "Copied", "IP address copied to clipboard.")
