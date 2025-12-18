@@ -12,6 +12,27 @@ echo "  Building Sing-Box Launcher (macOS)"
 echo "========================================"
 echo ""
 
+echo "=== Checking build tools ==="
+# Check for Xcode or Command Line Tools
+if ! command -v xcrun &> /dev/null; then
+    echo "ERROR: xcrun not found. Please install Xcode or Command Line Tools:"
+    echo "  xcode-select --install"
+    exit 1
+fi
+
+# Get SDK path and version
+SDK_PATH=$(xcrun --show-sdk-path 2>/dev/null || echo "")
+if [ -z "$SDK_PATH" ]; then
+    echo "ERROR: Cannot find macOS SDK. Please install Xcode or Command Line Tools:"
+    echo "  xcode-select --install"
+    exit 1
+fi
+
+SDK_VERSION=$(xcrun --show-sdk-version 2>/dev/null || echo "unknown")
+echo "SDK Path: $SDK_PATH"
+echo "SDK Version: $SDK_VERSION"
+
+echo ""
 echo "=== Tidying Go modules ==="
 go mod tidy
 
@@ -19,7 +40,57 @@ echo ""
 echo "=== Setting build environment ==="
 export CGO_ENABLED=1
 export GOOS=darwin
-export GOARCH=amd64
+
+# Auto-detect architecture (arm64 for Apple Silicon, amd64 for Intel)
+ARCH=$(uname -m)
+if [ "$ARCH" = "arm64" ]; then
+    export GOARCH=arm64
+    echo "Architecture: arm64 (Apple Silicon)"
+elif [ "$ARCH" = "x86_64" ]; then
+    export GOARCH=amd64
+    echo "Architecture: amd64 (Intel)"
+else
+    export GOARCH=amd64
+    echo "Architecture: amd64 (default, detected: $ARCH)"
+fi
+
+# Check if full Xcode is required (Command Line Tools have incomplete SDK)
+UTCORETYPES_H="$SDK_PATH/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Headers/UTCoreTypes.h"
+CURRENT_DEVELOPER_DIR=$(xcode-select -p 2>/dev/null || echo "")
+
+# Check if UTCoreTypes.h exists (only in full Xcode SDK)
+if [ ! -f "$UTCORETYPES_H" ]; then
+    echo ""
+    echo "❌ ERROR: Full Xcode is required for building this project!"
+    echo "   Command Line Tools have incomplete SDK headers (missing UTCoreTypes.h)."
+    echo ""
+    
+    # Check if Xcode is installed but not selected
+    if [ -d "/Applications/Xcode.app" ]; then
+        if [[ "$CURRENT_DEVELOPER_DIR" != *"Xcode.app"* ]]; then
+            echo "   💡 Full Xcode detected at /Applications/Xcode.app but not selected."
+            echo "   Switch to Xcode with:"
+            echo "   sudo xcode-select --switch /Applications/Xcode.app"
+            echo ""
+            echo "   Or accept the Xcode license first:"
+            echo "   sudo xcodebuild -license accept"
+            exit 1
+        fi
+    else
+        echo "   Please install Xcode from the App Store:"
+        echo "   https://apps.apple.com/app/xcode/id497799835"
+        echo ""
+        echo "   After installation, accept the license:"
+        echo "   sudo xcodebuild -license accept"
+        echo ""
+        echo "   Then switch to Xcode:"
+        echo "   sudo xcode-select --switch /Applications/Xcode.app"
+        exit 1
+    fi
+fi
+
+# Set SDK path for CGO compiler
+export SDKROOT="$SDK_PATH"
 
 # Determine output filename
 BASE_NAME="singbox-launcher"
@@ -45,9 +116,59 @@ go build -buildvcs=false -ldflags="-s -w -X singbox-launcher/internal/constants.
 
 if [ $? -eq 0 ]; then
     echo ""
+    echo "=== Creating .app bundle ==="
+    
+    # Create .app bundle structure
+    APP_NAME="${BASE_NAME}.app"
+    APP_CONTENTS="$APP_NAME/Contents"
+    APP_MACOS="$APP_CONTENTS/MacOS"
+    APP_RESOURCES="$APP_CONTENTS/Resources"
+    
+    # Remove old bundle if exists
+    rm -rf "$APP_NAME"
+    
+    # Create directory structure
+    mkdir -p "$APP_MACOS"
+    mkdir -p "$APP_RESOURCES"
+    
+    # Move binary to MacOS directory
+    mv "$OUTPUT_FILENAME" "$APP_MACOS/$BASE_NAME"
+    chmod +x "$APP_MACOS/$BASE_NAME"
+    
+    # Create Info.plist
+    cat > "$APP_CONTENTS/Info.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>$BASE_NAME</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.singbox.launcher</string>
+    <key>CFBundleName</key>
+    <string>Sing-Box Launcher</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
+    <key>CFBundleVersion</key>
+    <string>$VERSION</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSUIElement</key>
+    <false/>
+</dict>
+</plist>
+EOF
+    
+    echo "Created .app bundle: $APP_NAME"
+    echo ""
     echo "========================================"
     echo "  Build completed successfully!"
-    echo "  Output: $OUTPUT_FILENAME"
+    echo "  Output: $APP_NAME"
+    echo "  Run with: open $APP_NAME"
     echo "========================================"
 else
     echo ""

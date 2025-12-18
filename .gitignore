@@ -5,6 +5,9 @@
 *.so
 *.dylib
 singbox-launcher
+# macOS app bundle
+*.app
+*.app/
 
 # Test binary, built with `go test -c`
 *.test
@@ -61,9 +64,11 @@ test/
 
 # Config files with sensitive data - DO NOT COMMIT!
 bin/config.json
-bin/config-old.json
+bin/config-old*.json
 bin/*.exe
 bin/*.dll
+# sing-box binary (downloaded artifact)
+bin/sing-box
 
 # Backup files
 *.bak
