@@ -47,17 +47,17 @@ type WizardState struct {
 	CheckURLProgress     *widget.ProgressBar
 	CheckURLPlaceholder  *canvas.Rectangle
 	CheckURLContainer    fyne.CanvasObject
-	checkURLInProgress   bool
+	CheckURLInProgress   bool
 	ParseButton          *widget.Button
-	parserConfigUpdating bool
+	ParserConfigUpdating bool
 
 	// Parsed data
 	ParserConfig       *core.ParserConfig
 	GeneratedOutbounds []string
 	// Statistics for preview (used when nodes > maxNodesForFullPreview)
 	OutboundStats struct {
-		NodesCount          int
-		LocalSelectorsCount int
+		NodesCount           int
+		LocalSelectorsCount  int
 		GlobalSelectorsCount int
 	}
 
@@ -71,7 +71,7 @@ type WizardState struct {
 	ShowPreviewButton           *widget.Button
 	FinalOutboundSelect         *widget.Select
 	SelectedFinalOutbound       string
-	previewNeedsParse           bool
+	PreviewNeedsParse           bool
 	autoParseInProgress         bool
 	previewGenerationInProgress bool
 
