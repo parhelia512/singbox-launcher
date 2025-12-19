@@ -48,7 +48,8 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	}
 
 	if templateData, err := loadTemplateData(controller.ExecDir); err != nil {
-		errorLog("ConfigWizard: failed to load config_template.json from %s: %v", filepath.Join(controller.ExecDir, "bin", "config_template.json"), err)
+		templateFileName := GetTemplateFileName()
+		errorLog("ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(controller.ExecDir, "bin", templateFileName), err)
 		// Update config status in Core Dashboard (similar to UpdateConfigStatusFunc)
 		if controller.UpdateConfigStatusFunc != nil {
 			controller.UpdateConfigStatusFunc()
@@ -77,7 +78,8 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	if !loadedConfig {
 		// Если не загрузили ни из шаблона, ни из config.json - показываем ошибку
 		if state.TemplateData == nil || state.TemplateData.ParserConfig == "" {
-			dialog.ShowError(fmt.Errorf("No config found and template file (bin/config_template.json) is missing or invalid.\nPlease create config_template.json or ensure config.json exists."), wizardWindow)
+			templateFileName := GetTemplateFileName()
+			dialog.ShowError(fmt.Errorf("No config found and template file (bin/%s) is missing or invalid.\nPlease create %s or ensure config.json exists.", templateFileName, templateFileName), wizardWindow)
 			wizardWindow.Close()
 			return
 		}
@@ -539,8 +541,9 @@ func createVLESSSourceTab(state *WizardState) fyne.CanvasObject {
 
 func createTemplateTab(state *WizardState) fyne.CanvasObject {
 	if state.TemplateData == nil {
+		templateFileName := GetTemplateFileName()
 		return container.NewVBox(
-			widget.NewLabel("Template file bin/config_template.json not found."),
+			widget.NewLabel(fmt.Sprintf("Template file bin/%s not found.", templateFileName)),
 			widget.NewLabel("Create the template file to enable this tab."),
 		)
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
@@ -39,8 +40,24 @@ type TemplateSelectableRule struct {
 	IsDefault       bool // true if rule should be enabled by default
 }
 
+// GetTemplateFileName returns the template file name for the current platform.
+// On macOS returns "config_template_macos.json", on other platforms returns "config_template.json".
+func GetTemplateFileName() string {
+	if runtime.GOOS == "darwin" {
+		return "config_template_macos.json"
+	}
+	return "config_template.json"
+}
+
+// GetTemplateURL returns the GitHub URL for downloading the template for the current platform.
+func GetTemplateURL() string {
+	fileName := GetTemplateFileName()
+	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/bin/%s", fileName)
+}
+
 func loadTemplateData(execDir string) (*TemplateData, error) {
-	templatePath := filepath.Join(execDir, "bin", "config_template.json")
+	templateFileName := GetTemplateFileName()
+	templatePath := filepath.Join(execDir, "bin", templateFileName)
 	tplLog(debuglog.LevelInfo, "Starting to load template from: %s", templatePath)
 	raw, err := os.ReadFile(templatePath)
 	if err != nil {
@@ -81,7 +98,7 @@ func loadTemplateData(execDir string) (*TemplateData, error) {
 
 	if !json.Valid(jsonBytes) {
 		tplLog(debuglog.LevelWarn, "JSON validation failed. First 500 chars: %s", truncateString(string(jsonBytes), 500))
-		return nil, fmt.Errorf("invalid JSON after removing @SelectableRule blocks. This may indicate a syntax error in config_template.json")
+		return nil, fmt.Errorf("invalid JSON after removing @SelectableRule blocks. This may indicate a syntax error in %s", templateFileName)
 	}
 
 	tplLog(debuglog.LevelVerbose, "JSON is valid, proceeding to unmarshal")
@@ -90,7 +107,7 @@ func loadTemplateData(execDir string) (*TemplateData, error) {
 	sections, sectionOrder, err := parseJSONWithOrder(jsonBytes)
 	if err != nil {
 		tplLog(debuglog.LevelError, "JSON unmarshal failed: %v", err)
-		return nil, fmt.Errorf("failed to parse config_template.json: %w", err)
+		return nil, fmt.Errorf("failed to parse %s: %w", templateFileName, err)
 	}
 
 	tplLog(debuglog.LevelVerbose, "Successfully unmarshaled %d sections", len(sections))

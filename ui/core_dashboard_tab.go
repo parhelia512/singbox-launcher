@@ -541,7 +541,8 @@ func (tab *CoreDashboardTab) updateConfigInfo() {
 		configExists = false
 	}
 
-	templatePath := filepath.Join(tab.controller.ExecDir, "bin", "config_template.json")
+	templateFileName := GetTemplateFileName()
+	templatePath := filepath.Join(tab.controller.ExecDir, "bin", templateFileName)
 	if _, err := os.Stat(templatePath); err != nil {
 		// Template not found - show download button, hide wizard
 		if tab.templateDownloadButton != nil {
@@ -658,9 +659,8 @@ func (tab *CoreDashboardTab) updateVersionInfoAsync() {
 	}()
 }
 
-const configTemplateURL = "https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/bin/config_template.json"
-
 func (tab *CoreDashboardTab) downloadConfigTemplate() {
+	configTemplateURL := GetTemplateURL()
 	if tab.templateDownloadButton != nil {
 		tab.templateDownloadButton.Disable()
 	}
@@ -709,7 +709,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 			})
 			return
 		}
-		target := filepath.Join(tab.controller.ExecDir, "bin", "config_template.json")
+		templateFileName := GetTemplateFileName()
+		target := filepath.Join(tab.controller.ExecDir, "bin", templateFileName)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			fyne.Do(func() {
 				if tab.templateDownloadButton != nil {
