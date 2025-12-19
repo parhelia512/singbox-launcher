@@ -135,33 +135,51 @@ if [ $? -eq 0 ]; then
     mv "$OUTPUT_FILENAME" "$APP_MACOS/$BASE_NAME"
     chmod +x "$APP_MACOS/$BASE_NAME"
     
-    # Create Info.plist
-    cat > "$APP_CONTENTS/Info.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>$BASE_NAME</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.singbox.launcher</string>
-    <key>CFBundleName</key>
-    <string>Sing-Box Launcher</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>$VERSION</string>
-    <key>CFBundleVersion</key>
-    <string>$VERSION</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.15</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSUIElement</key>
-    <false/>
-</dict>
-</plist>
-EOF
+    # Handle application icon
+    ICON_FILE="assets/app.icns"
+    ICON_NAME="app"
+    HAS_ICON=false
+    
+    if [ -f "$ICON_FILE" ]; then
+        echo "=== Copying application icon ==="
+        cp "$ICON_FILE" "$APP_RESOURCES/${ICON_NAME}.icns"
+        HAS_ICON=true
+        echo "Icon copied: $ICON_FILE -> $APP_RESOURCES/${ICON_NAME}.icns"
+    else
+        echo "=== Icon not found: $ICON_FILE (skipping icon setup) ==="
+    fi
+    
+    # Create Info.plist with optional icon
+    {
+        echo '<?xml version="1.0" encoding="UTF-8"?>'
+        echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+        echo '<plist version="1.0">'
+        echo '<dict>'
+        echo '    <key>CFBundleExecutable</key>'
+        echo "    <string>$BASE_NAME</string>"
+        echo '    <key>CFBundleIdentifier</key>'
+        echo '    <string>com.singbox.launcher</string>'
+        echo '    <key>CFBundleName</key>'
+        echo '    <string>Sing-Box Launcher</string>'
+        echo '    <key>CFBundlePackageType</key>'
+        echo '    <string>APPL</string>'
+        if [ "$HAS_ICON" = true ]; then
+            echo '    <key>CFBundleIconFile</key>'
+            echo "    <string>$ICON_NAME</string>"
+        fi
+        echo '    <key>CFBundleShortVersionString</key>'
+        echo "    <string>$VERSION</string>"
+        echo '    <key>CFBundleVersion</key>'
+        echo "    <string>$VERSION</string>"
+        echo '    <key>LSMinimumSystemVersion</key>'
+        echo '    <string>10.15</string>'
+        echo '    <key>NSHighResolutionCapable</key>'
+        echo '    <true/>'
+        echo '    <key>LSUIElement</key>'
+        echo '    <false/>'
+        echo '</dict>'
+        echo '</plist>'
+    } > "$APP_CONTENTS/Info.plist"
     
     echo "Created .app bundle: $APP_NAME"
     echo ""
