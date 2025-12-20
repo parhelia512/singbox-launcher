@@ -12,31 +12,107 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-// DecodeSubscriptionContent decodes subscription content from base64 or returns plain text
-// Returns decoded content and error if decoding fails
+// DecodeSubscriptionContent декодирует содержимое подписки (base64 или plain text).
+// Возвращает декодированные байты или оригинальный контент, если это уже готовые ссылки.
 func DecodeSubscriptionContent(content []byte) ([]byte, error) {
 	if len(content) == 0 {
-		return nil, fmt.Errorf("content is empty")
+		return nil, fmt.Errorf("subscription content is empty")
 	}
 
-	// Try to decode as base64
-	decoded, err := base64.URLEncoding.DecodeString(strings.TrimSpace(string(content)))
-	if err != nil {
-		// If URL encoding fails, try standard encoding
-		decoded, err = base64.StdEncoding.DecodeString(strings.TrimSpace(string(content)))
-		if err != nil {
-			// If both fail, assume it's plain text
-			log.Printf("DecodeSubscriptionContent: Content is not base64, treating as plain text")
-			return content, nil
-		}
+	contentStr := strings.TrimSpace(string(content))
+	if contentStr == "" {
+		return nil, fmt.Errorf("subscription content is empty after trimming")
 	}
 
-	// Check if decoded content is empty
+	// Отладочная информация о входящем контенте
+	contentLen := len(contentStr)
+	previewStart := contentStr
+	if len(previewStart) > 100 {
+		previewStart = previewStart[:100] + "..."
+	}
+	previewEnd := ""
+	if contentLen > 20 {
+		previewEnd = "..." + contentStr[contentLen-20:]
+	} else {
+		previewEnd = contentStr
+	}
+	hasPadding := strings.HasSuffix(contentStr, "=") || strings.HasSuffix(contentStr, "==")
+	hasProtocol := strings.Contains(contentStr, "://")
+	log.Printf("[DEBUG] DecodeSubscriptionContent: Input: size=%d bytes, start=%q, end=%q, hasPadding=%v, hasProtocol=%v",
+		contentLen, previewStart, previewEnd, hasPadding, hasProtocol)
+
+	var decoded []byte
+	var source string
+	var err error
+
+	// 1. Основной случай: URL-safe base64 без паддинга (самый частый в VLESS, Hysteria2, Clash и т.д.)
+	dec := base64.URLEncoding.WithPadding(base64.NoPadding)
+	decoded, err = dec.DecodeString(contentStr)
+	if err == nil {
+		source = "URL-safe base64"
+		goto validate
+	}
+
+	// 2. Fallback: Standard base64 без паддинга
+	dec = base64.StdEncoding.WithPadding(base64.NoPadding)
+	decoded, err = dec.DecodeString(contentStr)
+	if err == nil {
+		source = "Standard base64"
+		goto validate
+	}
+
+	// 3. Попытка с паддингом: URL-safe base64 с паддингом
+	decoded, err = base64.URLEncoding.DecodeString(contentStr)
+	if err == nil {
+		source = "URL-safe base64 (with padding)"
+		goto validate
+	}
+
+	// 4. Попытка с паддингом: Standard base64 с паддингом
+	decoded, err = base64.StdEncoding.DecodeString(contentStr)
+	if err == nil {
+		source = "Standard base64 (with padding)"
+		goto validate
+	}
+
+	// 5. Проверка на JSON (начинается с { или [) - это не подписка!
+	// ВАЖНО: проверяем ПЕРЕД проверкой на plain text, чтобы не принять JSON за подписку
+	if strings.HasPrefix(contentStr, "{") || strings.HasPrefix(contentStr, "[") {
+		log.Printf("[DEBUG] DecodeSubscriptionContent: Content is JSON configuration, not a subscription list")
+		return nil, fmt.Errorf("subscription URL returned JSON configuration instead of subscription list (base64 or plain text links)")
+	}
+
+	// 6. Если не base64 и не JSON — проверяем на plain text
+	// ВАЖНО: проверяем только ПОСЛЕ всех попыток декодирования и проверки на JSON
+	if strings.Contains(contentStr, "://") {
+		log.Printf("[DEBUG] DecodeSubscriptionContent: Detected plain text subscription (contains '://')")
+		return content, nil
+	}
+
+	return nil, fmt.Errorf("failed to decode base64 content: %w", err)
+
+validate:
 	if len(decoded) == 0 {
 		return nil, fmt.Errorf("decoded content is empty")
 	}
+
+	if !utf8.Valid(decoded) {
+		return nil, fmt.Errorf("decoded content contains invalid UTF-8 sequences")
+	}
+
+	// Подсчёт количества строк (узлов) после декодирования
+	lineCount := strings.Count(string(decoded), "\n")
+	if strings.HasSuffix(string(decoded), "\n") {
+		lineCount++ // если заканчивается на \n, то последняя строка тоже считается
+	}
+	if lineCount == 0 {
+		lineCount = 1 // если одна строка без \n
+	}
+
+	log.Printf("[DEBUG] DecodeSubscriptionContent: %s: successfully decoded: %d node(s)", source, lineCount)
 
 	return decoded, nil
 }
@@ -62,8 +138,8 @@ func FetchSubscription(url string) ([]byte, error) {
 	}
 	log.Printf("[DEBUG] FetchSubscription: Created request in %v", time.Since(requestStartTime))
 
-	// Set user agent to avoid blocking
-	req.Header.Set("User-Agent", "singbox-launcher/1.0")
+	// Set user agent to avoid server detecting sing-box and returning JSON config
+	req.Header.Set("User-Agent", SubscriptionUserAgent)
 
 	doStartTime := time.Now()
 	log.Printf("[DEBUG] FetchSubscription: Sending HTTP request")
@@ -102,6 +178,17 @@ func FetchSubscription(url string) ([]byte, error) {
 		return nil, fmt.Errorf("subscription returned empty content")
 	}
 
+	// Логируем первые байты исходного контента ДО декодирования
+	previewLen := 200
+	if len(content) < previewLen {
+		previewLen = len(content)
+	}
+	preview := string(content[:previewLen])
+	if len(content) > previewLen {
+		preview += "..."
+	}
+	log.Printf("[DEBUG] FetchSubscription: Raw content preview (first %d bytes): %q", previewLen, preview)
+
 	// Decode base64 if needed
 	decodeStartTime := time.Now()
 	log.Printf("[DEBUG] FetchSubscription: Decoding subscription content")
@@ -135,6 +222,10 @@ type ParserConfig struct {
 
 // ParserConfigVersion is the current version of ParserConfig format
 const ParserConfigVersion = 4
+
+// SubscriptionUserAgent is the User-Agent string used for fetching subscriptions
+// Using neutral User-Agent to avoid server detecting sing-box and returning JSON config
+const SubscriptionUserAgent = "SubscriptionParserClient"
 
 // NormalizeParserConfig normalizes ParserConfig structure:
 // - Ensures version is set to ParserConfigVersion

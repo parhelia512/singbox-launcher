@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ParsedNode represents a parsed proxy node with all extracted information.
@@ -126,6 +127,41 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 		}
 	} else if strings.HasPrefix(uri, "hysteria2://") {
 		scheme = "hysteria2"
+		// Hysteria2 links can be base64-encoded (similar to VMess)
+		// Try to decode base64 first
+		base64Part := strings.TrimPrefix(uri, "hysteria2://")
+
+		// Try to decode base64 with padding support
+		decoded, err := decodeBase64WithPadding(base64Part)
+		if err == nil && len(decoded) > 0 {
+			// Validate UTF-8 encoding on byte level before converting to string
+			var decodedStr string
+			if !utf8.Valid(decoded) {
+				// Try to fix invalid UTF-8
+				decodedStr = strings.ToValidUTF8(string(decoded), "")
+				if !utf8.ValidString(decodedStr) {
+					// If still invalid after fixing, skip this node
+					log.Printf("Parser: Error: Decoded base64 contains invalid UTF-8 that cannot be fixed. Skipping node.")
+					return nil, fmt.Errorf("decoded base64 contains invalid UTF-8")
+				}
+				log.Printf("Parser: Fixed invalid UTF-8 in decoded base64 Hysteria2 link")
+			} else {
+				decodedStr = string(decoded)
+			}
+			// Successfully decoded, check if it looks like a URL
+			// Check if decoded string contains URL-like structure (@ is the most reliable indicator)
+			if strings.Contains(decodedStr, "@") {
+				// It's a base64-encoded URL, use decoded version
+				uriToParse = "hysteria2://" + decodedStr
+				log.Printf("Parser: Successfully decoded base64 Hysteria2 link")
+			} else {
+				// Decoded but doesn't look like a URL, treat as plain text
+				uriToParse = uri
+			}
+		} else {
+			// Not base64 or decode failed, treat as plain text URL
+			uriToParse = uri
+		}
 	} else {
 		return nil, fmt.Errorf("unsupported scheme")
 	}
@@ -170,6 +206,10 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 	// For hysteria2, password is in username part of userinfo (hysteria2://password@server:port)
 	if parsedURL.User != nil {
 		node.UUID = parsedURL.User.Username()
+		// URL decode the username (password) if it contains encoded characters
+		if decoded, err := url.QueryUnescape(node.UUID); err == nil && decoded != node.UUID {
+			node.UUID = decoded
+		}
 	}
 
 	// Extract fragment (label)
@@ -178,6 +218,19 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 	if node.Label != "" {
 		if decoded, err := url.QueryUnescape(node.Label); err == nil {
 			node.Label = decoded
+		}
+		// Validate UTF-8 encoding - if invalid, try to fix it
+		if !utf8.ValidString(node.Label) {
+			// Try to fix invalid UTF-8
+			fixed := strings.ToValidUTF8(node.Label, "")
+			if utf8.ValidString(fixed) {
+				node.Label = fixed
+				log.Printf("Parser: Fixed invalid UTF-8 in fragment: %q -> %q", parsedURL.Fragment, node.Label)
+			} else {
+				// If still invalid after fixing, skip this node
+				log.Printf("Parser: Error: Fragment contains invalid UTF-8 that cannot be fixed: %q. Skipping node.", parsedURL.Fragment)
+				return nil, fmt.Errorf("fragment contains invalid UTF-8: %q", parsedURL.Fragment)
+			}
 		}
 	}
 
@@ -504,9 +557,16 @@ func buildHysteria2Outbound(node *ParsedNode, outbound map[string]interface{}) {
 		log.Printf("Parser: Warning: Hysteria2 link missing password. URI might be invalid.")
 	}
 
-	// Optional: ports range (mport parameter)
+	// Optional: ports range (mport parameter) - converted to server_ports array for sing-box 1.9+
+	// Format: "27200-28000" or "27200:28000" -> ["27200:28000"]
 	if mport := node.Query.Get("mport"); mport != "" {
-		outbound["ports"] = mport
+		// Convert mport format (can be "27200-28000" or "27200:28000") to sing-box format
+		// sing-box expects array of port ranges in format "start:end"
+		portRange := strings.ReplaceAll(mport, "-", ":")
+		serverPorts := []string{portRange}
+		outbound["server_ports"] = serverPorts
+		// hop_interval is optional, default is "30s" in sing-box, so we can omit it
+		// or set it explicitly if needed in the future
 	}
 
 	// Optional: obfs (obfuscation)
@@ -564,6 +624,15 @@ func buildHysteria2TLS(node *ParsedNode, outbound map[string]interface{}) {
 
 	if insecure || skipCertVerify {
 		tlsData["insecure"] = true
+	}
+
+	// Handle ALPN parameter (for hysteria2, typically "h3")
+	if alpn := node.Query.Get("alpn"); alpn != "" {
+		alpnList := strings.Split(alpn, ",")
+		for i, a := range alpnList {
+			alpnList[i] = strings.TrimSpace(a)
+		}
+		tlsData["alpn"] = alpnList
 	}
 
 	outbound["tls"] = tlsData

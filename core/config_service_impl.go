@@ -180,7 +180,11 @@ func (svc *ConfigService) ProcessProxySource(proxySource ProxySource, tagCounts 
 
 				// Parse subscription content line by line
 				parseStartTime := time.Now()
-				subscriptionLines := strings.Split(string(content), "\n")
+				// Normalize line endings (handle \r\n, \r, \n)
+				contentStr := string(content)
+				contentStr = strings.ReplaceAll(contentStr, "\r\n", "\n")
+				contentStr = strings.ReplaceAll(contentStr, "\r", "\n")
+				subscriptionLines := strings.Split(contentStr, "\n")
 				log.Printf("[DEBUG] ProcessProxySource: Parsing subscription %d/%d: %d lines",
 					subscriptionIndex+1, totalSubscriptions, len(subscriptionLines))
 
@@ -504,6 +508,49 @@ func (svc *ConfigService) GenerateNodeJSON(node *parsers.ParsedNode) (string, er
 		}
 	} else if node.Scheme == "trojan" {
 		parts = append(parts, fmt.Sprintf(`"password":%q`, node.UUID))
+	} else if node.Scheme == "hysteria2" {
+		// Password is required for Hysteria2
+		if password, ok := node.Outbound["password"].(string); ok && password != "" {
+			passwordJSON, err := json.Marshal(password)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal hysteria2 password: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"password":%s`, string(passwordJSON)))
+		}
+		// server_ports (optional) - array of port ranges for sing-box 1.9+
+		if serverPorts, ok := node.Outbound["server_ports"].([]string); ok && len(serverPorts) > 0 {
+			serverPortsJSON, err := json.Marshal(serverPorts)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal hysteria2 server_ports: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"server_ports":%s`, string(serverPortsJSON)))
+		}
+		// up_mbps (optional)
+		if upMbps, ok := node.Outbound["up_mbps"].(int); ok && upMbps > 0 {
+			parts = append(parts, fmt.Sprintf(`"up_mbps":%d`, upMbps))
+		}
+		// down_mbps (optional)
+		if downMbps, ok := node.Outbound["down_mbps"].(int); ok && downMbps > 0 {
+			parts = append(parts, fmt.Sprintf(`"down_mbps":%d`, downMbps))
+		}
+		// obfs (optional)
+		if obfs, ok := node.Outbound["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
+			var obfsParts []string
+			if obfsType, ok := obfs["type"].(string); ok {
+				obfsParts = append(obfsParts, fmt.Sprintf(`"type":%q`, obfsType))
+			}
+			if obfsPassword, ok := obfs["password"].(string); ok && obfsPassword != "" {
+				obfsPasswordJSON, err := json.Marshal(obfsPassword)
+				if err != nil {
+					return "", fmt.Errorf("failed to marshal hysteria2 obfs password: %w", err)
+				}
+				obfsParts = append(obfsParts, fmt.Sprintf(`"password":%s`, string(obfsPasswordJSON)))
+			}
+			if len(obfsParts) > 0 {
+				obfsJSON := "{" + strings.Join(obfsParts, ",") + "}"
+				parts = append(parts, fmt.Sprintf(`"obfs":%s`, obfsJSON))
+			}
+		}
 	} else if node.Scheme == "ss" {
 		// Extract method and password from outbound
 		// Use json.Marshal to properly escape strings for JSON (handles binary data correctly)
@@ -543,7 +590,7 @@ func (svc *ConfigService) GenerateNodeJSON(node *parsers.ParsedNode) (string, er
 			tlsParts = append(tlsParts, fmt.Sprintf(`"server_name":%q`, serverName))
 		}
 
-		// alpn (for VMESS)
+		// alpn (for VMESS and Hysteria2)
 		if alpn, ok := tlsData["alpn"].([]string); ok && len(alpn) > 0 {
 			alpnJSON, _ := json.Marshal(alpn)
 			tlsParts = append(tlsParts, fmt.Sprintf(`"alpn":%s`, string(alpnJSON)))
@@ -562,7 +609,7 @@ func (svc *ConfigService) GenerateNodeJSON(node *parsers.ParsedNode) (string, er
 			tlsParts = append(tlsParts, fmt.Sprintf(`"utls":%s`, utlsJSON))
 		}
 
-		// insecure (for VMESS)
+		// insecure (for VMESS and Hysteria2)
 		if insecure, ok := tlsData["insecure"].(bool); ok && insecure {
 			tlsParts = append(tlsParts, fmt.Sprintf(`"insecure":%v`, insecure))
 		}
