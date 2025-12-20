@@ -323,7 +323,7 @@ func (ac *AppController) getLatestVersionFromURLWithPrefix(url string, keepPrefi
 	defer cancel()
 
 	// Используем универсальный HTTP клиент
-	client := createHTTPClient(NetworkRequestTimeout)
+	client := CreateHTTPClient(NetworkRequestTimeout)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

@@ -2,207 +2,71 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"regexp"
-	"strings"
 	"time"
-	"unicode/utf8"
+
+	"singbox-launcher/core/parsers"
 )
 
-// DecodeSubscriptionContent декодирует содержимое подписки (base64 или plain text).
-// Возвращает декодированные байты или оригинальный контент, если это уже готовые ссылки.
-func DecodeSubscriptionContent(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, fmt.Errorf("subscription content is empty")
-	}
-
-	contentStr := strings.TrimSpace(string(content))
-	if contentStr == "" {
-		return nil, fmt.Errorf("subscription content is empty after trimming")
-	}
-
-	// Отладочная информация о входящем контенте
-	contentLen := len(contentStr)
-	previewStart := contentStr
-	if len(previewStart) > 100 {
-		previewStart = previewStart[:100] + "..."
-	}
-	previewEnd := ""
-	if contentLen > 20 {
-		previewEnd = "..." + contentStr[contentLen-20:]
-	} else {
-		previewEnd = contentStr
-	}
-	hasPadding := strings.HasSuffix(contentStr, "=") || strings.HasSuffix(contentStr, "==")
-	hasProtocol := strings.Contains(contentStr, "://")
-	log.Printf("[DEBUG] DecodeSubscriptionContent: Input: size=%d bytes, start=%q, end=%q, hasPadding=%v, hasProtocol=%v",
-		contentLen, previewStart, previewEnd, hasPadding, hasProtocol)
-
-	var decoded []byte
-	var source string
-	var err error
-
-	// 1. Основной случай: URL-safe base64 без паддинга (самый частый в VLESS, Hysteria2, Clash и т.д.)
-	dec := base64.URLEncoding.WithPadding(base64.NoPadding)
-	decoded, err = dec.DecodeString(contentStr)
-	if err == nil {
-		source = "URL-safe base64"
-		goto validate
-	}
-
-	// 2. Fallback: Standard base64 без паддинга
-	dec = base64.StdEncoding.WithPadding(base64.NoPadding)
-	decoded, err = dec.DecodeString(contentStr)
-	if err == nil {
-		source = "Standard base64"
-		goto validate
-	}
-
-	// 3. Попытка с паддингом: URL-safe base64 с паддингом
-	decoded, err = base64.URLEncoding.DecodeString(contentStr)
-	if err == nil {
-		source = "URL-safe base64 (with padding)"
-		goto validate
-	}
-
-	// 4. Попытка с паддингом: Standard base64 с паддингом
-	decoded, err = base64.StdEncoding.DecodeString(contentStr)
-	if err == nil {
-		source = "Standard base64 (with padding)"
-		goto validate
-	}
-
-	// 5. Проверка на JSON (начинается с { или [) - это не подписка!
-	// ВАЖНО: проверяем ПЕРЕД проверкой на plain text, чтобы не принять JSON за подписку
-	if strings.HasPrefix(contentStr, "{") || strings.HasPrefix(contentStr, "[") {
-		log.Printf("[DEBUG] DecodeSubscriptionContent: Content is JSON configuration, not a subscription list")
-		return nil, fmt.Errorf("subscription URL returned JSON configuration instead of subscription list (base64 or plain text links)")
-	}
-
-	// 6. Если не base64 и не JSON — проверяем на plain text
-	// ВАЖНО: проверяем только ПОСЛЕ всех попыток декодирования и проверки на JSON
-	if strings.Contains(contentStr, "://") {
-		log.Printf("[DEBUG] DecodeSubscriptionContent: Detected plain text subscription (contains '://')")
-		return content, nil
-	}
-
-	return nil, fmt.Errorf("failed to decode base64 content: %w", err)
-
-validate:
-	if len(decoded) == 0 {
-		return nil, fmt.Errorf("decoded content is empty")
-	}
-
-	if !utf8.Valid(decoded) {
-		return nil, fmt.Errorf("decoded content contains invalid UTF-8 sequences")
-	}
-
-	// Подсчёт количества строк (узлов) после декодирования
-	lineCount := strings.Count(string(decoded), "\n")
-	if strings.HasSuffix(string(decoded), "\n") {
-		lineCount++ // если заканчивается на \n, то последняя строка тоже считается
-	}
-	if lineCount == 0 {
-		lineCount = 1 // если одна строка без \n
-	}
-
-	log.Printf("[DEBUG] DecodeSubscriptionContent: %s: successfully decoded: %d node(s)", source, lineCount)
-
-	return decoded, nil
-}
+// DecodeSubscriptionContent is now in parsers package
+// Import "singbox-launcher/core/parsers" to use it
 
 // FetchSubscription fetches subscription content from URL and decodes it
 // Returns decoded content and error if fetch or decode fails
 func FetchSubscription(url string) ([]byte, error) {
-	startTime := time.Now()
-	log.Printf("[DEBUG] FetchSubscription: START at %s, URL: %s", startTime.Format("15:04:05.000"), url)
-
-	// Создаем контекст с таймаутом
 	ctx, cancel := context.WithTimeout(context.Background(), NetworkRequestTimeout)
 	defer cancel()
 
-	// Используем универсальный HTTP клиент
-	client := createHTTPClient(NetworkRequestTimeout)
-
-	requestStartTime := time.Now()
+	client := CreateHTTPClient(NetworkRequestTimeout)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("[DEBUG] FetchSubscription: Failed to create request (took %v): %v", time.Since(requestStartTime), err)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	log.Printf("[DEBUG] FetchSubscription: Created request in %v", time.Since(requestStartTime))
 
 	// Set user agent to avoid server detecting sing-box and returning JSON config
 	req.Header.Set("User-Agent", SubscriptionUserAgent)
 
-	doStartTime := time.Now()
-	log.Printf("[DEBUG] FetchSubscription: Sending HTTP request")
 	resp, err := client.Do(req)
-	doDuration := time.Since(doStartTime)
 	if err != nil {
-		log.Printf("[DEBUG] FetchSubscription: HTTP request failed (took %v): %v", doDuration, err)
-		// Проверяем тип ошибки
 		if IsNetworkError(err) {
 			return nil, fmt.Errorf("network error: %s", GetNetworkErrorMessage(err))
 		}
 		return nil, fmt.Errorf("failed to fetch subscription: %w", err)
 	}
 	defer resp.Body.Close()
-	log.Printf("[DEBUG] FetchSubscription: Received HTTP response in %v (status: %d, content-length: %d)",
-		doDuration, resp.StatusCode, resp.ContentLength)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[DEBUG] FetchSubscription: Non-OK status code: %d", resp.StatusCode)
 		return nil, fmt.Errorf("subscription server returned status %d", resp.StatusCode)
 	}
 
-	readStartTime := time.Now()
-	log.Printf("[DEBUG] FetchSubscription: Reading response body")
 	content, err := io.ReadAll(resp.Body)
-	readDuration := time.Since(readStartTime)
 	if err != nil {
-		log.Printf("[DEBUG] FetchSubscription: Failed to read response body (took %v): %v", readDuration, err)
 		return nil, fmt.Errorf("failed to read subscription content: %w", err)
 	}
-	log.Printf("[DEBUG] FetchSubscription: Read %d bytes in %v", len(content), readDuration)
 
-	// Check if content is empty
 	if len(content) == 0 {
-		log.Printf("[DEBUG] FetchSubscription: Empty content received")
 		return nil, fmt.Errorf("subscription returned empty content")
 	}
 
-	// Логируем первые байты исходного контента ДО декодирования
-	previewLen := 200
-	if len(content) < previewLen {
-		previewLen = len(content)
+	// Log preview of raw content for debugging
+	const previewLen = 200
+	preview := string(content)
+	if len(preview) > previewLen {
+		preview = preview[:previewLen] + "..."
 	}
-	preview := string(content[:previewLen])
-	if len(content) > previewLen {
-		preview += "..."
-	}
-	log.Printf("[DEBUG] FetchSubscription: Raw content preview (first %d bytes): %q", previewLen, preview)
+	log.Printf("[DEBUG] FetchSubscription: Raw content preview (first %d bytes): %q", len(content), preview)
 
-	// Decode base64 if needed
-	decodeStartTime := time.Now()
-	log.Printf("[DEBUG] FetchSubscription: Decoding subscription content")
-	decoded, err := DecodeSubscriptionContent(content)
-	decodeDuration := time.Since(decodeStartTime)
+	// Use parsers.DecodeSubscriptionContent for decoding
+	decoded, err := parsers.DecodeSubscriptionContent(content)
 	if err != nil {
-		log.Printf("[DEBUG] FetchSubscription: Failed to decode content (took %v): %v", decodeDuration, err)
 		return nil, fmt.Errorf("failed to decode subscription content: %w", err)
 	}
-	log.Printf("[DEBUG] FetchSubscription: Decoded content in %v (original: %d bytes, decoded: %d bytes)",
-		decodeDuration, len(content), len(decoded))
 
-	totalDuration := time.Since(startTime)
-	log.Printf("[DEBUG] FetchSubscription: END (total duration: %v)", totalDuration)
 	return decoded, nil
 }
 
@@ -328,26 +192,21 @@ func (oc *OutboundConfig) GetWizardRequired() int {
 // ExtractParserConfig extracts the @ParserConfig block from config.json
 // Returns the parsed ParserConfig structure and error if extraction or parsing fails
 // Uses ConfigMigrator for handling legacy versions and migrations
+// Uses parsers.ExtractParserConfigBlock for regex parsing
 func ExtractParserConfig(configPath string) (*ParserConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config.json: %w", err)
 	}
 
-	// Find the @ParserConfig block using regex
-	// Pattern matches: /** @ParserConfig ... */
-	pattern := regexp.MustCompile(`/\*\*\s*@ParserConfig\s*\n([\s\S]*?)\*/`)
-	matches := pattern.FindSubmatch(data)
-
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("@ParserConfig block not found in config.json")
+	// Use parsers for regex extraction
+	jsonContent, err := parsers.ExtractParserConfigBlock(data)
+	if err != nil {
+		return nil, err
 	}
 
-	// Extract the JSON content from the comment block
-	jsonContent := strings.TrimSpace(string(matches[1]))
-
 	// Extract version from JSON to check if migration is needed
-	currentVersion := extractVersion(jsonContent)
+	currentVersion := ExtractVersion(jsonContent)
 
 	var parserConfig *ParserConfig
 

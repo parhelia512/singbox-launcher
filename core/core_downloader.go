@@ -117,7 +117,7 @@ func (ac *AppController) getReleaseInfoFromGitHub(ctx context.Context, version s
 	}
 
 	// Используем универсальный HTTP клиент
-	client := createHTTPClient(NetworkRequestTimeout)
+	client := CreateHTTPClient(NetworkRequestTimeout)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -319,7 +319,7 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 	}
 
 	// Use client with large timeout for download
-	client := createHTTPClient(downloadTimeout)
+	client := CreateHTTPClient(downloadTimeout)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

@@ -79,9 +79,10 @@ func (m *ConfigMigrator) RegisterMigration(fromVersion int, fn MigrationFunc) {
 	m.migrations[fromVersion] = fn
 }
 
-// extractVersion extracts version from JSON content string
+// ExtractVersion extracts version from JSON content string
 // Returns version from ParserConfig.version, or from top-level version (legacy v1), or 0 if not found
-func extractVersion(jsonContent string) int {
+// Exported for use in parsers package
+func ExtractVersion(jsonContent string) int {
 	type versionInfo struct {
 		Version      int `json:"version,omitempty"`
 		ParserConfig struct {
@@ -117,7 +118,7 @@ func (m *ConfigMigrator) MigrateRaw(jsonContent string, currentVersion int, targ
 
 	// If version not provided, extract it from JSON
 	if currentVersion == 0 {
-		currentVersion = extractVersion(jsonContent)
+		currentVersion = ExtractVersion(jsonContent)
 	}
 
 	// Handle legacy version 1 format (version at top level)

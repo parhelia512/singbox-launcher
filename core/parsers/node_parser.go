@@ -48,13 +48,11 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 	uriToParse := uri
 	var ssMethod, ssPassword string // For SS links: method and password extracted from base64
 
-	// Handle VMess base64 format
-	if strings.HasPrefix(uri, "vmess://") {
+	// Determine scheme and handle protocol-specific parsing
+	switch {
+	case strings.HasPrefix(uri, "vmess://"):
 		scheme = "vmess"
-		// VMess is in base64 format, decode with padding support
 		base64Part := strings.TrimPrefix(uri, "vmess://")
-
-		// Decode base64 with padding support
 		decoded, err := decodeBase64WithPadding(base64Part)
 		if err != nil {
 			uriPreview := uri
@@ -65,52 +63,39 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 				len(uri), len(base64Part), err, uriPreview)
 			return nil, fmt.Errorf("failed to decode VMESS base64: %w", err)
 		}
-
 		if len(decoded) == 0 {
 			log.Printf("Parser: Error: VMESS decoded content is empty. Skipping node.")
 			return nil, fmt.Errorf("VMESS decoded content is empty")
 		}
-
-		// Parse as JSON VMess config
 		var vmessConfig map[string]interface{}
 		if err := json.Unmarshal(decoded, &vmessConfig); err != nil {
-			log.Printf("Parser: Error: Failed to parse VMESS JSON (decoded length: %d): %v. Skipping node.",
-				len(decoded), err)
+			log.Printf("Parser: Error: Failed to parse VMESS JSON (decoded length: %d): %v. Skipping node.", len(decoded), err)
 			return nil, fmt.Errorf("failed to parse VMESS JSON: %w", err)
 		}
-
-		// Parse VMess JSON configuration
 		return parseVMessJSON(vmessConfig, skipFilters)
-	} else if strings.HasPrefix(uri, "vless://") {
+
+	case strings.HasPrefix(uri, "vless://"):
 		scheme = "vless"
-	} else if strings.HasPrefix(uri, "trojan://") {
+
+	case strings.HasPrefix(uri, "trojan://"):
 		scheme = "trojan"
-	} else if strings.HasPrefix(uri, "ss://") {
+
+	case strings.HasPrefix(uri, "ss://"):
 		scheme = "ss"
-
-		// SS links in SIP002 format: ss://base64(method:password)@server:port#tag
 		ssPart := strings.TrimPrefix(uri, "ss://")
-
-		// Check if it's SIP002 format (has @)
 		if atIdx := strings.Index(ssPart, "@"); atIdx > 0 {
-			// SIP002: ss://base64(method:password)@server:port#tag
 			encodedUserinfo := ssPart[:atIdx]
 			rest := ssPart[atIdx+1:]
-
-			// Decode base64 userinfo (with padding support)
 			decoded, err := decodeBase64WithPadding(encodedUserinfo)
 			if err != nil {
 				log.Printf("Parser: Error: Failed to decode SS base64 userinfo. Encoded: %s, Error: %v", encodedUserinfo, err)
 			} else {
-				// Split method:password
 				decodedStr := string(decoded)
 				userinfoParts := strings.SplitN(decodedStr, ":", 2)
 				if len(userinfoParts) == 2 {
 					ssMethod = userinfoParts[0]
 					ssPassword = userinfoParts[1]
 					log.Printf("Parser: Successfully extracted SS credentials: method=%s, password length=%d", ssMethod, len(ssPassword))
-
-					// Validate encryption method to prevent sing-box crashes
 					if !isValidShadowsocksMethod(ssMethod) {
 						log.Printf("Parser: Warning: Invalid or unsupported Shadowsocks method '%s'. Skipping node.", ssMethod)
 						return nil, fmt.Errorf("unsupported Shadowsocks encryption method: %s", ssMethod)
@@ -119,50 +104,35 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 					log.Printf("Parser: Error: SS decoded userinfo doesn't contain ':' separator. Decoded: %s", decodedStr)
 				}
 			}
-
-			// Reconstruct URI for standard parsing
 			uriToParse = "ss://" + rest
 		} else {
 			log.Printf("Parser: Warning: SS link is not in SIP002 format (no @ found): %s", uri)
 		}
-	} else if strings.HasPrefix(uri, "hysteria2://") {
-		scheme = "hysteria2"
-		// Hysteria2 links can be base64-encoded (similar to VMess)
-		// Try to decode base64 first
-		base64Part := strings.TrimPrefix(uri, "hysteria2://")
 
-		// Try to decode base64 with padding support
+	case strings.HasPrefix(uri, "hysteria2://"):
+		scheme = "hysteria2"
+		base64Part := strings.TrimPrefix(uri, "hysteria2://")
 		decoded, err := decodeBase64WithPadding(base64Part)
 		if err == nil && len(decoded) > 0 {
-			// Validate UTF-8 encoding on byte level before converting to string
-			var decodedStr string
-			if !utf8.Valid(decoded) {
-				// Try to fix invalid UTF-8
-				decodedStr = strings.ToValidUTF8(string(decoded), "")
-				if !utf8.ValidString(decodedStr) {
-					// If still invalid after fixing, skip this node
-					log.Printf("Parser: Error: Decoded base64 contains invalid UTF-8 that cannot be fixed. Skipping node.")
-					return nil, fmt.Errorf("decoded base64 contains invalid UTF-8")
-				}
-				log.Printf("Parser: Fixed invalid UTF-8 in decoded base64 Hysteria2 link")
-			} else {
-				decodedStr = string(decoded)
+			decodedStr, valid := validateAndFixUTF8Bytes(decoded)
+			if !valid {
+				log.Printf("Parser: Error: Decoded base64 contains invalid UTF-8 that cannot be fixed. Skipping node.")
+				return nil, fmt.Errorf("decoded base64 contains invalid UTF-8")
 			}
-			// Successfully decoded, check if it looks like a URL
-			// Check if decoded string contains URL-like structure (@ is the most reliable indicator)
+			if decodedStr != string(decoded) {
+				log.Printf("Parser: Fixed invalid UTF-8 in decoded base64 Hysteria2 link")
+			}
 			if strings.Contains(decodedStr, "@") {
-				// It's a base64-encoded URL, use decoded version
 				uriToParse = "hysteria2://" + decodedStr
 				log.Printf("Parser: Successfully decoded base64 Hysteria2 link")
 			} else {
-				// Decoded but doesn't look like a URL, treat as plain text
 				uriToParse = uri
 			}
 		} else {
-			// Not base64 or decode failed, treat as plain text URL
 			uriToParse = uri
 		}
-	} else {
+
+	default:
 		return nil, fmt.Errorf("unsupported scheme")
 	}
 
@@ -190,15 +160,10 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 	}
 
 	// Extract port
-	port := parsedURL.Port()
-	if port == "" {
-		// Default ports for all protocols
-		node.Port = 443
-	} else {
+	node.Port = 443 // Default port
+	if port := parsedURL.Port(); port != "" {
 		if p, err := strconv.Atoi(port); err == nil {
 			node.Port = p
-		} else {
-			node.Port = 443 // Fallback
 		}
 	}
 
@@ -214,23 +179,22 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 
 	// Extract fragment (label)
 	node.Label = parsedURL.Fragment
-	// URL decode the fragment if needed
+	// URL decode and validate UTF-8
 	if node.Label != "" {
 		if decoded, err := url.QueryUnescape(node.Label); err == nil {
 			node.Label = decoded
 		}
-		// Validate UTF-8 encoding - if invalid, try to fix it
-		if !utf8.ValidString(node.Label) {
-			// Try to fix invalid UTF-8
-			fixed := strings.ToValidUTF8(node.Label, "")
-			if utf8.ValidString(fixed) {
-				node.Label = fixed
-				log.Printf("Parser: Fixed invalid UTF-8 in fragment: %q -> %q", parsedURL.Fragment, node.Label)
-			} else {
-				// If still invalid after fixing, skip this node
-				log.Printf("Parser: Error: Fragment contains invalid UTF-8 that cannot be fixed: %q. Skipping node.", parsedURL.Fragment)
-				return nil, fmt.Errorf("fragment contains invalid UTF-8: %q", parsedURL.Fragment)
-			}
+
+		// Validate and fix UTF-8 encoding
+		fixed, valid := validateAndFixUTF8(node.Label)
+		if !valid {
+			log.Printf("Parser: Error: Fragment contains invalid UTF-8 that cannot be fixed: %q. Skipping node.", parsedURL.Fragment)
+			return nil, fmt.Errorf("fragment contains invalid UTF-8: %q", parsedURL.Fragment)
+		}
+
+		if fixed != node.Label {
+			log.Printf("Parser: Fixed invalid UTF-8 in fragment: %q -> %q", parsedURL.Fragment, fixed)
+			node.Label = fixed
 		}
 	}
 
@@ -273,18 +237,28 @@ func ParseNode(uri string, skipFilters []map[string]string) (*ParsedNode, error)
 
 // Private helper functions (migrated from parser.go)
 
+// decodeBase64WithPadding attempts to decode base64 string with automatic padding
+// Uses the shared tryDecodeBase64 function from core package
+// Note: This creates a dependency on core package, but we can't import it due to circular dependency
+// So we keep a local implementation that matches the logic
 func decodeBase64WithPadding(s string) ([]byte, error) {
-	switch len(s) % 4 {
-	case 2:
-		s += "=="
-	case 3:
-		s += "="
+	// Try URL-safe base64 without padding first (most common)
+	if decoded, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(s); err == nil {
+		return decoded, nil
 	}
-	decoded, err := base64.URLEncoding.DecodeString(s)
-	if err != nil {
-		decoded, err = base64.StdEncoding.DecodeString(s)
+
+	// Try standard base64 without padding
+	if decoded, err := base64.StdEncoding.WithPadding(base64.NoPadding).DecodeString(s); err == nil {
+		return decoded, nil
 	}
-	return decoded, err
+
+	// Try URL-safe base64 with padding
+	if decoded, err := base64.URLEncoding.DecodeString(s); err == nil {
+		return decoded, nil
+	}
+
+	// Try standard base64 with padding
+	return base64.StdEncoding.DecodeString(s)
 }
 
 // isValidShadowsocksMethod checks if the encryption method is supported by sing-box
@@ -313,18 +287,42 @@ func isValidHysteria2ObfsType(obfsType string) bool {
 	return obfsType == "salamander"
 }
 
-func extractTagAndComment(label string) (tag, comment string) {
-	// Tag should contain the full label (including part after |)
-	tag = label
-
-	// Comment contains only the part after | (if exists)
-	parts := strings.Split(label, "|")
-	if len(parts) > 1 {
-		comment = strings.Join(parts[1:], "|") // Join in case there are multiple |
-	} else {
-		comment = label // If no |, use full label as comment
+// validateAndFixUTF8 validates and fixes invalid UTF-8 in a string
+// Returns fixed string and true if valid, or original string and false if unfixable
+func validateAndFixUTF8(s string) (string, bool) {
+	if utf8.ValidString(s) {
+		return s, true
 	}
-	return strings.TrimSpace(tag), strings.TrimSpace(comment)
+	fixed := strings.ToValidUTF8(s, "")
+	if utf8.ValidString(fixed) {
+		return fixed, true
+	}
+	return s, false
+}
+
+// validateAndFixUTF8Bytes validates and fixes invalid UTF-8 in bytes
+// Returns fixed string and true if valid, or empty string and false if unfixable
+func validateAndFixUTF8Bytes(b []byte) (string, bool) {
+	if utf8.Valid(b) {
+		return string(b), true
+	}
+	fixed := strings.ToValidUTF8(string(b), "")
+	if utf8.ValidString(fixed) {
+		return fixed, true
+	}
+	return "", false
+}
+
+func extractTagAndComment(label string) (tag, comment string) {
+	tag = strings.TrimSpace(label)
+
+	// Comment is the part after | separator
+	if idx := strings.Index(label, "|"); idx >= 0 {
+		comment = strings.TrimSpace(label[idx+1:])
+	} else {
+		comment = tag // If no |, use full label as comment
+	}
+	return tag, comment
 }
 
 func normalizeFlagTag(tag string) string {
@@ -376,33 +374,30 @@ func getNodeValue(node *ParsedNode, key string) string {
 
 func matchesPattern(value, pattern string) bool {
 	// Negation literal: !literal
-	if strings.HasPrefix(pattern, "!") && !strings.HasPrefix(pattern, "!/") {
-		literal := strings.TrimPrefix(pattern, "!")
-		return value != literal
+	if len(pattern) > 1 && pattern[0] == '!' && pattern[1] != '/' {
+		return value != pattern[1:]
 	}
 
-	// Negation regex: !/regex/i
-	if strings.HasPrefix(pattern, "!/") && strings.HasSuffix(pattern, "/i") {
-		regexStr := strings.TrimPrefix(pattern, "!/")
-		regexStr = strings.TrimSuffix(regexStr, "/i")
-		re, err := regexp.Compile("(?i)" + regexStr)
-		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
-			return false
-		}
-		return !re.MatchString(value)
-	}
-
-	// Regex: /regex/i
-	if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/i") {
-		regexStr := strings.TrimPrefix(pattern, "/")
-		regexStr = strings.TrimSuffix(regexStr, "/i")
+	// Regex patterns: /regex/i or !/regex/i
+	if len(pattern) > 3 && pattern[0] == '/' && strings.HasSuffix(pattern, "/i") {
+		regexStr := pattern[1 : len(pattern)-2] // Remove leading / and trailing /i
 		re, err := regexp.Compile("(?i)" + regexStr)
 		if err != nil {
 			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
 			return false
 		}
 		return re.MatchString(value)
+	}
+
+	// Negation regex: !/regex/i
+	if len(pattern) > 4 && strings.HasPrefix(pattern, "!/") && strings.HasSuffix(pattern, "/i") {
+		regexStr := pattern[2 : len(pattern)-2] // Remove leading !/ and trailing /i
+		re, err := regexp.Compile("(?i)" + regexStr)
+		if err != nil {
+			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
+			return false
+		}
+		return !re.MatchString(value)
 	}
 
 	// Literal match
@@ -513,8 +508,8 @@ func buildOutbound(node *ParsedNode) map[string]interface{} {
 
 			if alpn := node.Query.Get("alpn"); alpn != "" {
 				alpnList := strings.Split(alpn, ",")
-				for i, a := range alpnList {
-					alpnList[i] = strings.TrimSpace(a)
+				for i := range alpnList {
+					alpnList[i] = strings.TrimSpace(alpnList[i])
 				}
 				tlsData["alpn"] = alpnList
 			}
@@ -615,10 +610,10 @@ func buildHysteria2TLS(node *ParsedNode, outbound map[string]interface{}) {
 	}
 
 	// Set SNI if provided and valid (skip emoji or invalid values)
-	if sni != "" && sni != "🔒" && isValidSNI(sni) {
+	// SNI is valid if it contains dot (hostname) or colon (IPv6)
+	if sni != "" && sni != "🔒" && (strings.Contains(sni, ".") || strings.Contains(sni, ":")) {
 		tlsData["server_name"] = sni
 	} else if node.Server != "" {
-		// Use server hostname as fallback
 		tlsData["server_name"] = node.Server
 	}
 
@@ -629,18 +624,13 @@ func buildHysteria2TLS(node *ParsedNode, outbound map[string]interface{}) {
 	// Handle ALPN parameter (for hysteria2, typically "h3")
 	if alpn := node.Query.Get("alpn"); alpn != "" {
 		alpnList := strings.Split(alpn, ",")
-		for i, a := range alpnList {
-			alpnList[i] = strings.TrimSpace(a)
+		for i := range alpnList {
+			alpnList[i] = strings.TrimSpace(alpnList[i])
 		}
 		tlsData["alpn"] = alpnList
 	}
 
 	outbound["tls"] = tlsData
-}
-
-// isValidSNI checks if SNI value is valid (contains dot or colon for hostname/IP)
-func isValidSNI(sni string) bool {
-	return strings.Contains(sni, ".") || strings.Contains(sni, ":")
 }
 
 func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string]string) (*ParsedNode, error) {
