@@ -50,7 +50,7 @@ func NewFileService() (*FileService, error) {
 // OpenLogFiles opens all log files with rotation support.
 func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileName string) error {
 	// Open main log file
-	logFile, err := openLogFileWithRotation(filepath.Join(fs.ExecDir, logFileName))
+	logFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, logFileName))
 	if err != nil {
 		return fmt.Errorf("OpenLogFiles: cannot open main log file: %w", err)
 	}
@@ -58,7 +58,7 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 	fs.MainLogFile = logFile
 
 	// Open child log file
-	childLogFile, err := openLogFileWithRotation(filepath.Join(fs.ExecDir, childLogFileName))
+	childLogFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, childLogFileName))
 	if err != nil {
 		log.Printf("OpenLogFiles: failed to open sing-box child log file: %v", err)
 		fs.ChildLogFile = nil
@@ -67,7 +67,7 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 	}
 
 	// Open API log file
-	apiLogFile, err := openLogFileWithRotation(filepath.Join(fs.ExecDir, apiLogFileName))
+	apiLogFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, apiLogFileName))
 	if err != nil {
 		log.Printf("OpenLogFiles: failed to open API log file: %v", err)
 		fs.ApiLogFile = nil
@@ -94,18 +94,18 @@ func (fs *FileService) CloseLogFiles() {
 	}
 }
 
-// openLogFileWithRotation opens a log file with rotation support.
-func openLogFileWithRotation(logPath string) (*os.File, error) {
-	checkAndRotateLogFile(logPath)
+// OpenLogFileWithRotation opens a log file with rotation support.
+func (fs *FileService) OpenLogFileWithRotation(logPath string) (*os.File, error) {
+	fs.CheckAndRotateLogFile(logPath)
 	// Open file in append mode (not truncate) to preserve recent logs
 	// But if file was rotated, it will be a new file
 	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
-// checkAndRotateLogFile checks log file size and rotates if it exceeds maxLogFileSize.
-const maxLogFileSize = 10 * 1024 * 1024 // 10 MB
+// CheckAndRotateLogFile checks log file size and rotates if it exceeds maxLogFileSize.
+const maxLogFileSize = 2 * 1024 * 1024 // 2 MB
 
-func checkAndRotateLogFile(logPath string) {
+func (fs *FileService) CheckAndRotateLogFile(logPath string) {
 	info, err := os.Stat(logPath)
 	if err != nil {
 		return // File doesn't exist yet, nothing to rotate
@@ -116,10 +116,9 @@ func checkAndRotateLogFile(logPath string) {
 		oldPath := logPath + ".old"
 		_ = os.Remove(oldPath) // Remove old backup if exists
 		if err := os.Rename(logPath, oldPath); err != nil {
-			log.Printf("checkAndRotateLogFile: Failed to rotate log file %s: %v", logPath, err)
+			log.Printf("CheckAndRotateLogFile: Failed to rotate log file %s: %v", logPath, err)
 		} else {
-			log.Printf("checkAndRotateLogFile: Rotated log file %s (size: %d bytes)", logPath, info.Size())
+			log.Printf("CheckAndRotateLogFile: Rotated log file %s (size: %d bytes)", logPath, info.Size())
 		}
 	}
 }
-

@@ -274,7 +274,7 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 	if logPath != "" {
 		if logPath == filepath.Join(ac.FileService.ExecDir, childLogFileName) && ac.FileService.ChildLogFile != nil {
 			// For sing-box logs, check and rotate if needed before writing
-			checkAndRotateLogFile(logPath)
+			ac.FileService.CheckAndRotateLogFile(logPath)
 			logFile := ac.FileService.ChildLogFile
 			// Don't truncate - append to preserve logs, rotation handles size limits
 			cmd.Stdout = logFile

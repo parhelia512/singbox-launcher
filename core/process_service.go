@@ -105,7 +105,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	ac.SingboxCmd.Dir = platform.GetBinDir(ac.FileService.ExecDir)
 	if ac.FileService.ChildLogFile != nil {
 		// Check and rotate log file before starting new process to prevent unbounded growth
-		checkAndRotateLogFile(filepath.Join(ac.FileService.ExecDir, childLogFileName))
+		ac.FileService.CheckAndRotateLogFile(filepath.Join(ac.FileService.ExecDir, childLogFileName))
 
 		// Write directly to file - no buffering in memory
 		// This prevents memory leaks from accumulating log output
