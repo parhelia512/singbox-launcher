@@ -316,12 +316,10 @@ func (r *RunningState) Set(value bool) {
 	r.Unlock()
 
 	r.controller.UpdateUI()
-
 	// Call callback to update status in Core Dashboard
 	if r.controller.UIService != nil && r.controller.UIService.UpdateCoreStatusFunc != nil {
 		r.controller.UIService.UpdateCoreStatusFunc()
 	}
-
 }
 
 // IsRunning checks if the VPN is running.
@@ -389,6 +387,8 @@ func getOurPID(ac *AppController) int {
 // isSingBoxProcessRunning checks if a sing-box process is currently running on the system.
 // Uses tasklist command on Windows for more reliable process detection.
 // Returns true if process found, and the PID of found process (or -1 if not found).
+//
+//nolint:unused
 func isSingBoxProcessRunning(ac *AppController) (bool, int) {
 	processName := platform.GetProcessNameForCheck()
 	log.Printf("isSingBoxProcessRunning: Looking for process name '%s'", processName)
@@ -476,6 +476,8 @@ func parseCSVLine(line string) []string {
 }
 
 // isSingBoxProcessRunningWithPS uses ps library to check for running process
+//
+//nolint:unused
 func isSingBoxProcessRunningWithPS(ac *AppController, ourPID int) (bool, int) {
 	processes, err := ps.Processes()
 	if err != nil {
@@ -499,6 +501,8 @@ func isSingBoxProcessRunningWithPS(ac *AppController, ourPID int) (bool, int) {
 
 // checkAndShowSingBoxRunningWarning checks if sing-box is running and shows warning dialog if found.
 // Returns true if process was found and warning was shown, false otherwise.
+//
+//nolint:unused
 func checkAndShowSingBoxRunningWarning(ac *AppController, context string) bool {
 	found, foundPID := isSingBoxProcessRunning(ac)
 	if found {
@@ -511,6 +515,8 @@ func checkAndShowSingBoxRunningWarning(ac *AppController, context string) bool {
 }
 
 // checkTunInterfaceExists checks if TUN interface exists on Windows
+//
+//nolint:unused
 func checkTunInterfaceExists(interfaceName string) (bool, error) {
 	if runtime.GOOS != "windows" {
 		// On Linux/macOS, TUN interfaces are managed by the OS
@@ -533,6 +539,8 @@ func checkTunInterfaceExists(interfaceName string) (bool, error) {
 }
 
 // removeTunInterface removes TUN interface on Windows before starting sing-box
+//
+//nolint:unused
 func removeTunInterface(interfaceName string) error {
 	if runtime.GOOS != "windows" {
 		// On Linux/macOS, interface is removed automatically
@@ -1027,7 +1035,6 @@ func (ac *AppController) startAutoUpdateLoop() {
 // calculateAutoUpdateInterval calculates the check interval: max(10 minutes, parser.reload)
 // Returns the interval to use for checking if update is needed
 func (ac *AppController) calculateAutoUpdateInterval() (time.Duration, error) {
-
 	// Read ParserConfig from file
 	config, err := parser.ExtractParserConfig(ac.FileService.ConfigPath)
 	if err != nil {

@@ -452,7 +452,7 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 
 			// Set execute permissions (for Unix-like systems)
 			if runtime.GOOS != "windows" {
-				os.Chmod(binaryPath, 0755)
+				_ = os.Chmod(binaryPath, 0755)
 			}
 
 			return binaryPath, nil
@@ -551,7 +551,7 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 
 	// Set execute permissions (for Unix)
 	if runtime.GOOS != "windows" {
-		os.Chmod(destPath, 0755)
+		_ = os.Chmod(destPath, 0755)
 	}
 
 	// Remove old backup
