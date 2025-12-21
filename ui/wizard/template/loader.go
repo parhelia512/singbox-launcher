@@ -1,4 +1,4 @@
-package ui
+package template
 
 import (
 	"bytes"
@@ -21,6 +21,7 @@ func tplLog(level debuglog.Level, format string, args ...interface{}) {
 	debuglog.Log("TemplateLoader", level, templateLoaderLogLevel, format, args...)
 }
 
+// TemplateData represents the loaded template data.
 type TemplateData struct {
 	ParserConfig            string
 	Sections                map[string]json.RawMessage
@@ -31,6 +32,7 @@ type TemplateData struct {
 	OutboundsAfterMarker    string // Elements after @PARSER_OUTBOUNDS_BLOCK marker (e.g., direct-out)
 }
 
+// TemplateSelectableRule represents a rule that can be selected in the template.
 type TemplateSelectableRule struct {
 	Label           string
 	Description     string
@@ -55,7 +57,8 @@ func GetTemplateURL() string {
 	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/bin/%s", fileName)
 }
 
-func loadTemplateData(execDir string) (*TemplateData, error) {
+// LoadTemplateData loads template data from file.
+func LoadTemplateData(execDir string) (*TemplateData, error) {
 	templateFileName := GetTemplateFileName()
 	templatePath := filepath.Join(execDir, "bin", templateFileName)
 	tplLog(debuglog.LevelInfo, "Starting to load template from: %s", templatePath)

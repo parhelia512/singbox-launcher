@@ -20,11 +20,11 @@ import (
 
 // CreateClashAPITab creates and returns the content for the "Clash API" tab.
 func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
-	ac.ApiStatusLabel = widget.NewLabel("Status: Not checked")
+	ac.UIService.ApiStatusLabel = widget.NewLabel("Status: Not checked")
 	status := widget.NewLabel("Click 'Load Proxies'")
-	ac.ListStatusLabel = status
+	ac.UIService.ListStatusLabel = status
 
-	selectorOptions, defaultSelector, err := config.GetSelectorGroupsFromConfig(ac.ConfigPath)
+	selectorOptions, defaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
 	if err != nil {
 		log.Printf("clash_api_tab: failed to get selector groups: %v", err)
 	}
@@ -36,11 +36,14 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		selectedGroup = selectorOptions[0]
 	}
 	// Only set SelectedClashGroup if it's not already set (to preserve value from initialization)
-	if ac.SelectedClashGroup == "" {
-		ac.SelectedClashGroup = selectedGroup
-	} else {
-		// Use existing value, but update selectedGroup variable for UI
-		selectedGroup = ac.SelectedClashGroup
+	if ac.APIService != nil {
+		currentGroup := ac.APIService.GetSelectedClashGroup()
+		if currentGroup == "" {
+			ac.APIService.SetSelectedClashGroup(selectedGroup)
+		} else {
+			// Use existing value, but update selectedGroup variable for UI
+			selectedGroup = currentGroup
+		}
 	}
 
 	var (
@@ -51,10 +54,15 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	// --- Логика обновления и сброса ---
 
 	onLoadAndRefreshProxies := func() {
-		if !ac.ClashAPIEnabled {
-			ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
-			if ac.ListStatusLabel != nil {
-				ac.ListStatusLabel.SetText("Clash API disabled due to config error")
+		if ac.APIService == nil {
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			return
+		}
+		_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
+		if !clashAPIEnabled {
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
+			if ac.UIService.ListStatusLabel != nil {
+				ac.UIService.ListStatusLabel.SetText("Clash API disabled due to config error")
 			}
 			return
 		}
@@ -63,16 +71,17 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		if group == "" {
 			return
 		}
-		if ac.ListStatusLabel != nil {
-			ac.ListStatusLabel.SetText(fmt.Sprintf("Loading proxies for '%s'...", group))
+		if ac.UIService.ListStatusLabel != nil {
+			ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Loading proxies for '%s'...", group))
 		}
 		go func(group string) {
-			proxies, now, err := api.GetProxiesInGroup(ac.ClashAPIBaseURL, ac.ClashAPIToken, group, ac.ApiLogFile)
+			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
+			proxies, now, err := api.GetProxiesInGroup(baseURL, token, group, ac.FileService.ApiLogFile)
 			fyne.Do(func() {
 				if err != nil {
-					ShowError(ac.MainWindow, err)
-					if ac.ListStatusLabel != nil {
-						ac.ListStatusLabel.SetText("Error: " + err.Error())
+					ShowError(ac.UIService.MainWindow, err)
+					if ac.UIService.ListStatusLabel != nil {
+						ac.UIService.ListStatusLabel.SetText("Error: " + err.Error())
 					}
 					return
 				}
@@ -80,17 +89,17 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				ac.SetProxiesList(proxies)
 				ac.SetActiveProxyName(now)
 
-				if ac.ProxiesListWidget != nil {
-					ac.ProxiesListWidget.Refresh()
+				if ac.UIService.ProxiesListWidget != nil {
+					ac.UIService.ProxiesListWidget.Refresh()
 				}
 
-				if ac.ListStatusLabel != nil {
-					ac.ListStatusLabel.SetText(fmt.Sprintf("Proxies loaded for '%s'. Active: %s", group, now))
+				if ac.UIService.ListStatusLabel != nil {
+					ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Proxies loaded for '%s'. Active: %s", group, now))
 				}
 
 				// Update tray menu with new proxy list
-				if ac.UpdateTrayMenuFunc != nil {
-					ac.UpdateTrayMenuFunc()
+				if ac.UIService != nil && ac.UIService.UpdateTrayMenuFunc != nil {
+					ac.UIService.UpdateTrayMenuFunc()
 				}
 			})
 		}(group)
@@ -98,7 +107,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	// Функция для обновления списка селекторов из конфига (вызывается когда sing-box запущен и конфиг загружен)
 	updateSelectorList := func() {
-		updatedSelectorOptions, updatedDefaultSelector, err := config.GetSelectorGroupsFromConfig(ac.ConfigPath)
+		updatedSelectorOptions, updatedDefaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
 		if err == nil && len(updatedSelectorOptions) > 0 && groupSelect != nil {
 			groupSelect.SetOptions(updatedSelectorOptions)
 
@@ -120,26 +129,34 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				suppressSelectCallback = true
 				groupSelect.SetSelected(selectedGroup)
 				suppressSelectCallback = false
-				ac.SelectedClashGroup = selectedGroup
+				if ac.APIService != nil {
+					ac.APIService.SetSelectedClashGroup(selectedGroup)
+				}
 			}
 		}
 	}
 
 	onTestAPIConnection := func() {
-		if !ac.ClashAPIEnabled {
-			ac.ApiStatusLabel.SetText("❌ ClashAPI Off (Config Error)")
-			ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
+		if ac.APIService == nil {
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			return
+		}
+		_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
+		if !clashAPIEnabled {
+			ac.UIService.ApiStatusLabel.SetText("❌ ClashAPI Off (Config Error)")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
 			return
 		}
 		go func() {
-			err := api.TestAPIConnection(ac.ClashAPIBaseURL, ac.ClashAPIToken, ac.ApiLogFile)
+			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
+			err := api.TestAPIConnection(baseURL, token, ac.FileService.ApiLogFile)
 			fyne.Do(func() {
 				if err != nil {
-					ac.ApiStatusLabel.SetText("❌ Clash API Off (Error)")
-					ShowError(ac.MainWindow, err)
+					ac.UIService.ApiStatusLabel.SetText("❌ Clash API Off (Error)")
+					ShowError(ac.UIService.MainWindow, err)
 					return
 				}
-				ac.ApiStatusLabel.SetText("✅ Clash API On")
+				ac.UIService.ApiStatusLabel.SetText("✅ Clash API On")
 				// Обновить список селекторов после успешного подключения (sing-box запущен, конфиг загружен)
 				updateSelectorList()
 				onLoadAndRefreshProxies()
@@ -153,36 +170,39 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		ac.SetActiveProxyName("")
 		ac.SetSelectedIndex(-1)
 		fyne.Do(func() {
-			if ac.ApiStatusLabel != nil {
-				ac.ApiStatusLabel.SetText("Status: Not running")
+			if ac.UIService.ApiStatusLabel != nil {
+				ac.UIService.ApiStatusLabel.SetText("Status: Not running")
 			}
-			if ac.ListStatusLabel != nil {
-				ac.ListStatusLabel.SetText("Sing-box is stopped.")
+			if ac.UIService.ListStatusLabel != nil {
+				ac.UIService.ListStatusLabel.SetText("Sing-box is stopped.")
 			}
-			if ac.ProxiesListWidget != nil {
-				ac.ProxiesListWidget.Refresh()
+			if ac.UIService.ProxiesListWidget != nil {
+				ac.UIService.ProxiesListWidget.Refresh()
 			}
 			// Update tray menu when API state is reset
-			if ac.UpdateTrayMenuFunc != nil {
-				ac.UpdateTrayMenuFunc()
+			if ac.UIService != nil && ac.UIService.UpdateTrayMenuFunc != nil {
+				ac.UIService.UpdateTrayMenuFunc()
 			}
 		})
 	}
 
 	// --- Регистрация колбэков в контроллере ---
-	ac.RefreshAPIFunc = onTestAPIConnection
-	ac.ResetAPIStateFunc = onResetAPIState
+	if ac.UIService != nil {
+		ac.UIService.RefreshAPIFunc = onTestAPIConnection
+		ac.UIService.ResetAPIStateFunc = onResetAPIState
+	}
 
 	// --- Вспомогательная функция для пинга ---
 	pingProxy := func(proxyName string, button *widget.Button) {
 		go func() {
 			fyne.Do(func() { button.SetText("...") })
-			delay, err := api.GetDelay(ac.ClashAPIBaseURL, ac.ClashAPIToken, proxyName, ac.ApiLogFile)
+			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
+			delay, err := api.GetDelay(baseURL, token, proxyName, ac.FileService.ApiLogFile)
 			fyne.Do(func() {
 				if err != nil {
 					button.SetText("Error")
 					status.SetText("Delay error: " + err.Error())
-					ShowError(ac.MainWindow, err)
+					ShowError(ac.UIService.MainWindow, err)
 				} else {
 					button.SetText(fmt.Sprintf("%d ms", delay))
 					status.SetText(fmt.Sprintf("Delay: %d ms for %s", delay, proxyName))
@@ -256,22 +276,27 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 
 		switchButton.OnTapped = func() {
-			if !ac.ClashAPIEnabled {
-				ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
+			if ac.APIService == nil {
+				ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+				return
+			}
+			_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
+			if !clashAPIEnabled {
+				ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
 				return
 			}
 			go func(group string) {
-				err := api.SwitchProxy(ac.ClashAPIBaseURL, ac.ClashAPIToken, group, proxyNameForCallback, ac.ApiLogFile)
+				err := ac.APIService.SwitchProxy(group, proxyNameForCallback)
 				fyne.Do(func() {
 					if err != nil {
-						ShowError(ac.MainWindow, err)
+						ShowError(ac.UIService.MainWindow, err)
 						status.SetText("Switch error: " + err.Error())
 					} else {
 						ac.SetActiveProxyName(proxyNameForCallback)
-						ac.ProxiesListWidget.Refresh()
+						ac.UIService.ProxiesListWidget.Refresh()
 						pingProxy(proxyNameForCallback, pingButton)
-						if ac.ListStatusLabel != nil {
-							ac.ListStatusLabel.SetText(fmt.Sprintf("Switched '%s' to %s", group, proxyNameForCallback))
+						if ac.UIService.ListStatusLabel != nil {
+							ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Switched '%s' to %s", group, proxyNameForCallback))
 						}
 					}
 				})
@@ -294,7 +319,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		proxiesListWidget.Refresh()
 	}
 
-	ac.ProxiesListWidget = proxiesListWidget
+	ac.UIService.ProxiesListWidget = proxiesListWidget
 
 	// Переменные для отслеживания направления сортировки
 	sortNameAscending := true
@@ -321,8 +346,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			status.SetText("Sorted by name (Z-A)")
 		}
 		ac.SetProxiesList(sorted)
-		if ac.ProxiesListWidget != nil {
-			ac.ProxiesListWidget.Refresh()
+		if ac.UIService.ProxiesListWidget != nil {
+			ac.UIService.ProxiesListWidget.Refresh()
 		}
 	}
 
@@ -368,15 +393,20 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 
 		ac.SetProxiesList(sorted)
-		if ac.ProxiesListWidget != nil {
-			ac.ProxiesListWidget.Refresh()
+		if ac.UIService.ProxiesListWidget != nil {
+			ac.UIService.ProxiesListWidget.Refresh()
 		}
 	}
 
 	// --- Функция массового пинга всех прокси ---
 	pingAllProxies := func() {
-		if !ac.ClashAPIEnabled {
-			ShowErrorText(ac.MainWindow, "Clash API", "API is disabled: config error")
+		if ac.APIService == nil {
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			return
+		}
+		_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
+		if !clashAPIEnabled {
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
 			return
 		}
 		proxies := ac.GetProxiesList()
@@ -387,7 +417,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		status.SetText(fmt.Sprintf("Pinging %d proxies...", len(proxies)))
 		go func() {
 			for i, proxy := range proxies {
-				delay, err := api.GetDelay(ac.ClashAPIBaseURL, ac.ClashAPIToken, proxy.Name, ac.ApiLogFile)
+				baseURL, token, _ := ac.APIService.GetClashAPIConfig()
+				delay, err := api.GetDelay(baseURL, token, proxy.Name, ac.FileService.ApiLogFile)
 				fyne.Do(func() {
 					// Обновляем задержку в списке прокси
 					updatedProxies := ac.GetProxiesList()
@@ -402,8 +433,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 						}
 					}
 					ac.SetProxiesList(updatedProxies)
-					if ac.ProxiesListWidget != nil {
-						ac.ProxiesListWidget.Refresh()
+					if ac.UIService.ProxiesListWidget != nil {
+						ac.UIService.ProxiesListWidget.Refresh()
 					}
 					status.SetText(fmt.Sprintf("Pinging %d/%d...", i+1, len(proxies)))
 				})
@@ -466,14 +497,16 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			return
 		}
 		selectedGroup = value
-		ac.SelectedClashGroup = value
+		if ac.APIService != nil {
+			ac.APIService.SetSelectedClashGroup(value)
+		}
 		if suppressSelectCallback {
 			return
 		}
 		status.SetText(fmt.Sprintf("Selected group '%s'.", value))
 		// Update tray menu when group changes
-		if ac.UpdateTrayMenuFunc != nil {
-			ac.UpdateTrayMenuFunc()
+		if ac.UIService != nil && ac.UIService.UpdateTrayMenuFunc != nil {
+			ac.UIService.UpdateTrayMenuFunc()
 		}
 		// Start auto-loading proxies for the new group only if sing-box is running
 		if ac.RunningState.IsRunning() {
@@ -489,7 +522,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	topControls := container.NewVBox(
-		ac.ApiStatusLabel,
+		ac.UIService.ApiStatusLabel,
 		container.NewHBox(widget.NewLabel("Selector group:"), groupSelect),
 		widget.NewSeparator(),
 		buttonsRow,

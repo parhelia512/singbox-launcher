@@ -56,13 +56,22 @@ func FetchSubscription(url string) ([]byte, error) {
 		return nil, fmt.Errorf("subscription server returned status %d", resp.StatusCode)
 	}
 
-	content, err := io.ReadAll(resp.Body)
+	// Limit response size to prevent memory exhaustion
+	const maxResponseSize = 10 * 1024 * 1024 // 10 MB
+	limitedReader := io.LimitReader(resp.Body, maxResponseSize+1)
+
+	content, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read subscription content: %w", err)
+		return nil, fmt.Errorf("FetchSubscription: failed to read subscription content: %w", err)
 	}
 
 	if len(content) == 0 {
-		return nil, fmt.Errorf("subscription returned empty content")
+		return nil, fmt.Errorf("FetchSubscription: subscription returned empty content")
+	}
+
+	// Check if content was truncated (exceeds max size)
+	if len(content) > maxResponseSize {
+		return nil, fmt.Errorf("FetchSubscription: subscription content too large (exceeds %d bytes)", maxResponseSize)
 	}
 
 	// Log preview of raw content for debugging
@@ -76,7 +85,7 @@ func FetchSubscription(url string) ([]byte, error) {
 	// Use DecodeSubscriptionContent for decoding
 	decoded, err := DecodeSubscriptionContent(content)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode subscription content: %w", err)
+		return nil, fmt.Errorf("FetchSubscription: failed to decode subscription content: %w", err)
 	}
 
 	return decoded, nil

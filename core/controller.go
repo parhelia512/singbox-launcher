@@ -14,16 +14,13 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/api"
-	"singbox-launcher/core/config"
 	"singbox-launcher/core/config/parser"
+	"singbox-launcher/core/services"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
@@ -56,24 +53,19 @@ const (
 // - ConfigService: configuration parsing and updates
 // The controller maintains application-wide state and provides callbacks for UI updates.
 type AppController struct {
-	// --- Fyne Components ---
-	Application    fyne.App
-	MainWindow     fyne.Window
-	TrayIcon       fyne.Resource
-	ApiStatusLabel *widget.Label
-
-	// --- UI State Fields ---
-	ProxiesListWidget *widget.List
-	ActiveProxyName   string
-	SelectedIndex     int
-	ProxiesList       []api.ProxyInfo
-	ListStatusLabel   *widget.Label
-
-	// --- Icon Resources ---
-	AppIconData   fyne.Resource
-	GreenIconData fyne.Resource
-	GreyIconData  fyne.Resource
-	RedIconData   fyne.Resource // Icon for error state
+	// --- Services ---
+	// UIService manages UI-related state, callbacks, and tray menu logic
+	UIService *services.UIService
+	// APIService manages Clash API interactions and proxy list management
+	APIService *services.APIService
+	// StateService manages application state including version caches and auto-update state
+	StateService *services.StateService
+	// FileService manages file paths and log file handles
+	FileService *services.FileService
+	// ProcessService manages sing-box process lifecycle (start, stop, monitor, auto-restart)
+	ProcessService *ProcessService
+	// ConfigService handles configuration parsing, subscription fetching, and JSON generation
+	ConfigService *ConfigService
 
 	// --- Process State ---
 	SingboxCmd               *exec.Cmd
@@ -82,73 +74,13 @@ type AppController struct {
 	ParserRunning            bool
 	StoppedByUser            bool
 	ConsecutiveCrashAttempts int
-	APIStateMutex            sync.RWMutex // Mutex for API-related fields (ProxiesList, ActiveProxyName, SelectedIndex)
-
-	// --- File Paths ---
-	ExecDir     string
-	ConfigPath  string
-	SingboxPath string
-	WintunPath  string
 
 	// --- VPN Operation State ---
 	RunningState *RunningState
 
-	// --- Services ---
-	// ProcessService manages sing-box process lifecycle (start, stop, monitor, auto-restart)
-	ProcessService *ProcessService
-	// ConfigService handles configuration parsing, subscription fetching, and JSON generation
-	ConfigService *ConfigService
-
-	// --- Logging ---
-	MainLogFile  *os.File
-	ChildLogFile *os.File
-	ApiLogFile   *os.File
-
-	// --- Clash API configuration ---
-	ClashAPIBaseURL    string
-	ClashAPIToken      string
-	ClashAPIEnabled    bool
-	SelectedClashGroup string
-	AutoLoadInProgress bool       // Flag to prevent multiple auto-load attempts
-	AutoLoadMutex      sync.Mutex // Mutex for AutoLoadInProgress
-
-	// --- Tray menu update protection ---
-	TrayMenuUpdateInProgress bool        // Flag to prevent multiple simultaneous menu updates
-	TrayMenuUpdateMutex      sync.Mutex  // Mutex for TrayMenuUpdateInProgress
-	TrayMenuUpdateTimer      *time.Timer // Timer for debouncing menu updates
-
-	// --- Version check caching ---
-	VersionCheckCache      string       // Cached latest version
-	VersionCheckCacheTime  time.Time    // Time when version was successfully checked
-	VersionCheckMutex      sync.RWMutex // Mutex for version check cache
-	VersionCheckInProgress bool         // Flag to prevent multiple version checks
-
-	// --- Launcher version check caching ---
-	LauncherVersionCheckCache      string       // Cached latest launcher version
-	LauncherVersionCheckCacheTime  time.Time    // Time when launcher version was successfully checked
-	LauncherVersionCheckMutex      sync.RWMutex // Mutex for launcher version check cache
-	LauncherVersionCheckInProgress bool         // Flag to prevent multiple launcher version checks
-
 	// --- Context for goroutine cancellation ---
 	ctx        context.Context    // Context for cancellation
 	cancelFunc context.CancelFunc // Cancel function for stopping goroutines
-
-	// --- Callbacks for UI logic ---
-	RefreshAPIFunc         func()
-	ResetAPIStateFunc      func()
-	UpdateCoreStatusFunc   func() // Callback to update status in Core Dashboard
-	UpdateConfigStatusFunc func() // Callback to update config status in Core Dashboard
-	UpdateTrayMenuFunc     func() // Callback to update tray menu
-
-	// --- Parser progress UI ---
-	ParserProgressBar        *widget.ProgressBar
-	ParserStatusLabel        *widget.Label
-	UpdateParserProgressFunc func(progress float64, status string) // Callback to update parser progress
-
-	// --- Auto-update configuration ---
-	AutoUpdateEnabled        bool       // Flag to enable/disable auto-updates (false after 10 failed attempts)
-	AutoUpdateFailedAttempts int        // Counter for consecutive failed attempts (reset on success)
-	AutoUpdateMutex          sync.Mutex // Mutex for auto-update state
 }
 
 // RunningState - structure for tracking the VPN's running state.
@@ -162,117 +94,100 @@ type RunningState struct {
 func NewAppController(appIconData, greyIconData, greenIconData, redIconData []byte) (*AppController, error) {
 	ac := &AppController{}
 
-	ex, err := os.Executable()
+	// Initialize FileService first (needed by other services)
+	fileService, err := services.NewFileService()
 	if err != nil {
-		return nil, fmt.Errorf("NewAppController: cannot determine executable path: %w", err)
+		return nil, fmt.Errorf("NewAppController: cannot create FileService: %w", err)
 	}
-	ac.ExecDir = filepath.Dir(ex)
-
-	// Use platform-specific functions
-	if err := platform.EnsureDirectories(ac.ExecDir); err != nil {
-		return nil, fmt.Errorf("NewAppController: cannot create directories: %w", err)
-	}
-
-	ac.ConfigPath = platform.GetConfigPath(ac.ExecDir)
-	singboxName := platform.GetExecutableNames()
-	ac.SingboxPath = filepath.Join(ac.ExecDir, "bin", singboxName)
-	ac.WintunPath = platform.GetWintunPath(ac.ExecDir)
+	ac.FileService = fileService
 
 	// Open log files with rotation support
-	logFile, err := openLogFileWithRotation(filepath.Join(ac.ExecDir, logFileName))
+	if err := ac.FileService.OpenLogFiles(logFileName, childLogFileName, apiLogFileName); err != nil {
+		return nil, fmt.Errorf("NewAppController: cannot open log files: %w", err)
+	}
+
+	// Initialize RunningState before UIService (needed for callback)
+	ac.RunningState = &RunningState{controller: ac}
+	ac.RunningState.Set(false)
+
+	// Initialize UIService
+	uiService, err := services.NewUIService(
+		appIconData, greyIconData, greenIconData, redIconData,
+		func() bool { return ac.RunningState.IsRunning() },
+		ac.FileService.SingboxPath,
+		func() { ac.UpdateUI() },
+	)
 	if err != nil {
-		return nil, fmt.Errorf("NewAppController: cannot open main log file: %w", err)
+		return nil, fmt.Errorf("NewAppController: cannot create UIService: %w", err)
 	}
-	log.SetOutput(logFile)
-	ac.MainLogFile = logFile
-
-	childLogFile, err := openLogFileWithRotation(filepath.Join(ac.ExecDir, childLogFileName))
-	if err != nil {
-		log.Printf("NewAppController: failed to open sing-box child log file: %v", err)
-		ac.ChildLogFile = nil
-	} else {
-		ac.ChildLogFile = childLogFile
-	}
-
-	apiLogFile, err := openLogFileWithRotation(filepath.Join(ac.ExecDir, apiLogFileName))
-	if err != nil {
-		log.Printf("NewAppController: failed to open API log file: %v", err)
-		ac.ApiLogFile = nil
-	} else {
-		ac.ApiLogFile = apiLogFile
-	}
-
-	ac.AppIconData = fyne.NewStaticResource("appIcon", appIconData)
-	ac.GreyIconData = fyne.NewStaticResource("trayIcon", greyIconData)
-	ac.GreenIconData = fyne.NewStaticResource("runningIcon", greenIconData)
-	ac.RedIconData = fyne.NewStaticResource("errorIcon", redIconData)
-
-	log.Println("Application initializing...")
-	ac.Application = app.NewWithID("com.singbox.launcher")
-	ac.Application.SetIcon(ac.AppIconData)
-	// Set theme based on constants
-	switch constants.AppTheme {
-	case "dark":
-		ac.Application.Settings().SetTheme(theme.DarkTheme())
-	case "light":
-		ac.Application.Settings().SetTheme(theme.LightTheme())
-	default: // "default" or any other value uses system theme
-		ac.Application.Settings().SetTheme(theme.DefaultTheme())
-	}
+	ac.UIService = uiService
 	ac.RunningState = &RunningState{controller: ac}
 	ac.RunningState.Set(false) // Use Set() method instead of direct assignment
 	ac.ConsecutiveCrashAttempts = 0
 	ac.ProcessService = NewProcessService(ac)
 	ac.ConfigService = NewConfigService(ac)
 
-	if base, tok, err := api.LoadClashAPIConfig(ac.ConfigPath); err != nil {
-		log.Printf("NewAppController: Clash API config error: %v", err)
-		ac.ClashAPIBaseURL = ""
-		ac.ClashAPIToken = ""
-		ac.ClashAPIEnabled = false
-	} else {
-		ac.ClashAPIBaseURL = base
-		ac.ClashAPIToken = tok
-		ac.ClashAPIEnabled = true
+	// Initialize APIService
+	apiService, err := services.NewAPIService(
+		ac.FileService.ConfigPath,
+		ac.FileService.ApiLogFile,
+		func() bool { return ac.RunningState.IsRunning() },
+		func() {
+			// OnProxiesUpdated callback
+			if ac.UIService != nil {
+				if ac.UIService.ProxiesListWidget != nil {
+					ac.UIService.ProxiesListWidget.Refresh()
+				}
+				if ac.UIService.ListStatusLabel != nil {
+					group := ac.APIService.GetSelectedClashGroup()
+					active := ac.APIService.GetActiveProxyName()
+					ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Proxies loaded for '%s'. Active: %s", group, active))
+				}
+				if ac.UIService.RefreshAPIFunc != nil {
+					ac.UIService.RefreshAPIFunc()
+				}
+				if ac.UIService.UpdateTrayMenuFunc != nil {
+					ac.UIService.UpdateTrayMenuFunc()
+				}
+			}
+		},
+		func() {
+			// OnProxySwitched callback
+			if ac.UIService != nil {
+				if ac.UIService.UpdateTrayMenuFunc != nil {
+					ac.UIService.UpdateTrayMenuFunc()
+				}
+				if ac.UIService.RefreshAPIFunc != nil {
+					ac.UIService.RefreshAPIFunc()
+				}
+			}
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("NewAppController: cannot create APIService: %w", err)
 	}
+	ac.APIService = apiService
 
-	// Initialize SelectedClashGroup from config (needed for auto-loading proxies)
-	if ac.ClashAPIEnabled {
-		_, defaultSelector, err := config.GetSelectorGroupsFromConfig(ac.ConfigPath)
-		if err != nil {
-			log.Printf("NewAppController: Failed to get selector groups: %v", err)
-			ac.SelectedClashGroup = "proxy-out" // Default fallback
-		} else {
-			ac.SelectedClashGroup = defaultSelector
-			log.Printf("NewAppController: Initialized SelectedClashGroup: %s", defaultSelector)
-		}
-	}
-
-	// Initialize API state fields (safe during initialization, but using methods for consistency)
-	ac.SetProxiesList([]api.ProxyInfo{})
-	ac.SetSelectedIndex(-1)
-	ac.SetActiveProxyName("")
-
-	ac.RefreshAPIFunc = func() { log.Println("RefreshAPIFunc handler is not set yet.") }
-	ac.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
-	ac.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
-	ac.UpdateConfigStatusFunc = func() { log.Println("UpdateConfigStatusFunc handler is not set yet.") }
-	ac.UpdateTrayMenuFunc = func() { log.Println("UpdateTrayMenuFunc handler is not set yet.") }
-	ac.UpdateParserProgressFunc = func(progress float64, status string) {
+	// Initialize UI callbacks (delegated to UIService)
+	ac.UIService.RefreshAPIFunc = func() { log.Println("RefreshAPIFunc handler is not set yet.") }
+	ac.UIService.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
+	ac.UIService.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
+	ac.UIService.UpdateConfigStatusFunc = func() { log.Println("UpdateConfigStatusFunc handler is not set yet.") }
+	ac.UIService.UpdateTrayMenuFunc = func() { log.Println("UpdateTrayMenuFunc handler is not set yet.") }
+	ac.UIService.UpdateParserProgressFunc = func(progress float64, status string) {
 		log.Printf("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
 	}
 
 	// Initialize context for goroutine cancellation
 	ac.ctx, ac.cancelFunc = context.WithCancel(context.Background())
 
-	// Initialize auto-update state
-	ac.AutoUpdateEnabled = true
-	ac.AutoUpdateFailedAttempts = 0
+	// Initialize StateService
+	ac.StateService = services.NewStateService()
 
 	// Check if config file exists before starting auto-update
-	if _, err := os.Stat(ac.ConfigPath); os.IsNotExist(err) {
-		log.Printf("Auto-update: Config file does not exist (%s), auto-update disabled", ac.ConfigPath)
-		ac.AutoUpdateEnabled = false
+	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
+		log.Printf("Auto-update: Config file does not exist (%s), auto-update disabled", ac.FileService.ConfigPath)
+		ac.StateService.SetAutoUpdateEnabled(false)
 	}
 	go ac.startAutoUpdateLoop()
 	return ac, nil
@@ -280,50 +195,25 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 
 // UpdateUI updates all UI elements based on the current application state.
 func (ac *AppController) UpdateUI() {
-	fyne.Do(func() {
-		// Update tray icon (this is a system function, not a UI widget)
-		if desk, ok := ac.Application.(desktop.App); ok {
-			// Check that icons are initialized
-			if ac.GreenIconData == nil || ac.GreyIconData == nil || ac.RedIconData == nil {
-				log.Printf("UpdateUI: Icons not initialized, skipping icon update")
-				return
-			}
+	if ac.UIService != nil {
+		ac.UIService.UpdateUI()
+	}
+}
 
-			var iconToSet fyne.Resource
+// GetApplication returns the Fyne application instance.
+func (ac *AppController) GetApplication() fyne.App {
+	if ac.UIService != nil {
+		return ac.UIService.Application
+	}
+	return nil
+}
 
-			if ac.RunningState.IsRunning() {
-				// Green icon - if running
-				iconToSet = ac.GreenIconData
-			} else {
-				// Check for binary to determine error state (simple file check)
-				if _, err := os.Stat(ac.SingboxPath); os.IsNotExist(err) {
-					// Red icon - on error (binary not found)
-					iconToSet = ac.RedIconData
-				} else {
-					// Grey icon - on normal stop
-					iconToSet = ac.GreyIconData
-				}
-			}
-
-			desk.SetSystemTrayIcon(iconToSet)
-		}
-
-		// Если состояние Down, сбрасываем API состояние
-		if !ac.RunningState.IsRunning() && ac.ResetAPIStateFunc != nil {
-			log.Println("UpdateUI: Triggering API state reset because state is 'Down'.")
-			ac.ResetAPIStateFunc()
-		}
-
-		// Update tray menu when state changes (same as Core Dashboard)
-		if ac.UpdateTrayMenuFunc != nil {
-			ac.UpdateTrayMenuFunc()
-		}
-
-		// Update Core Dashboard status when state changes (synchronize with tray)
-		if ac.UpdateCoreStatusFunc != nil {
-			ac.UpdateCoreStatusFunc()
-		}
-	})
+// GetMainWindow returns the main window instance.
+func (ac *AppController) GetMainWindow() fyne.Window {
+	if ac.UIService != nil {
+		return ac.UIService.MainWindow
+	}
+	return nil
 }
 
 // GracefulExit performs a graceful shutdown of the application.
@@ -335,12 +225,9 @@ func (ac *AppController) GracefulExit() {
 	}
 
 	// Stop any pending menu update timer
-	ac.TrayMenuUpdateMutex.Lock()
-	if ac.TrayMenuUpdateTimer != nil {
-		ac.TrayMenuUpdateTimer.Stop()
-		ac.TrayMenuUpdateTimer = nil
+	if ac.UIService != nil {
+		ac.UIService.StopTrayMenuUpdateTimer()
 	}
-	ac.TrayMenuUpdateMutex.Unlock()
 
 	StopSingBoxProcess(ac)
 
@@ -367,17 +254,13 @@ func (ac *AppController) GracefulExit() {
 	}
 end_loop:
 
-	if ac.MainLogFile != nil {
-		ac.MainLogFile.Close()
-	}
-	if ac.ChildLogFile != nil {
-		ac.ChildLogFile.Close()
-	}
-	if ac.ApiLogFile != nil {
-		ac.ApiLogFile.Close()
+	if ac.FileService != nil {
+		ac.FileService.CloseLogFiles()
 	}
 
-	ac.Application.Quit()
+	if ac.UIService != nil {
+		ac.UIService.QuitApplication()
+	}
 }
 
 // RunHidden launches an external command in a hidden window.
@@ -389,10 +272,10 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 	}
 
 	if logPath != "" {
-		if logPath == filepath.Join(ac.ExecDir, childLogFileName) && ac.ChildLogFile != nil {
+		if logPath == filepath.Join(ac.FileService.ExecDir, childLogFileName) && ac.FileService.ChildLogFile != nil {
 			// For sing-box logs, check and rotate if needed before writing
 			checkAndRotateLogFile(logPath)
-			logFile := ac.ChildLogFile
+			logFile := ac.FileService.ChildLogFile
 			// Don't truncate - append to preserve logs, rotation handles size limits
 			cmd.Stdout = logFile
 			cmd.Stderr = logFile
@@ -413,10 +296,12 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 
 // CheckLinuxCapabilities checks Linux capabilities and shows a suggestion if needed
 func CheckLinuxCapabilities(ac *AppController) {
-	if suggestion := platform.CheckAndSuggestCapabilities(ac.SingboxPath); suggestion != "" {
+	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
 		log.Printf("CheckLinuxCapabilities: %s", suggestion)
 		// Show info dialog (not error) - capabilities can be set later
-		dialogs.ShowInfo(ac.MainWindow, "Linux Capabilities", suggestion)
+		if ac.UIService != nil && ac.UIService.MainWindow != nil {
+			dialogs.ShowInfo(ac.UIService.MainWindow, "Linux Capabilities", suggestion)
+		}
 	}
 }
 
@@ -433,8 +318,8 @@ func (r *RunningState) Set(value bool) {
 	r.controller.UpdateUI()
 
 	// Call callback to update status in Core Dashboard
-	if r.controller.UpdateCoreStatusFunc != nil {
-		r.controller.UpdateCoreStatusFunc()
+	if r.controller.UIService != nil && r.controller.UIService.UpdateCoreStatusFunc != nil {
+		r.controller.UIService.UpdateCoreStatusFunc()
 	}
 
 }
@@ -448,47 +333,47 @@ func (r *RunningState) IsRunning() bool {
 
 // SetProxiesList safely sets the proxies list with mutex protection.
 func (ac *AppController) SetProxiesList(proxies []api.ProxyInfo) {
-	ac.APIStateMutex.Lock()
-	defer ac.APIStateMutex.Unlock()
-	ac.ProxiesList = proxies
+	if ac.APIService != nil {
+		ac.APIService.SetProxiesList(proxies)
+	}
 }
 
 // GetProxiesList safely gets a copy of the proxies list with mutex protection.
 func (ac *AppController) GetProxiesList() []api.ProxyInfo {
-	ac.APIStateMutex.RLock()
-	defer ac.APIStateMutex.RUnlock()
-	// Return a copy to prevent external modifications
-	result := make([]api.ProxyInfo, len(ac.ProxiesList))
-	copy(result, ac.ProxiesList)
-	return result
+	if ac.APIService != nil {
+		return ac.APIService.GetProxiesList()
+	}
+	return []api.ProxyInfo{}
 }
 
 // SetActiveProxyName safely sets the active proxy name with mutex protection.
 func (ac *AppController) SetActiveProxyName(name string) {
-	ac.APIStateMutex.Lock()
-	defer ac.APIStateMutex.Unlock()
-	ac.ActiveProxyName = name
+	if ac.APIService != nil {
+		ac.APIService.SetActiveProxyName(name)
+	}
 }
 
 // GetActiveProxyName safely gets the active proxy name with mutex protection.
 func (ac *AppController) GetActiveProxyName() string {
-	ac.APIStateMutex.RLock()
-	defer ac.APIStateMutex.RUnlock()
-	return ac.ActiveProxyName
+	if ac.APIService != nil {
+		return ac.APIService.GetActiveProxyName()
+	}
+	return ""
 }
 
 // SetSelectedIndex safely sets the selected index with mutex protection.
 func (ac *AppController) SetSelectedIndex(index int) {
-	ac.APIStateMutex.Lock()
-	defer ac.APIStateMutex.Unlock()
-	ac.SelectedIndex = index
+	if ac.APIService != nil {
+		ac.APIService.SetSelectedIndex(index)
+	}
 }
 
 // GetSelectedIndex safely gets the selected index with mutex protection.
 func (ac *AppController) GetSelectedIndex() int {
-	ac.APIStateMutex.RLock()
-	defer ac.APIStateMutex.RUnlock()
-	return ac.SelectedIndex
+	if ac.APIService != nil {
+		return ac.APIService.GetSelectedIndex()
+	}
+	return -1
 }
 
 // getOurPID safely gets the PID of the tracked sing-box process
@@ -742,8 +627,8 @@ func CheckIfSingBoxRunningAtStartUtil(ac *AppController) {
 
 // CheckConfigFileExists checks if config.json exists and shows a warning if it doesn't
 func CheckConfigFileExists(ac *AppController) {
-	if _, err := os.Stat(ac.ConfigPath); os.IsNotExist(err) {
-		log.Printf("CheckConfigFileExists: config.json not found at %s", ac.ConfigPath)
+	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
+		log.Printf("CheckConfigFileExists: config.json not found at %s", ac.FileService.ConfigPath)
 
 		message := fmt.Sprintf(
 			"⚠️ Configuration file not found!\n\n"+
@@ -755,7 +640,9 @@ func CheckConfigFileExists(ac *AppController) {
 			constants.ConfigFileName,
 		)
 
-		dialogs.ShowInfo(ac.MainWindow, "Configuration Not Found", message)
+		if ac.UIService != nil && ac.UIService.MainWindow != nil {
+			dialogs.ShowInfo(ac.UIService.MainWindow, "Configuration Not Found", message)
+		}
 	}
 }
 
@@ -779,14 +666,16 @@ func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
 			continue
 		}
 		if strings.EqualFold(p.Executable(), execName) {
-			dialogs.ShowInfo(ac.MainWindow, "Information", "The application is already running. Use the existing instance or close it before starting a new one.")
+			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+				dialogs.ShowInfo(ac.UIService.MainWindow, "Information", "The application is already running. Use the existing instance or close it before starting a new one.")
+			}
 			return
 		}
 	}
 }
 
 func CheckFilesUtil(ac *AppController) {
-	files := platform.GetRequiredFiles(ac.ExecDir)
+	files := platform.GetRequiredFiles(ac.FileService.ExecDir)
 	msg := "File check:\n\n"
 	allOk := true
 	for _, f := range files {
@@ -804,7 +693,9 @@ func CheckFilesUtil(ac *AppController) {
 	} else {
 		msg += "\nSome files missing. ❌"
 	}
-	dialogs.ShowInfo(ac.MainWindow, "File Check", msg)
+	if ac.UIService != nil && ac.UIService.MainWindow != nil {
+		dialogs.ShowInfo(ac.UIService.MainWindow, "File Check", msg)
+	}
 }
 
 func FormatBytesUtil(b int64) string {
@@ -826,7 +717,9 @@ func ShowSingBoxAlreadyRunningWarningUtil(ac *AppController) {
 	closeButton := widget.NewButton("Close This Warning", nil)
 	content := container.NewVBox(label, killButton, closeButton)
 	var d dialog.Dialog
-	d = dialog.NewCustomWithoutButtons("Warning", content, ac.MainWindow)
+	if ac.UIService != nil && ac.UIService.MainWindow != nil {
+		d = dialog.NewCustomWithoutButtons("Warning", content, ac.UIService.MainWindow)
+	}
 	killButton.OnTapped = func() {
 		go func() {
 			processName := platform.GetProcessNameForCheck()
@@ -839,131 +732,11 @@ func ShowSingBoxAlreadyRunningWarningUtil(ac *AppController) {
 	fyne.Do(func() { d.Show() })
 }
 
-// AutoLoadProxies attempts to load proxies with retry intervals (1, 3, 7, 13, 17 seconds)
+// AutoLoadProxies attempts to load proxies with retry intervals (1, 3, 7, 13, 17 seconds).
 func (ac *AppController) AutoLoadProxies() {
-	// Check if already in progress
-	ac.AutoLoadMutex.Lock()
-	if ac.AutoLoadInProgress {
-		ac.AutoLoadMutex.Unlock()
-		log.Printf("AutoLoadProxies: Already in progress, skipping")
-		return
+	if ac.APIService != nil {
+		ac.APIService.AutoLoadProxies(ac.ctx)
 	}
-	ac.AutoLoadInProgress = true
-	ac.AutoLoadMutex.Unlock()
-
-	if !ac.ClashAPIEnabled {
-		ac.AutoLoadMutex.Lock()
-		ac.AutoLoadInProgress = false
-		ac.AutoLoadMutex.Unlock()
-		log.Printf("AutoLoadProxies: Clash API is disabled, skipping")
-		return
-	}
-
-	ac.APIStateMutex.RLock()
-	selectedGroup := ac.SelectedClashGroup
-	ac.APIStateMutex.RUnlock()
-
-	if selectedGroup == "" {
-		ac.AutoLoadMutex.Lock()
-		ac.AutoLoadInProgress = false
-		ac.AutoLoadMutex.Unlock()
-		log.Printf("AutoLoadProxies: No group selected, skipping")
-		return
-	}
-
-	intervals := []time.Duration{1, 3, 3, 5, 5, 5, 5, 5, 10, 10, 10, 10, 15, 15}
-
-	go func() {
-		for attempt, interval := range intervals {
-			// Check if context is cancelled
-			select {
-			case <-ac.ctx.Done():
-				log.Println("AutoLoadProxies: Stopped (context cancelled)")
-				ac.AutoLoadMutex.Lock()
-				ac.AutoLoadInProgress = false
-				ac.AutoLoadMutex.Unlock()
-				return
-			default:
-			}
-
-			// Wait for the interval (except first attempt)
-			if attempt > 0 {
-				select {
-				case <-ac.ctx.Done():
-					log.Println("AutoLoadProxies: Stopped during wait (context cancelled)")
-					ac.AutoLoadMutex.Lock()
-					ac.AutoLoadInProgress = false
-					ac.AutoLoadMutex.Unlock()
-					return
-				case <-time.After(interval * time.Second):
-					// Continue
-				}
-			}
-
-			// Check if sing-box is running before attempting to connect
-			if !ac.RunningState.IsRunning() {
-				log.Printf("AutoLoadProxies: Attempt %d/%d skipped - sing-box is not running", attempt+1, len(intervals))
-				// Continue to next attempt
-				continue
-			}
-
-			log.Printf("AutoLoadProxies: Attempt %d/%d to load proxies for group '%s'", attempt+1, len(intervals), selectedGroup)
-
-			// Get current group (it might have changed)
-			ac.APIStateMutex.RLock()
-			currentGroup := ac.SelectedClashGroup
-			baseURL := ac.ClashAPIBaseURL
-			token := ac.ClashAPIToken
-			ac.APIStateMutex.RUnlock()
-
-			if currentGroup == "" {
-				log.Printf("AutoLoadProxies: Group cleared, stopping attempts")
-				return
-			}
-
-			// Try to load proxies
-			proxies, now, err := api.GetProxiesInGroup(baseURL, token, currentGroup, ac.ApiLogFile)
-			if err != nil {
-				log.Printf("AutoLoadProxies: Attempt %d failed: %v", attempt+1, err)
-				// Continue to next attempt
-				continue
-			}
-
-			// Success - update proxies list
-			fyne.Do(func() {
-				ac.SetProxiesList(proxies)
-				ac.SetActiveProxyName(now)
-
-				// Update UI if callbacks are set
-				if ac.ProxiesListWidget != nil {
-					ac.ProxiesListWidget.Refresh()
-				}
-				if ac.ListStatusLabel != nil {
-					ac.ListStatusLabel.SetText(fmt.Sprintf("Proxies loaded for '%s'. Active: %s", currentGroup, now))
-				}
-				if ac.RefreshAPIFunc != nil {
-					ac.RefreshAPIFunc()
-				}
-
-				// Update tray menu AFTER UI updates (important: this must be last)
-				if ac.UpdateTrayMenuFunc != nil {
-					ac.UpdateTrayMenuFunc()
-				}
-			})
-
-			log.Printf("AutoLoadProxies: Successfully loaded %d proxies for group '%s' on attempt %d", len(proxies), currentGroup, attempt+1)
-
-			ac.AutoLoadMutex.Lock()
-			ac.AutoLoadInProgress = false
-			ac.AutoLoadMutex.Unlock()
-			return // Success, stop retrying
-		}
-
-		log.Printf("AutoLoadProxies: All %d attempts failed", len(intervals))
-		ac.AutoLoadMutex.Lock()
-		ac.AutoLoadInProgress = false
-		ac.AutoLoadMutex.Unlock()
-	}()
 }
 
 // VPNButtonState represents the state of Start/Stop VPN buttons
@@ -982,7 +755,7 @@ func (ac *AppController) GetVPNButtonState() VPNButtonState {
 
 	// Check if config.json exists
 	configExists := false
-	if _, err := os.Stat(ac.ConfigPath); err == nil {
+	if _, err := os.Stat(ac.FileService.ConfigPath); err == nil {
 		configExists = true
 	}
 
@@ -1035,13 +808,24 @@ func (ac *AppController) GetVPNButtonState() VPNButtonState {
 
 // CreateTrayMenu creates the system tray menu with proxy selection submenu
 func (ac *AppController) CreateTrayMenu() *fyne.Menu {
+	if ac.APIService == nil {
+		// Return minimal menu if APIService is not initialized
+		return fyne.NewMenu("Singbox Launcher", []*fyne.MenuItem{
+			fyne.NewMenuItem("Open", func() {
+				if ac.UIService != nil && ac.UIService.MainWindow != nil {
+					ac.UIService.MainWindow.Show()
+				}
+			}),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("Quit", ac.GracefulExit),
+		}...)
+	}
+
 	// Get proxies from current group
-	ac.APIStateMutex.RLock()
-	proxies := ac.ProxiesList
-	activeProxy := ac.ActiveProxyName
-	selectedGroup := ac.SelectedClashGroup
-	clashAPIEnabled := ac.ClashAPIEnabled
-	ac.APIStateMutex.RUnlock()
+	proxies := ac.APIService.GetProxiesList()
+	activeProxy := ac.APIService.GetActiveProxyName()
+	selectedGroup := ac.APIService.GetSelectedClashGroup()
+	_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
 
 	// Auto-load proxies if list is empty and API is enabled
 	// Note: AutoLoadProxies has internal guard to prevent multiple simultaneous loads
@@ -1049,9 +833,9 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 		// Only auto-load if sing-box is running
 		if ac.RunningState.IsRunning() {
 			// Check if auto-load is already in progress to avoid duplicate calls
-			ac.AutoLoadMutex.Lock()
-			alreadyInProgress := ac.AutoLoadInProgress
-			ac.AutoLoadMutex.Unlock()
+			ac.APIService.AutoLoadMutex.Lock()
+			alreadyInProgress := ac.APIService.AutoLoadInProgress
+			ac.APIService.AutoLoadMutex.Unlock()
 
 			if !alreadyInProgress {
 				// Start auto-loading in background (non-blocking)
@@ -1073,22 +857,15 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 			menuItem := fyne.NewMenuItem(proxyName, func() {
 				// Switch to selected proxy
 				go func() {
-					err := api.SwitchProxy(ac.ClashAPIBaseURL, ac.ClashAPIToken, selectedGroup, pName, ac.ApiLogFile)
+					err := ac.APIService.SwitchProxy(selectedGroup, pName)
 					fyne.Do(func() {
 						if err != nil {
 							log.Printf("CreateTrayMenu: Failed to switch proxy: %v", err)
-							dialogs.ShowError(ac.MainWindow, fmt.Errorf("failed to switch proxy: %w", err))
-						} else {
-							ac.SetActiveProxyName(pName)
-							// Update tray menu after switch
-							if ac.UpdateTrayMenuFunc != nil {
-								ac.UpdateTrayMenuFunc()
-							}
-							// Refresh UI if callback is set
-							if ac.RefreshAPIFunc != nil {
-								ac.RefreshAPIFunc()
+							if ac.UIService != nil && ac.UIService.MainWindow != nil {
+								dialogs.ShowError(ac.UIService.MainWindow, err)
 							}
 						}
+						// OnProxySwitched callback is already called in APIService.SwitchProxy
 					})
 				}()
 			})
@@ -1115,7 +892,11 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 
 	// Create main menu items
 	menuItems := []*fyne.MenuItem{
-		fyne.NewMenuItem("Open", func() { ac.MainWindow.Show() }),
+		fyne.NewMenuItem("Open", func() {
+			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+				ac.UIService.MainWindow.Show()
+			}
+		}),
 		fyne.NewMenuItemSeparator(),
 	}
 
@@ -1169,7 +950,7 @@ func (ac *AppController) startAutoUpdateLoop() {
 		}
 
 		// Check if auto-update is enabled
-		if !ac.AutoUpdateEnabled {
+		if !ac.StateService.IsAutoUpdateEnabled() {
 			// Auto-update is stopped, wait and check again
 			select {
 			case <-ac.ctx.Done():
@@ -1210,25 +991,20 @@ func (ac *AppController) startAutoUpdateLoop() {
 				success := ac.attemptAutoUpdateWithRetries(autoUpdateRetryInterval, autoUpdateMaxRetries)
 				if success {
 					// Success - error counter already reset in attemptAutoUpdateWithRetries
-					ac.AutoUpdateMutex.Lock()
-					if !ac.AutoUpdateEnabled {
-						ac.AutoUpdateEnabled = true
-						log.Println("Auto-update: Resumed after successful update")
-					}
-					ac.AutoUpdateMutex.Unlock()
+					ac.StateService.ResumeAutoUpdate()
+					log.Println("Auto-update: Resumed after successful update")
 					log.Println("Auto-update: Completed successfully, error counter reset")
 				} else {
 					// Failed after all retries - check if we reached max consecutive failures
-					ac.AutoUpdateMutex.Lock()
-					if ac.AutoUpdateFailedAttempts >= autoUpdateMaxRetries {
-						ac.AutoUpdateEnabled = false
-						ac.AutoUpdateMutex.Unlock()
-						log.Printf("Auto-update: Stopped after %d consecutive failed attempts", ac.AutoUpdateFailedAttempts)
+					failedAttempts := ac.StateService.GetAutoUpdateFailedAttempts()
+					if failedAttempts >= autoUpdateMaxRetries {
+						ac.StateService.SetAutoUpdateEnabled(false)
+						log.Printf("Auto-update: Stopped after %d consecutive failed attempts", failedAttempts)
 						fyne.Do(func() {
-							dialogs.ShowAutoHideInfo(ac.Application, ac.MainWindow, "Auto-update", "Automatic configuration update stopped after 10 failed attempts. Use manual update.")
+							if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
+								dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Auto-update", "Automatic configuration update stopped after 10 failed attempts. Use manual update.")
+							}
 						})
-					} else {
-						ac.AutoUpdateMutex.Unlock()
 					}
 				}
 			} else {
@@ -1253,7 +1029,7 @@ func (ac *AppController) startAutoUpdateLoop() {
 func (ac *AppController) calculateAutoUpdateInterval() (time.Duration, error) {
 
 	// Read ParserConfig from file
-	config, err := parser.ExtractParserConfig(ac.ConfigPath)
+	config, err := parser.ExtractParserConfig(ac.FileService.ConfigPath)
 	if err != nil {
 		// If config doesn't exist or can't be read, use default
 		defaultDuration, _ := time.ParseDuration(autoUpdateDefaultReload)
@@ -1292,7 +1068,7 @@ func maxDuration(a, b time.Duration) time.Duration {
 // Returns true if elapsed time since last_updated >= required interval
 func (ac *AppController) shouldAutoUpdate(requiredInterval time.Duration) (bool, error) {
 	// Read ParserConfig from file
-	config, err := parser.ExtractParserConfig(ac.ConfigPath)
+	config, err := parser.ExtractParserConfig(ac.FileService.ConfigPath)
 	if err != nil {
 		// If config doesn't exist, update is needed
 		return true, nil
@@ -1331,17 +1107,13 @@ func (ac *AppController) attemptAutoUpdateWithRetries(retryInterval time.Duratio
 		err := ac.ConfigService.UpdateConfigFromSubscriptions()
 		if err == nil {
 			// Success - reset error counter
-			ac.AutoUpdateMutex.Lock()
-			ac.AutoUpdateFailedAttempts = 0
-			ac.AutoUpdateMutex.Unlock()
+			ac.StateService.ResetAutoUpdateFailedAttempts()
 			return true
 		}
 
 		// Error occurred - increment error counter
-		ac.AutoUpdateMutex.Lock()
-		ac.AutoUpdateFailedAttempts++
-		currentAttempts := ac.AutoUpdateFailedAttempts
-		ac.AutoUpdateMutex.Unlock()
+		ac.StateService.IncrementAutoUpdateFailedAttempts()
+		currentAttempts := ac.StateService.GetAutoUpdateFailedAttempts()
 
 		log.Printf("Auto-update: Failed (attempt %d/%d, total consecutive failures: %d): %v", attempt, maxRetries, currentAttempts, err)
 
@@ -1364,12 +1136,8 @@ func (ac *AppController) attemptAutoUpdateWithRetries(retryInterval time.Duratio
 // resumeAutoUpdate resumes automatic updates after successful manual update
 // Should be called after successful UpdateConfigFromSubscriptions
 func (ac *AppController) resumeAutoUpdate() {
-	ac.AutoUpdateMutex.Lock()
-	defer ac.AutoUpdateMutex.Unlock()
-
-	ac.AutoUpdateFailedAttempts = 0
-	if !ac.AutoUpdateEnabled {
-		ac.AutoUpdateEnabled = true
+	if ac.StateService != nil {
+		ac.StateService.ResumeAutoUpdate()
 		log.Println("Auto-update: Resumed after successful manual update")
 	}
 }

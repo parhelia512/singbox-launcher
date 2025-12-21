@@ -138,3 +138,4 @@ func GetTunInterfaceName(configPath string) (string, error) {
 
 	return "", nil // No TUN interface found in config
 }
+

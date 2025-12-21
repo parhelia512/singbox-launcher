@@ -34,7 +34,9 @@ func (svc *ConfigService) RunParserProcess() {
 	ac.ParserMutex.Lock()
 	if ac.ParserRunning {
 		ac.ParserMutex.Unlock()
-		dialogs.ShowAutoHideInfo(ac.Application, ac.MainWindow, "Parser Info", "Configuration update is already in progress.")
+		if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
+			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Parser Info", "Configuration update is already in progress.")
+		}
 		return
 	}
 	ac.ParserRunning = true
@@ -59,14 +61,16 @@ func (svc *ConfigService) RunParserProcess() {
 	} else {
 		log.Println("RunParser: Config updated successfully.")
 		// Progress already updated in UpdateConfigFromSubscriptions with success status
-		dialogs.ShowAutoHideInfo(ac.Application, ac.MainWindow, "Parser", "Config updated successfully!")
+		if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
+			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Parser", "Config updated successfully!")
+		}
 	}
 }
 
 // updateParserProgress safely calls UpdateParserProgressFunc if it's not nil
 func updateParserProgress(ac *AppController, progress float64, status string) {
-	if ac.UpdateParserProgressFunc != nil {
-		ac.UpdateParserProgressFunc(progress, status)
+	if ac.UIService != nil && ac.UIService.UpdateParserProgressFunc != nil {
+		ac.UIService.UpdateParserProgressFunc(progress, status)
 	}
 }
 
@@ -103,7 +107,7 @@ func (svc *ConfigService) UpdateConfigFromSubscriptions() error {
 	ac := svc.ac
 
 	// Step 1: Extract configuration
-	parserConfig, err := parser.ExtractParserConfig(ac.ConfigPath)
+	parserConfig, err := parser.ExtractParserConfig(ac.FileService.ConfigPath)
 	if err != nil {
 		updateParserProgress(ac, -1, fmt.Sprintf("Error: %v", err))
 		return fmt.Errorf("failed to extract parser config: %w", err)
@@ -121,7 +125,7 @@ func (svc *ConfigService) UpdateConfigFromSubscriptions() error {
 		return svc.ProcessProxySource(ps, tc, pc, idx, total)
 	}
 
-	err = config.UpdateConfigFromSubscriptions(ac.ConfigPath, parserConfig, progressCallback, loadNodesFunc)
+	err = config.UpdateConfigFromSubscriptions(ac.FileService.ConfigPath, parserConfig, progressCallback, loadNodesFunc)
 	if err == nil {
 		// Resume auto-update after successful update
 		ac.resumeAutoUpdate()

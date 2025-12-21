@@ -1,4 +1,4 @@
-package ui
+package dialogs
 
 import (
 	"strings"
@@ -10,49 +10,14 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+
+	wizardstate "singbox-launcher/ui/wizard/state"
+	wizardtemplate "singbox-launcher/ui/wizard/template"
+	wizardtabs "singbox-launcher/ui/wizard/tabs"
 )
 
-const (
-	ruleTypeIP     = "IP Addresses (CIDR)"
-	ruleTypeDomain = "Domains/URLs"
-)
-
-// extractStringArray извлекает []string из interface{} (поддерживает []interface{} и []string)
-func extractStringArray(val interface{}) []string {
-	if arr, ok := val.([]interface{}); ok {
-		result := make([]string, 0, len(arr))
-		for _, v := range arr {
-			if s, ok := v.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return result
-	}
-	if arr, ok := val.([]string); ok {
-		return arr
-	}
-	return nil
-}
-
-// parseLines парсит многострочный текст, удаляя пустые строки
-func parseLines(text string, preserveOriginal bool) []string {
-	lines := strings.Split(text, "\n")
-	result := make([]string, 0, len(lines))
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			if preserveOriginal {
-				result = append(result, line) // Сохраняем оригинал (с пробелами)
-			} else {
-				result = append(result, trimmed) // Сохраняем обрезанную версию
-			}
-		}
-	}
-	return result
-}
-
-// showAddRuleDialog открывает диалог для добавления или редактирования пользовательского правила
-func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIndex int) {
+// ShowAddRuleDialog opens a dialog for adding or editing a custom rule.
+func ShowAddRuleDialog(state *wizardstate.WizardState, editRule *wizardstate.SelectableRuleState, ruleIndex int) {
 	if state.Window == nil {
 		return
 	}
@@ -63,23 +28,23 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 		dialogTitle = "Edit Rule"
 	}
 
-	// Проверяем, не открыт ли уже диалог для этого правила
-	if state.openRuleDialogs == nil {
-		state.openRuleDialogs = make(map[int]fyne.Window)
+	// Check if dialog is already open for this rule
+	if state.OpenRuleDialogs == nil {
+		state.OpenRuleDialogs = make(map[int]fyne.Window)
 	}
 	dialogKey := ruleIndex
 	if !isEdit {
 		dialogKey = -1
 	}
-	if existingDialog, exists := state.openRuleDialogs[dialogKey]; exists {
+	if existingDialog, exists := state.OpenRuleDialogs[dialogKey]; exists {
 		existingDialog.Close()
-		delete(state.openRuleDialogs, dialogKey)
+		delete(state.OpenRuleDialogs, dialogKey)
 	}
 
-	// Высота полей ввода IP и URL
+	// Input field height
 	inputFieldHeight := float32(90)
 
-	// Поля ввода
+	// Input fields
 	labelEntry := widget.NewEntry()
 	labelEntry.SetPlaceHolder("Rule name")
 
@@ -91,7 +56,7 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 	urlEntry.SetPlaceHolder("Enter domains or URLs (one per line)\ne.g., example.com")
 	urlEntry.Wrapping = fyne.TextWrapWord
 
-	// Ограничиваем высоту полей ввода
+	// Limit input field height
 	ipScroll := container.NewScroll(ipEntry)
 	ipSizeRect := canvas.NewRectangle(color.Transparent)
 	ipSizeRect.SetMinSize(fyne.NewSize(0, inputFieldHeight))
@@ -103,48 +68,48 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 	urlContainer := container.NewMax(urlSizeRect, urlScroll)
 
 	// Outbound selector
-	availableOutbounds := state.getAvailableOutbounds()
+	availableOutbounds := state.GetAvailableOutbounds()
 	if len(availableOutbounds) == 0 {
-		availableOutbounds = []string{defaultOutboundTag, rejectActionName}
+		availableOutbounds = []string{wizardstate.DefaultOutboundTag, wizardstate.RejectActionName}
 	}
 	outboundSelect := widget.NewSelect(availableOutbounds, func(string) {})
 	if len(availableOutbounds) > 0 {
 		outboundSelect.SetSelected(availableOutbounds[0])
 	}
 
-	// Создаем map для быстрого поиска outbound (O(1) вместо O(n))
+	// Create map for fast outbound lookup (O(1) instead of O(n))
 	outboundMap := make(map[string]bool, len(availableOutbounds))
 	for _, opt := range availableOutbounds {
 		outboundMap[opt] = true
 	}
 
-	// Определяем начальный тип правила и загружаем данные
-	ruleType := ruleTypeDomain
+	// Determine initial rule type and load data
+	ruleType := RuleTypeDomain
 	if isEdit {
 		labelEntry.SetText(editRule.Rule.Label)
 		if editRule.SelectedOutbound != "" && outboundMap[editRule.SelectedOutbound] {
 			outboundSelect.SetSelected(editRule.SelectedOutbound)
 		}
 
-		// Загружаем IP или домены
+		// Load IP or domains
 		if ipVal, hasIP := editRule.Rule.Raw["ip_cidr"]; hasIP {
-			ruleType = ruleTypeIP
-			if ips := extractStringArray(ipVal); len(ips) > 0 {
+			ruleType = RuleTypeIP
+			if ips := ExtractStringArray(ipVal); len(ips) > 0 {
 				ipEntry.SetText(strings.Join(ips, "\n"))
 			}
 		} else if domainVal, hasDomain := editRule.Rule.Raw["domain"]; hasDomain {
-			ruleType = ruleTypeDomain
-			if domains := extractStringArray(domainVal); len(domains) > 0 {
+			ruleType = RuleTypeDomain
+			if domains := ExtractStringArray(domainVal); len(domains) > 0 {
 				urlEntry.SetText(strings.Join(domains, "\n"))
 			}
 		}
 	}
 
-	// Управление видимостью полей
+	// Manage field visibility
 	ipLabel := widget.NewLabel("IP Addresses (one per line, CIDR format):")
 	urlLabel := widget.NewLabel("Domains/URLs (one per line):")
 	updateVisibility := func(selectedType string) {
-		isIP := selectedType == ruleTypeIP
+		isIP := selectedType == RuleTypeIP
 		if isIP {
 			ipLabel.Show()
 			ipContainer.Show()
@@ -158,7 +123,7 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 		}
 	}
 
-	// Кнопка сохранения и функции валидации
+	// Save button and validation functions
 	var confirmButton *widget.Button
 	var saveRule func()
 	var updateButtonState func()
@@ -173,7 +138,7 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 			return false
 		}
 		selectedType := ruleTypeRadio.Selected
-		if selectedType == ruleTypeIP {
+		if selectedType == RuleTypeIP {
 			return strings.TrimSpace(ipEntry.Text) != ""
 		}
 		return strings.TrimSpace(urlEntry.Text) != ""
@@ -189,8 +154,8 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 		}
 	}
 
-	// RadioGroup для выбора типа правила
-	ruleTypeRadio = widget.NewRadioGroup([]string{ruleTypeIP, ruleTypeDomain}, func(selected string) {
+	// RadioGroup for rule type selection
+	ruleTypeRadio = widget.NewRadioGroup([]string{RuleTypeIP, RuleTypeDomain}, func(selected string) {
 		updateVisibility(selected)
 		if updateButtonState != nil {
 			updateButtonState()
@@ -203,22 +168,22 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 		label := strings.TrimSpace(labelEntry.Text)
 		selectedType := ruleTypeRadio.Selected
 		selectedOutbound := outboundSelect.Selected
-		// Fallback: если outbound не выбран (например, при редактировании старого правила с несуществующим outbound)
+		// Fallback: if outbound not selected (e.g., when editing old rule with non-existent outbound)
 		if selectedOutbound == "" {
-			selectedOutbound = availableOutbounds[0] // availableOutbounds всегда не пустой (см. строки 107-109)
+			selectedOutbound = availableOutbounds[0] // availableOutbounds is always non-empty (see lines 107-109)
 		}
 
 		var ruleRaw map[string]interface{}
 		var items []string
 		var ruleKey string
 
-		if selectedType == ruleTypeIP {
+		if selectedType == RuleTypeIP {
 			ipText := strings.TrimSpace(ipEntry.Text)
-			items = parseLines(ipText, false) // Обрезаем пробелы
+			items = ParseLines(ipText, false) // Trim spaces
 			ruleKey = "ip_cidr"
 		} else {
 			urlText := strings.TrimSpace(urlEntry.Text)
-			items = parseLines(urlText, false) // Обрезаем пробелы
+			items = ParseLines(urlText, false) // Trim spaces
 			ruleKey = "domain"
 		}
 
@@ -227,7 +192,7 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 			"outbound": selectedOutbound,
 		}
 
-		// Сохраняем или обновляем правило
+		// Save or update rule
 		if isEdit {
 			editRule.Rule.Label = label
 			editRule.Rule.Raw = ruleRaw
@@ -235,8 +200,8 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 			editRule.Rule.DefaultOutbound = selectedOutbound
 			editRule.SelectedOutbound = selectedOutbound
 		} else {
-			newRule := &SelectableRuleState{
-				Rule: TemplateSelectableRule{
+			newRule := &wizardstate.SelectableRuleState{
+				Rule: wizardtemplate.TemplateSelectableRule{
 					Label:           label,
 					Raw:             ruleRaw,
 					HasOutbound:     true,
@@ -247,15 +212,19 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 				SelectedOutbound: selectedOutbound,
 			}
 			if state.CustomRules == nil {
-				state.CustomRules = make([]*SelectableRuleState, 0)
+				state.CustomRules = make([]*wizardstate.SelectableRuleState, 0)
 			}
 			state.CustomRules = append(state.CustomRules, newRule)
 		}
 
-		// Устанавливаем флаг для пересчета превью
-		state.templatePreviewNeedsUpdate = true
-		state.refreshRulesTab()
-		delete(state.openRuleDialogs, dialogKey)
+		// Set flag for preview recalculation
+		state.TemplatePreviewNeedsUpdate = true
+		// Refresh rules tab
+		refreshWrapper := func(state *wizardstate.WizardState) fyne.CanvasObject {
+			return wizardtabs.CreateRulesTab(state, ShowAddRuleDialog)
+		}
+		state.RefreshRulesTab(refreshWrapper)
+		delete(state.OpenRuleDialogs, dialogKey)
 		dialogWindow.Close()
 	}
 
@@ -267,16 +236,16 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 	confirmButton.Importance = widget.HighImportance
 
 	cancelButton := widget.NewButton("Cancel", func() {
-		delete(state.openRuleDialogs, dialogKey)
+		delete(state.OpenRuleDialogs, dialogKey)
 		dialogWindow.Close()
 	})
 
-	// Обработчики изменений полей для валидации
+	// Field change handlers for validation
 	labelEntry.OnChanged = func(string) { updateButtonState() }
 	ipEntry.OnChanged = func(string) { updateButtonState() }
 	urlEntry.OnChanged = func(string) { updateButtonState() }
 
-	// Контейнер с содержимым
+	// Content container
 	inputContainer := container.NewVBox(
 		widget.NewLabel("Rule Name:"),
 		labelEntry,
@@ -307,17 +276,17 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 		container.NewScroll(inputContainer),
 	)
 
-	// Создаем окно
-	dialogWindow = state.Controller.Application.NewWindow(dialogTitle)
+	// Create window
+	dialogWindow = state.Controller.UIService.Application.NewWindow(dialogTitle)
 	dialogWindow.Resize(fyne.NewSize(500, 600))
 	dialogWindow.CenterOnScreen()
 	dialogWindow.SetContent(mainContent)
 
-	// Регистрируем диалог
-	state.openRuleDialogs[dialogKey] = dialogWindow
+	// Register dialog
+	state.OpenRuleDialogs[dialogKey] = dialogWindow
 
 	dialogWindow.SetCloseIntercept(func() {
-		delete(state.openRuleDialogs, dialogKey)
+		delete(state.OpenRuleDialogs, dialogKey)
 		dialogWindow.Close()
 	})
 
@@ -325,18 +294,4 @@ func showAddRuleDialog(state *WizardState, editRule *SelectableRuleState, ruleIn
 	dialogWindow.Show()
 }
 
-// refreshRulesTab обновляет вкладку с правилами
-func (state *WizardState) refreshRulesTab() {
-	if state.tabs == nil {
-		return
-	}
 
-	for _, tab := range state.tabs.Items {
-		if tab.Text == "Rules" {
-			newContent := createTemplateTab(state)
-			tab.Content = newContent
-			state.tabs.Refresh()
-			break
-		}
-	}
-}

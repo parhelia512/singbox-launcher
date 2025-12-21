@@ -27,8 +27,16 @@ func IsDirectLink(input string) bool {
 		strings.HasPrefix(trimmed, "hysteria2://")
 }
 
+// MaxURILength defines the maximum allowed length for a proxy URI
+const MaxURILength = 8192 // 8 KB - reasonable limit for proxy URIs
+
 // ParseNode parses a single node URI and applies skip filters
 func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode, error) {
+	// Validate URI length
+	if len(uri) > MaxURILength {
+		return nil, fmt.Errorf("URI length (%d) exceeds maximum (%d)", len(uri), MaxURILength)
+	}
+
 	// Determine scheme
 	scheme := ""
 	uriToParse := uri
