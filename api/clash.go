@@ -191,6 +191,20 @@ func GetProxiesInGroup(baseURL, token, groupName string, logFile *os.File) ([]Pr
 
 	logMsg("GetProxiesInGroup: Raw response body:\n%s", string(body))
 
+	// Проверяем статус-код перед парсингом JSON
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]interface{}
+		if err := json.Unmarshal(body, &errorResp); err == nil {
+			if message, ok := errorResp["message"].(string); ok {
+				logMsg("GetProxiesInGroup: ERROR: API returned error: %s (status: %d)", message, resp.StatusCode)
+				return nil, "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, message)
+			}
+		}
+		logMsg("GetProxiesInGroup: ERROR: Unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return nil, "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	// Теперь безопасно парсим успешный ответ
 	var raw map[string]map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		logMsg("GetProxiesInGroup: ERROR: Failed to unmarshal JSON: %v", err)
