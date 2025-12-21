@@ -136,6 +136,16 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 		return nil, fmt.Errorf("failed to parse URI: %w", err)
 	}
 
+	// Validate VLESS/Trojan URI format (must have hostname and userinfo)
+	if scheme == "vless" || scheme == "trojan" {
+		if parsedURL.Hostname() == "" {
+			return nil, fmt.Errorf("invalid %s URI: missing hostname", scheme)
+		}
+		if parsedURL.User == nil || parsedURL.User.Username() == "" {
+			return nil, fmt.Errorf("invalid %s URI: missing userinfo (UUID/password)", scheme)
+		}
+	}
+
 	// Extract components
 	node := &config.ParsedNode{
 		Scheme: scheme,
@@ -343,6 +353,8 @@ func getNodeValue(node *config.ParsedNode, key string) string {
 		return node.Label // fragment == label
 	case "comment":
 		return node.Comment
+	case "flow":
+		return node.Flow
 	default:
 		return ""
 	}

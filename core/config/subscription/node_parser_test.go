@@ -272,7 +272,7 @@ func TestParseNode_SkipFilters(t *testing.T) {
 
 	t.Run("Skip by tag", func(t *testing.T) {
 		skipFilters := []map[string]string{
-			{"tag": "🇩🇪 Germany"},
+			{"tag": "/🇩🇪 Germany/i"},
 		}
 		node, err := ParseNode(uri, skipFilters)
 		if err != nil {
