@@ -478,25 +478,6 @@ func extractOutboundsAfterMarker(src string) string {
 	return afterMarker
 }
 
-//nolint:unused
-func orderTemplateSections(sections map[string]json.RawMessage) []string {
-	defaultOrder := []string{"log", "dns", "inbounds", "outbounds", "route", "experimental", "rule_set", "rules"}
-	ordered := make([]string, 0, len(sections))
-	seen := make(map[string]bool)
-	for _, key := range defaultOrder {
-		if _, ok := sections[key]; ok {
-			ordered = append(ordered, key)
-			seen[key] = true
-		}
-	}
-	for key := range sections {
-		if !seen[key] {
-			ordered = append(ordered, key)
-		}
-	}
-	return ordered
-}
-
 func extractDefaultFinal(sections map[string]json.RawMessage) string {
 	raw, ok := sections["route"]
 	if !ok || len(raw) == 0 {

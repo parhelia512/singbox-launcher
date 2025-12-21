@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -384,68 +383,6 @@ func getOurPID(ac *AppController) int {
 	return -1
 }
 
-// isSingBoxProcessRunning checks if a sing-box process is currently running on the system.
-// Uses tasklist command on Windows for more reliable process detection.
-// Returns true if process found, and the PID of found process (or -1 if not found).
-//
-//nolint:unused
-func isSingBoxProcessRunning(ac *AppController) (bool, int) {
-	processName := platform.GetProcessNameForCheck()
-	log.Printf("isSingBoxProcessRunning: Looking for process name '%s'", processName)
-
-	ourPID := getOurPID(ac)
-	log.Printf("isSingBoxProcessRunning: Our tracked PID=%d", ourPID)
-
-	// On Windows use tasklist for more reliable process detection
-	if runtime.GOOS == "windows" {
-		// Use tasklist /FI "IMAGENAME eq sing-box.exe" /FO CSV /NH
-		cmd := exec.Command("tasklist", "/FI", fmt.Sprintf("IMAGENAME eq %s", processName), "/FO", "CSV", "/NH")
-		platform.PrepareCommand(cmd) // Hide console window
-		output, err := cmd.Output()
-		if err != nil {
-			log.Printf("isSingBoxProcessRunning: tasklist command failed: %v, falling back to ps library", err)
-			return isSingBoxProcessRunningWithPS(ac, ourPID)
-		}
-
-		// Parse CSV output from tasklist
-		// Format: "name.exe","PID","Session Name","Session#","Mem Usage"
-		outputStr := strings.TrimSpace(string(output))
-		if outputStr == "" {
-			log.Printf("isSingBoxProcessRunning: No sing-box process found via tasklist")
-			return false, -1
-		}
-
-		// Parse CSV lines
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			// Parse CSV: "name.exe","PID","..."
-			parts := parseCSVLine(line)
-			if len(parts) >= 2 {
-				name := strings.Trim(parts[0], "\"")
-				pidStr := strings.Trim(parts[1], "\"")
-				if strings.EqualFold(name, processName) {
-					if pid, err := strconv.Atoi(pidStr); err == nil {
-						isOurProcess := (ourPID != -1 && pid == ourPID)
-						log.Printf("isSingBoxProcessRunning: Found process via tasklist: PID=%d, name='%s' (our tracked PID=%d, isOurProcess=%v)", pid, name, ourPID, isOurProcess)
-						return true, pid
-					} else {
-						log.Printf("isSingBoxProcessRunning: Failed to parse PID '%s': %v", pidStr, err)
-					}
-				}
-			}
-		}
-		log.Printf("isSingBoxProcessRunning: tasklist found processes but none matched '%s'", processName)
-		return false, -1
-	}
-
-	// For other OS use ps library
-	return isSingBoxProcessRunningWithPS(ac, ourPID)
-}
-
 // parseCSVLine parses a CSV line, handling quoted fields
 func parseCSVLine(line string) []string {
 	var parts []string
@@ -473,113 +410,6 @@ func parseCSVLine(line string) []string {
 	}
 
 	return parts
-}
-
-// isSingBoxProcessRunningWithPS uses ps library to check for running process
-//
-//nolint:unused
-func isSingBoxProcessRunningWithPS(ac *AppController, ourPID int) (bool, int) {
-	processes, err := ps.Processes()
-	if err != nil {
-		log.Printf("isSingBoxProcessRunningWithPS: error listing processes: %v", err)
-		return false, -1
-	}
-	processName := platform.GetProcessNameForCheck()
-
-	for _, p := range processes {
-		execName := p.Executable()
-		if strings.EqualFold(execName, processName) {
-			foundPID := p.Pid()
-			isOurProcess := (ourPID != -1 && foundPID == ourPID)
-			log.Printf("isSingBoxProcessRunningWithPS: Found process: PID=%d, executable='%s' (our tracked PID=%d, isOurProcess=%v)", foundPID, execName, ourPID, isOurProcess)
-			return true, foundPID
-		}
-	}
-	log.Printf("isSingBoxProcessRunningWithPS: No sing-box process found (checked %d processes)", len(processes))
-	return false, -1
-}
-
-// checkAndShowSingBoxRunningWarning checks if sing-box is running and shows warning dialog if found.
-// Returns true if process was found and warning was shown, false otherwise.
-//
-//nolint:unused
-func checkAndShowSingBoxRunningWarning(ac *AppController, context string) bool {
-	found, foundPID := isSingBoxProcessRunning(ac)
-	if found {
-		log.Printf("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", context, foundPID)
-		ShowSingBoxAlreadyRunningWarningUtil(ac)
-		return true
-	}
-	log.Printf("%s: No sing-box process found", context)
-	return false
-}
-
-// checkTunInterfaceExists checks if TUN interface exists on Windows
-//
-//nolint:unused
-func checkTunInterfaceExists(interfaceName string) (bool, error) {
-	if runtime.GOOS != "windows" {
-		// On Linux/macOS, TUN interfaces are managed by the OS
-		// and are automatically removed when the process exits
-		return false, nil
-	}
-
-	cmd := exec.Command("netsh", "interface", "show", "interface", fmt.Sprintf("name=%s", interfaceName))
-	platform.PrepareCommand(cmd) // Hide console window on Windows
-	output, err := cmd.Output()
-
-	if err != nil {
-		// Interface not found or command failed
-		return false, nil
-	}
-
-	// Check if interface name appears in output
-	outputStr := strings.ToLower(string(output))
-	return strings.Contains(outputStr, strings.ToLower(interfaceName)), nil
-}
-
-// removeTunInterface removes TUN interface on Windows before starting sing-box
-//
-//nolint:unused
-func removeTunInterface(interfaceName string) error {
-	if runtime.GOOS != "windows" {
-		// On Linux/macOS, interface is removed automatically
-		return nil
-	}
-
-	// Check if interface exists
-	exists, err := checkTunInterfaceExists(interfaceName)
-	if err != nil {
-		log.Printf("removeTunInterface: Failed to check interface existence: %v", err)
-		// Continue anyway - try to remove it
-	}
-
-	if !exists {
-		log.Printf("removeTunInterface: Interface '%s' does not exist, nothing to remove", interfaceName)
-		return nil
-	}
-
-	log.Printf("removeTunInterface: Removing existing TUN interface '%s'...", interfaceName)
-
-	// Remove the interface using netsh
-	cmd := exec.Command("netsh", "interface", "delete", "interface", fmt.Sprintf("name=%s", interfaceName))
-	platform.PrepareCommand(cmd) // Hide console window on Windows
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Interface might be in use or already deleted
-		log.Printf("removeTunInterface: Failed to remove interface '%s': %v, output: %s",
-			interfaceName, err, string(output))
-		// This is not a critical error - sing-box might handle it
-		return nil
-	}
-
-	log.Printf("removeTunInterface: Successfully removed interface '%s'", interfaceName)
-
-	// Give system time to release resources
-	time.Sleep(500 * time.Millisecond)
-
-	return nil
 }
 
 // StartSingBoxProcess launches the sing-box process.
