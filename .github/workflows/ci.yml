@@ -267,7 +267,7 @@ jobs:
 
   # Сборка и релиз для тегов (автоматически создает Release при push тега)
   build-and-release:
-    name: Build & Release (${{ matrix.os }})
+    name: Build & Release
     # Запускается только если это push тега
     if: startsWith(github.ref, 'refs/tags/')
     strategy:
