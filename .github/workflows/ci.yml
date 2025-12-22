@@ -90,9 +90,18 @@ jobs:
 
       - name: Run tests (Windows without race detector)
         if: matrix.os == 'windows-latest'
+        shell: cmd
         env:
           CGO_ENABLED: 1
-        run: go test -v -coverprofile=coverage.out ./...
+        run: |
+          echo === Verifying coverage files are cleaned ===
+          if exist coverage.out (echo ERROR: coverage.out still exists && exit /b 1)
+          if exist coverage.txt (echo ERROR: coverage.txt still exists && exit /b 1)
+          if exist coverage.html (echo ERROR: coverage.html still exists && exit /b 1)
+          echo Coverage files cleaned successfully
+          echo.
+          echo === Running tests ===
+          go test -v -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
