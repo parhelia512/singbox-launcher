@@ -172,9 +172,31 @@ jobs:
           GOARCH: amd64
           SDKROOT: $(xcrun --show-sdk-path)
         run: |
+          echo "=== Build environment ==="
+          echo "GOOS: $GOOS"
+          echo "GOARCH: $GOARCH"
+          echo "CGO_ENABLED: $CGO_ENABLED"
+          echo "SDKROOT: $SDKROOT"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Output file: ${{ matrix.artifact_name }}"
+          echo ""
+          echo "=== Verifying SDK ==="
+          xcrun --show-sdk-path || echo "Warning: SDK path check failed"
+          clang --version || echo "Warning: clang check failed"
+          echo ""
+          echo "=== Building ==="
           go build -buildvcs=false \
             -ldflags="-s -w -X singbox-launcher/internal/constants.AppVersion=${{ steps.version.outputs.version }}" \
             -o ${{ matrix.artifact_name }}
+          
+          # Проверяем, что файл создан
+          if [ ! -f "${{ matrix.artifact_name }}" ]; then
+            echo "Error: Build output file not found: ${{ matrix.artifact_name }}"
+            exit 1
+          fi
+          
+          echo "Build successful: ${{ matrix.artifact_name }}"
+          ls -lh "${{ matrix.artifact_name }}"
 
       - name: Build for macOS (Apple Silicon)
         if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
@@ -184,40 +206,100 @@ jobs:
           GOARCH: arm64
           SDKROOT: $(xcrun --show-sdk-path)
         run: |
+          echo "=== Build environment ==="
+          echo "GOOS: $GOOS"
+          echo "GOARCH: $GOARCH"
+          echo "CGO_ENABLED: $CGO_ENABLED"
+          echo "SDKROOT: $SDKROOT"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Output file: ${{ matrix.artifact_name }}"
+          echo ""
+          echo "=== Verifying SDK ==="
+          xcrun --show-sdk-path || echo "Warning: SDK path check failed"
+          clang --version || echo "Warning: clang check failed"
+          echo ""
+          echo "=== Building ==="
           go build -buildvcs=false \
             -ldflags="-s -w -X singbox-launcher/internal/constants.AppVersion=${{ steps.version.outputs.version }}" \
             -o ${{ matrix.artifact_name }}
+          
+          # Проверяем, что файл создан
+          if [ ! -f "${{ matrix.artifact_name }}" ]; then
+            echo "Error: Build output file not found: ${{ matrix.artifact_name }}"
+            exit 1
+          fi
+          
+          echo "Build successful: ${{ matrix.artifact_name }}"
+          ls -lh "${{ matrix.artifact_name }}"
 
       - name: Create macOS universal binary
         if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
         run: |
+          echo "=== Creating macOS universal binary ==="
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo ""
+          
           # Проверяем, что amd64 версия создана
           if [ ! -f "singbox-launcher-macos-amd64" ]; then
             echo "Error: singbox-launcher-macos-amd64 not found!"
+            ls -la | grep -i macos || echo "No macOS files found"
             exit 1
           fi
           
+          echo "✓ Found amd64 binary: singbox-launcher-macos-amd64"
+          ls -lh singbox-launcher-macos-amd64
+          echo ""
+          
+          # Проверяем SDK перед сборкой arm64
+          echo "=== Verifying SDK for arm64 build ==="
+          SDK_PATH=$(xcrun --show-sdk-path)
+          echo "SDKROOT: $SDK_PATH"
+          clang --version || echo "Warning: clang check failed"
+          echo ""
+          
           # Собираем arm64 версию для universal binary
-          GOARCH=arm64 CGO_ENABLED=1 SDKROOT=$(xcrun --show-sdk-path) \
+          echo "=== Building arm64 version for universal binary ==="
+          GOARCH=arm64 CGO_ENABLED=1 SDKROOT="$SDK_PATH" \
             go build -buildvcs=false \
             -ldflags="-s -w -X singbox-launcher/internal/constants.AppVersion=${{ steps.version.outputs.version }}" \
             -o singbox-launcher-macos-arm64-temp
           
-          # Проверяем, что arm64 версия создана
-          if [ ! -f "singbox-launcher-macos-arm64-temp" ]; then
-            echo "Error: singbox-launcher-macos-arm64-temp not found!"
+          BUILD_EXIT_CODE=$?
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "Error: arm64 build failed with exit code $BUILD_EXIT_CODE"
             exit 1
           fi
           
+          # Проверяем, что arm64 версия создана
+          if [ ! -f "singbox-launcher-macos-arm64-temp" ]; then
+            echo "Error: singbox-launcher-macos-arm64-temp not found after build!"
+            ls -la | grep -i macos || echo "No macOS files found"
+            exit 1
+          fi
+          
+          echo "✓ Built arm64 binary: singbox-launcher-macos-arm64-temp"
+          ls -lh singbox-launcher-macos-arm64-temp
+          echo ""
+          
           # Создаем universal binary
+          echo "=== Creating universal binary with lipo ==="
           lipo -create -output singbox-launcher-macos-universal \
             singbox-launcher-macos-amd64 singbox-launcher-macos-arm64-temp
           
+          LIPO_EXIT_CODE=$?
+          if [ $LIPO_EXIT_CODE -ne 0 ]; then
+            echo "Error: lipo failed with exit code $LIPO_EXIT_CODE"
+            exit 1
+          fi
+          
           # Проверяем архитектуры
+          echo "=== Universal binary info ==="
           lipo -info singbox-launcher-macos-universal
+          ls -lh singbox-launcher-macos-universal
           
           # Удаляем временные файлы (но оставляем amd64 для артефактов, если нужно)
           rm -f singbox-launcher-macos-arm64-temp
+          echo "✓ Universal binary created successfully"
 
       - name: Build for Windows
         if: matrix.goos == 'windows'
