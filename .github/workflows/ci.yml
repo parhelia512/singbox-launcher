@@ -198,12 +198,38 @@ jobs:
         run: |
           echo "=== Building macOS .app bundle using build_darwin.sh ==="
           echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Working directory: $(pwd)"
           echo ""
           
-          # Делаем скрипт исполняемым
+          # Проверяем наличие необходимых инструментов
+          echo "=== Verifying dependencies ==="
+          command -v go >/dev/null 2>&1 || { echo "Error: go not found"; exit 1; }
+          command -v xcrun >/dev/null 2>&1 || { echo "Error: xcrun not found"; exit 1; }
+          command -v lipo >/dev/null 2>&1 || { echo "Error: lipo not found"; exit 1; }
+          command -v git >/dev/null 2>&1 || { echo "Error: git not found"; exit 1; }
+          echo "✓ All dependencies found"
+          echo ""
+          
+          # Проверяем наличие скрипта и делаем его исполняемым
+          if [ ! -f "build/build_darwin.sh" ]; then
+            echo "Error: build/build_darwin.sh not found!"
+            ls -la build/ || echo "build/ directory not found"
+            exit 1
+          fi
           chmod +x build/build_darwin.sh
+          echo "✓ Script is executable"
+          echo ""
+          
+          # Проверяем наличие иконки (опционально)
+          if [ -f "assets/app.icns" ]; then
+            echo "✓ Icon found: assets/app.icns"
+          else
+            echo "⚠ Icon not found: assets/app.icns (will be skipped)"
+          fi
+          echo ""
           
           # Запускаем скрипт сборки (universal binary)
+          # Скрипт сам переходит в корень проекта через cd "$(dirname "$0")/.."
           build/build_darwin.sh universal
           
           # Проверяем, что .app bundle создан
@@ -342,12 +368,38 @@ jobs:
         run: |
           echo "=== Building macOS .app bundle using build_darwin.sh ==="
           echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Working directory: $(pwd)"
           echo ""
           
-          # Делаем скрипт исполняемым
+          # Проверяем наличие необходимых инструментов
+          echo "=== Verifying dependencies ==="
+          command -v go >/dev/null 2>&1 || { echo "Error: go not found"; exit 1; }
+          command -v xcrun >/dev/null 2>&1 || { echo "Error: xcrun not found"; exit 1; }
+          command -v lipo >/dev/null 2>&1 || { echo "Error: lipo not found"; exit 1; }
+          command -v git >/dev/null 2>&1 || { echo "Error: git not found"; exit 1; }
+          echo "✓ All dependencies found"
+          echo ""
+          
+          # Проверяем наличие скрипта и делаем его исполняемым
+          if [ ! -f "build/build_darwin.sh" ]; then
+            echo "Error: build/build_darwin.sh not found!"
+            ls -la build/ || echo "build/ directory not found"
+            exit 1
+          fi
           chmod +x build/build_darwin.sh
+          echo "✓ Script is executable"
+          echo ""
+          
+          # Проверяем наличие иконки (опционально)
+          if [ -f "assets/app.icns" ]; then
+            echo "✓ Icon found: assets/app.icns"
+          else
+            echo "⚠ Icon not found: assets/app.icns (will be skipped)"
+          fi
+          echo ""
           
           # Запускаем скрипт сборки (universal binary)
+          # Скрипт сам переходит в корень проекта через cd "$(dirname "$0")/.."
           build/build_darwin.sh universal
           
           # Проверяем, что .app bundle создан
