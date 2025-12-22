@@ -165,6 +165,7 @@ jobs:
 
       - name: Get version
         id: version
+        shell: bash
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -174,6 +175,7 @@ jobs:
         run: go mod download
 
       - name: Verify C compiler
+        shell: bash
         run: |
           if [ "${{ matrix.goos }}" == "darwin" ]; then
             clang --version
@@ -321,14 +323,38 @@ jobs:
 
       - name: Build for Windows
         if: matrix.goos == 'windows'
+        shell: cmd
         env:
           CGO_ENABLED: 1
           GOOS: windows
           GOARCH: amd64
         run: |
-          go build -buildvcs=false \
-            -ldflags="-H windowsgui -s -w -X singbox-launcher/internal/constants.AppVersion=${{ steps.version.outputs.version }}" \
-            -o ${{ matrix.artifact_name }}
+          echo === Build environment ===
+          echo GOOS: %GOOS%
+          echo GOARCH: %GOARCH%
+          echo CGO_ENABLED: %CGO_ENABLED%
+          echo Version: ${{ steps.version.outputs.version }}
+          echo Output file: ${{ matrix.artifact_name }}
+          echo.
+          echo === Verifying C compiler ===
+          gcc --version || echo Warning: gcc check failed
+          echo.
+          echo === Building ===
+          go build -buildvcs=false -ldflags="-H windowsgui -s -w -X singbox-launcher/internal/constants.AppVersion=${{ steps.version.outputs.version }}" -o ${{ matrix.artifact_name }}
+          
+          if %ERRORLEVEL% NEQ 0 (
+            echo Error: Build failed with exit code %ERRORLEVEL%
+            exit /b %ERRORLEVEL%
+          )
+          
+          if not exist "${{ matrix.artifact_name }}" (
+            echo Error: Build output file not found: ${{ matrix.artifact_name }}
+            dir /b *.exe 2>nul || echo No .exe files found
+            exit /b 1
+          )
+          
+          echo Build successful: ${{ matrix.artifact_name }}
+          dir "${{ matrix.artifact_name }}"
 
       - name: Create macOS .app bundle
         if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
