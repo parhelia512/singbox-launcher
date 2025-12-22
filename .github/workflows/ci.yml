@@ -2,7 +2,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, ci-cd ]
     # Теги, на которых будет релиз-сборка (автоматически создаст Release)
     tags:
       - "v*"
@@ -191,11 +191,23 @@ jobs:
       - name: Create macOS universal binary
         if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
         run: |
+          # Проверяем, что amd64 версия создана
+          if [ ! -f "singbox-launcher-macos-amd64" ]; then
+            echo "Error: singbox-launcher-macos-amd64 not found!"
+            exit 1
+          fi
+          
           # Собираем arm64 версию для universal binary
           GOARCH=arm64 CGO_ENABLED=1 SDKROOT=$(xcrun --show-sdk-path) \
             go build -buildvcs=false \
             -ldflags="-s -w -X singbox-launcher/internal/constants.AppVersion=${{ steps.version.outputs.version }}" \
             -o singbox-launcher-macos-arm64-temp
+          
+          # Проверяем, что arm64 версия создана
+          if [ ! -f "singbox-launcher-macos-arm64-temp" ]; then
+            echo "Error: singbox-launcher-macos-arm64-temp not found!"
+            exit 1
+          fi
           
           # Создаем universal binary
           lipo -create -output singbox-launcher-macos-universal \
@@ -204,8 +216,8 @@ jobs:
           # Проверяем архитектуры
           lipo -info singbox-launcher-macos-universal
           
-          # Удаляем временные файлы
-          rm -f singbox-launcher-macos-amd64 singbox-launcher-macos-arm64-temp
+          # Удаляем временные файлы (но оставляем amd64 для артефактов, если нужно)
+          rm -f singbox-launcher-macos-arm64-temp
 
       - name: Build for Windows
         if: matrix.goos == 'windows'
@@ -221,6 +233,12 @@ jobs:
       - name: Create macOS .app bundle
         if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
         run: |
+          # Проверяем, что universal binary создан
+          if [ ! -f "singbox-launcher-macos-universal" ]; then
+            echo "Error: singbox-launcher-macos-universal not found!"
+            exit 1
+          fi
+          
           APP_NAME="singbox-launcher.app"
           APP_CONTENTS="$APP_NAME/Contents"
           APP_MACOS="$APP_CONTENTS/MacOS"
