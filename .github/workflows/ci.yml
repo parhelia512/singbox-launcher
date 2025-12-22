@@ -75,6 +75,7 @@ jobs:
 
       - name: Run tests (Windows without race detector)
         if: matrix.os == 'windows-latest'
+        shell: bash
         env:
           CGO_ENABLED: 1
         run: go test -v -coverprofile=coverage.out ./...
