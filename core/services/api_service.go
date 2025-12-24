@@ -151,6 +151,45 @@ func (apiSvc *APIService) GetClashAPIConfig() (baseURL, token string, enabled bo
 	return apiSvc.BaseURL, apiSvc.Token, apiSvc.Enabled
 }
 
+// ReloadClashAPIConfig reloads Clash API configuration from config.json file.
+// This should be called when config might have changed (e.g., after wizard updates).
+func (apiSvc *APIService) ReloadClashAPIConfig() error {
+	apiSvc.StateMutex.Lock()
+	defer apiSvc.StateMutex.Unlock()
+
+	log.Println("ReloadClashAPIConfig: Reloading Clash API configuration from config.json...")
+
+	// Load Clash API configuration from config.json
+	if base, tok, err := api.LoadClashAPIConfig(apiSvc.ConfigPath); err != nil {
+		log.Printf("ReloadClashAPIConfig: Clash API config error: %v", err)
+		apiSvc.BaseURL = ""
+		apiSvc.Token = ""
+		apiSvc.Enabled = false
+		apiSvc.SelectedClashGroup = ""
+		return fmt.Errorf("failed to reload Clash API config: %w", err)
+	} else {
+		oldEnabled := apiSvc.Enabled
+		apiSvc.BaseURL = base
+		apiSvc.Token = tok
+		apiSvc.Enabled = true
+		log.Printf("ReloadClashAPIConfig: Successfully reloaded - BaseURL: %s, Enabled: %v (was %v)", base, true, oldEnabled)
+	}
+
+	// Reload SelectedClashGroup from config if API is enabled
+	if apiSvc.Enabled {
+		_, defaultSelector, err := config.GetSelectorGroupsFromConfig(apiSvc.ConfigPath)
+		if err != nil {
+			log.Printf("ReloadClashAPIConfig: Failed to get selector groups: %v", err)
+			// Keep existing SelectedClashGroup if we can't read new one
+		} else {
+			apiSvc.SelectedClashGroup = defaultSelector
+			log.Printf("ReloadClashAPIConfig: Updated SelectedClashGroup: %s", defaultSelector)
+		}
+	}
+
+	return nil
+}
+
 // AutoLoadProxies attempts to load proxies with retry intervals (1, 3, 7, 13, 17 seconds).
 func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 	// Check if already in progress

@@ -74,9 +74,15 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		return
 	}
 
-	// Note: APIService handles its own config loading in NewAPIService
-	// If config reload is needed, it should be done through APIService methods
-	// For now, we skip reload here as APIService loads config on initialization
+	// Reload Clash API configuration from config.json before starting
+	// This ensures we pick up any changes made via wizard or manual config edits
+	if ac.APIService != nil {
+		log.Println("startSingBox: Reloading Clash API configuration...")
+		if err := ac.APIService.ReloadClashAPIConfig(); err != nil {
+			log.Printf("startSingBox: Warning: Failed to reload Clash API config: %v", err)
+			// Continue anyway - API might not be configured or config might be invalid
+		}
+	}
 
 	// Check and remove existing TUN interface before starting (prevents "file already exists" error)
 	if runtime.GOOS == "windows" {
