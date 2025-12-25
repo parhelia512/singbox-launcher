@@ -247,7 +247,7 @@ The Config Wizard provides a visual interface for configuring sing-box without m
 **Wizard Tabs:**
 
 1. **VLESS Sources & ParserConfig**
-   - Enter subscription URL or direct links (vless://, vmess://, trojan://, ss://, hysteria2://) and validate connectivity
+   - Enter subscription URL or direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://) and validate connectivity
    - Supports both subscription URLs and direct links (can be combined, separated by line breaks)
    - Configure ParserConfig JSON with visual editor
    - Preview generated outbounds
@@ -498,7 +498,7 @@ The subscription parser automatically updates the proxy server list in `config.j
 The parser reads the `/** @ParserConfig ... */` block at the beginning of `config.json`, downloads subscriptions, filters nodes, and generates selectors according to your configuration.
 
 **Key Features:**
-- Supports multiple subscription URLs and direct links (vless://, vmess://, trojan://, ss://, hysteria2://)
+- Supports multiple subscription URLs and direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://)
 - Flexible filtering by tags, protocols, and other parameters
 - Automatic grouping into selectors
 - Automatic configuration reload based on time intervals

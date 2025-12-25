@@ -62,7 +62,7 @@ func CreateVLESSSourceTab(state *wizardstate.WizardState) fyne.CanvasObject {
 	urlLabel.Importance = widget.MediumImportance
 
 	state.VLESSURLEntry = widget.NewMultiLineEntry()
-	state.VLESSURLEntry.SetPlaceHolder("https://example.com/subscription\nor\nvless://...\nvmess://...\nhysteria2://...")
+	state.VLESSURLEntry.SetPlaceHolder("https://example.com/subscription\nor\nvless://...\nvmess://...\nhysteria2://...\nssh://...")
 	state.VLESSURLEntry.Wrapping = fyne.TextWrapOff
 	state.VLESSURLEntry.OnChanged = func(value string) {
 		state.PreviewNeedsParse = true
@@ -70,7 +70,7 @@ func CreateVLESSSourceTab(state *wizardstate.WizardState) fyne.CanvasObject {
 	}
 
 	// Hint under input field with Check button on right
-	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://, hysteria2://).\nFor multiple links, use a new line for each.")
+	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://).\nFor multiple links, use a new line for each.")
 	hintLabel.Wrapping = fyne.TextWrapWord
 
 	hintRow := container.NewBorder(
