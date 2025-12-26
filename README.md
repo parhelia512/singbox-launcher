@@ -137,15 +137,40 @@ If you can help test on Linux, please open an issue or pull request on GitHub!
 
 ### macOS
 
-1. Download the latest release for macOS
-2. Extract the archive
-3. For .app bundle: Double-click `singbox-launcher.app` to run
+There are two ways to install on macOS:
 
-   For command line:
+#### Option 1: Installation Script (Recommended)
+
+The easiest way to install is using the installation script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- 0.6.1
+```
+
+Replace `0.6.1` with the version you want to install (or omit for the default version).
+
+The script will:
+- Download the release archive
+- Extract and install to `~/Applications/Singbox-Launcher/`
+- Fix macOS quarantine attributes and permissions
+- Launch the application automatically
+
+#### Option 2: Manual Installation
+
+1. Download the latest release for macOS from [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
+2. Extract the ZIP archive
+3. Remove quarantine attribute (required on macOS):
    ```bash
-   chmod +x singbox-launcher.app
-   ./open singbox-launcher.app
+   xattr -cr "singbox-launcher.app" && chmod +x "singbox-launcher.app/Contents/MacOS/singbox-launcher"
    ```
+4. For .app bundle: Double-click `singbox-launcher.app` to run
+
+   Or from command line:
+   ```bash
+   open singbox-launcher.app
+   ```
+
+   If macOS still blocks the app, go to **System Settings → Privacy & Security** and click **"Open Anyway"**, or right-click the app and select **"Open"** (first time only).
 
 ### Linux
 

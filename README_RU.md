@@ -144,15 +144,40 @@
 
 ### macOS
 
-1. Скачайте последний релиз для macOS
-2. Распакуйте архив
-3. Для .app bundle: Двойной клик на `singbox-launcher.app` для запуска
+Есть два способа установки на macOS:
 
-   Для командной строки:
+#### Вариант 1: Скрипт установки (Рекомендуется)
+
+Самый простой способ - использовать скрипт установки:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- 0.6.1
+```
+
+Замените `0.6.1` на нужную версию (или оставьте пустым для версии по умолчанию).
+
+Скрипт:
+- Скачает архив релиза
+- Распакует и установит в `~/Applications/Singbox-Launcher/`
+- Исправит атрибуты quarantine и права доступа macOS
+- Автоматически запустит приложение
+
+#### Вариант 2: Ручная установка
+
+1. Скачайте последний релиз для macOS с [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
+2. Распакуйте ZIP архив
+3. Удалите атрибут quarantine (требуется на macOS):
    ```bash
-   chmod +x singbox-launcher.app
+   xattr -cr "singbox-launcher.app" && chmod +x "singbox-launcher.app/Contents/MacOS/singbox-launcher"
+   ```
+4. Для .app bundle: Двойной клик на `singbox-launcher.app` для запуска
+
+   Или из командной строки:
+   ```bash
    open singbox-launcher.app
    ```
+
+   Если macOS всё ещё блокирует приложение, перейдите в **Системные настройки → Конфиденциальность и безопасность** и нажмите **"Открыть всё равно"**, или щёлкните правой кнопкой мыши по приложению и выберите **"Открыть"** (только при первом запуске).
 
 ### Linux
 

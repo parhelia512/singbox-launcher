@@ -15,6 +15,17 @@
 - Добавлен метод `ReloadClashAPIConfig()` в `APIService` для перечитывания конфигурации из файла
 - Улучшена обработка ошибок подключения к Clash API с учетом платформы
 
+### ✨ Новые функции
+
+#### macOS Installation Script
+- **Добавлен скрипт установки для macOS**: Теперь можно установить приложение одной командой
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- 0.6.1
+  ```
+- Скрипт автоматически скачивает, распаковывает, устанавливает и запускает приложение
+- Автоматически исправляет атрибуты quarantine и права доступа macOS
+- Устанавливает приложение в `~/Applications/Singbox-Launcher/`
+
 </details>
 
 <details>
@@ -29,6 +40,17 @@
 #### Technical Improvements
 - Added `ReloadClashAPIConfig()` method to `APIService` for reloading configuration from file
 - Improved Clash API connection error handling with platform detection
+
+### ✨ New Features
+
+#### macOS Installation Script
+- **Added installation script for macOS**: Now you can install the app with a single command
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- 0.6.1
+  ```
+- Script automatically downloads, extracts, installs, and launches the application
+- Automatically fixes macOS quarantine attributes and permissions
+- Installs to `~/Applications/Singbox-Launcher/`
 
 </details>
 
