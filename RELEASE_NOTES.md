@@ -89,9 +89,3 @@
 - Preserve all existing connections when no new connections from input
 
 </details>
-
----
-
-См. [docs/release_notes/0-6-0.md](docs/release_notes/0-6-0.md) для подробностей о предыдущем релизе.
-
-See [docs/release_notes/0-6-0.md](docs/release_notes/0-6-0.md) for details about the previous release.
