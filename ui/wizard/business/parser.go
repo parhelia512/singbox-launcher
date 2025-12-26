@@ -18,7 +18,7 @@ func CheckURL(state *wizardstate.WizardState) {
 	startTime := time.Now()
 	wizardstate.DebugLog("checkURL: START at %s", startTime.Format("15:04:05.000"))
 
-	input := strings.TrimSpace(state.VLESSURLEntry.Text)
+	input := strings.TrimSpace(state.SourceURLEntry.Text)
 	if input == "" {
 		wizardstate.DebugLog("checkURL: Empty input, returning early")
 		wizardstate.SafeFyneDo(state.Window, func() {
@@ -259,7 +259,7 @@ func ParseAndPreview(state *wizardstate.WizardState) {
 		time.Since(parseStartTime), len(parserConfig.ParserConfig.Proxies), len(parserConfig.ParserConfig.Outbounds))
 
 	// Check for URL or direct links
-	url := strings.TrimSpace(state.VLESSURLEntry.Text)
+	url := strings.TrimSpace(state.SourceURLEntry.Text)
 	wizardstate.DebugLog("parseAndPreview: URL text length: %d bytes", len(url))
 	if url == "" {
 		wizardstate.DebugLog("parseAndPreview: URL is empty, returning early")
@@ -584,4 +584,3 @@ func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 func GenerateTagPrefix(index int) string {
 	return fmt.Sprintf("%d:", index)
 }
-

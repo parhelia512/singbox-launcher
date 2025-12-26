@@ -179,7 +179,7 @@ If you can help test on Linux, please open an issue or pull request on GitHub!
    - If `config.json` is missing, click the blue **"Wizard"** button in the **"Core"** tab
    - If `config_template.json` is missing, click **"Download Config Template"** first
    - Follow the wizard steps:
-     - **Tab 1 (VLESS Sources & ParserConfig)**: Enter subscription URL, configure ParserConfig
+     - **Tab 1 (Sources & ParserConfig)**: Enter subscription URL, configure ParserConfig
      - **Tab 2 (Rules)**: Select routing rules, configure outbound selectors
      - **Tab 3 (Preview)**: Review generated configuration and save
    - The wizard will create `config.json` automatically
@@ -246,7 +246,7 @@ The Config Wizard provides a visual interface for configuring sing-box without m
 
 **Wizard Tabs:**
 
-1. **VLESS Sources & ParserConfig**
+1. **Sources & ParserConfig**
    - Enter subscription URL or direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://) and validate connectivity
    - Supports both subscription URLs and direct links (can be combined, separated by line breaks)
    - Configure ParserConfig JSON with visual editor
