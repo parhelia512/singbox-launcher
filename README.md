@@ -141,6 +141,8 @@ There are two ways to install on macOS:
 
 #### Option 1: Installation Script (Recommended)
 
+**⚠️ Important**: If you encounter compatibility issues (e.g., "This app cannot be used with this version of macOS" on Apple Silicon or macOS Sequoia), use the installation script instead of manual installation.
+
 The easiest way to install is using the installation script:
 
 ```bash
@@ -152,7 +154,8 @@ Replace `0.6.2` with the version you want to install (or omit for the default ve
 The script will:
 - Download the release archive
 - Extract and install to `~/Applications/Singbox-Launcher/`
-- Fix macOS quarantine attributes and permissions
+- Fix macOS quarantine attributes and permissions automatically
+- Ensure compatibility with Apple Silicon and all macOS versions
 - Launch the application automatically
 
 #### Option 2: Manual Installation
