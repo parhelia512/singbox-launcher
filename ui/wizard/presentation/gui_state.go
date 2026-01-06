@@ -14,6 +14,15 @@
 //
 // Связь между GUIState и WizardModel осуществляется через WizardPresenter,
 // который синхронизирует данные между моделью и GUI.
+//
+// GUIState выделен в отдельный файл для четкого разделения ответственности:
+// это часть рефакторинга от монолитного WizardState (который смешивал GUI и бизнес-данные)
+// к архитектуре MVP, где GUI полностью отделен от бизнес-логики.
+//
+// Используется в:
+//   - presentation/presenter.go - WizardPresenter хранит GUIState и обновляет его виджеты
+//   - presentation/presenter_*.go - все методы презентера обновляют виджеты через GUIState
+//   - wizard.go - создается при инициализации визарда и передается в презентер
 package presentation
 
 import (
@@ -62,10 +71,8 @@ type GUIState struct {
 	Tabs             *container.AppTabs
 
 	// UI-флаги состояния операций
-	CheckURLInProgress   bool
-	SaveInProgress       bool
-	ParserConfigUpdating bool
+	CheckURLInProgress      bool
+	SaveInProgress          bool
+	ParserConfigUpdating    bool
 	UpdatingOutboundOptions bool
 }
-
-

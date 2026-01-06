@@ -1,12 +1,11 @@
+//go:build cgo
+
 // Package business содержит бизнес-логику визарда конфигурации.
 //
-// Файл config_service.go определяет интерфейс ConfigService и его адаптер для генерации outbounds:
-//   - ConfigService - интерфейс для генерации outbounds из ParserConfig
+// Файл config_service.go содержит адаптер ConfigServiceAdapter для генерации outbounds:
 //   - ConfigServiceAdapter - адаптер, который адаптирует core.ConfigService для использования в бизнес-логике
 //
-// ConfigService позволяет бизнес-логике генерировать outbounds без прямой зависимости
-// от core.ConfigService, что делает код тестируемым (можно использовать моки в тестах)
-// и позволяет абстрагироваться от конкретной реализации core.ConfigService.
+// ConfigService интерфейс определен в interfaces.go для использования в тестах без зависимости от core.
 //
 // Определение интерфейсов и адаптеров - это отдельная ответственность.
 // Используется паттерн Adapter для инверсии зависимостей (Dependency Inversion Principle).
@@ -21,11 +20,6 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
 )
-
-// ConfigService предоставляет доступ к генерации outbounds из ParserConfig.
-type ConfigService interface {
-	GenerateOutboundsFromParserConfig(parserConfig *config.ParserConfig, tagCounts map[string]int, progressCallback func(float64, string)) (*config.OutboundGenerationResult, error)
-}
 
 // ConfigServiceAdapter адаптирует core.ConfigService для использования в бизнес-логике.
 type ConfigServiceAdapter struct {

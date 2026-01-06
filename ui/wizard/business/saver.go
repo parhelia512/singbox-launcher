@@ -1,3 +1,5 @@
+//go:build cgo
+
 // Package business содержит бизнес-логику визарда конфигурации.
 //
 // Файл saver.go содержит функции для сохранения конфигурации:
@@ -6,10 +8,10 @@
 //   - FileServiceAdapter - адаптер для services.FileService, предоставляющий доступ к путям конфигурации
 //
 // SaveConfigWithBackup выполняет:
-//   1. Валидацию JSON конфигурации (включая поддержку JSONC с комментариями)
-//   2. Генерацию случайного secret для experimental.clash_api.secret (если отсутствует)
-//   3. Создание бэкапа существующего файла конфигурации
-//   4. Сохранение новой конфигурации в файл
+//  1. Валидацию JSON конфигурации (включая поддержку JSONC с комментариями)
+//  2. Генерацию случайного secret для experimental.clash_api.secret (если отсутствует)
+//  3. Создание бэкапа существующего файла конфигурации
+//  4. Сохранение новой конфигурации в файл
 //
 // Эти функции работают только с данными (текст конфигурации, путь к файлу),
 // без зависимостей от GUI и WizardState, что делает их тестируемыми и переиспользуемыми.
@@ -39,6 +41,7 @@ import (
 )
 
 // FileServiceAdapter адаптирует services.FileService для использования в бизнес-логике.
+// Реализует интерфейс FileServiceInterface, определенный в interfaces.go.
 type FileServiceAdapter struct {
 	FileService *services.FileService
 }
@@ -52,7 +55,7 @@ func (a *FileServiceAdapter) ExecDir() string {
 }
 
 // SaveConfigWithBackup сохраняет конфигурацию с созданием бэкапа.
-func SaveConfigWithBackup(fileService *FileServiceAdapter, configText string) (string, error) {
+func SaveConfigWithBackup(fileService FileServiceInterface, configText string) (string, error) {
 	jsonBytes := jsonc.ToJSON([]byte(configText))
 	var configJSON map[string]interface{}
 	if err := json.Unmarshal(jsonBytes, &configJSON); err != nil {
@@ -138,4 +141,3 @@ func generateRandomSecret(length int) string {
 	}
 	return base64.URLEncoding.EncodeToString(bytes)[:length]
 }
-

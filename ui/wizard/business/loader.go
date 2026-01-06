@@ -46,7 +46,7 @@ import (
 // It prioritizes loading ParserConfig from config.json, falling back to template if not available.
 // Returns (loaded bool, parserConfigJSON string, sourceURLs string, error).
 // ParserConfigJSON and sourceURLs are empty strings if not loaded.
-func LoadConfigFromFile(fileService *FileServiceAdapter, templateData *wizardtemplate.TemplateData) (bool, string, string, error) {
+func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardtemplate.TemplateData) (bool, string, string, error) {
 	configPath := fileService.ConfigPath()
 	fileInfo, err := os.Stat(configPath)
 	if err == nil {
