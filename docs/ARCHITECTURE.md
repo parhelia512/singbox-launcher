@@ -220,7 +220,7 @@ singbox-launcher/
 │       │   │   │   - GetEffectiveOutbound()             # Получение эффективного outbound
 │       │   │   │   - EnsureDefaultOutbound()            # Установка дефолтного outbound
 │       │   │   │
-│       │   └── constants.go    # Константы
+│       │   └── wizard_model.go  # Модель + константы
 │       │       │   - DefaultOutboundTag                 # Дефолтный outbound
 │       │       │   - RejectActionName                   # Действие reject
 │       │       │
@@ -228,6 +228,7 @@ singbox-launcher/
 │       │   ├── presenter.go    # WizardPresenter
 │       │   │   │   - WizardPresenter struct             # Презентер визарда
 │       │   │   │   - NewWizardPresenter()               # Создание презентера
+│       │   │   │   - SafeFyneDo()                       # Безопасный вызов Fyne из горутин
 │       │   │   │
 │       │   ├── gui_state.go    # GUIState
 │       │   │   │   - GUIState struct                    # Состояние GUI (только виджеты)
@@ -262,9 +263,6 @@ singbox-launcher/
 │       │   │   │   - UpdateParserConfig()               # Обновление ParserConfig
 │       │   │   │   - UpdateTemplatePreview()            # Обновление preview
 │       │   │   │   - UpdateSaveProgress()               # Прогресс сохранения
-│       │   │   │
-│       │   └── utils.go        # Утилиты
-│       │       │   - SafeFyneDo()                       # Безопасный вызов Fyne
 │       │       │
 │       ├── tabs/               # UI компоненты вкладок
 │       │   ├── source_tab.go   # Вкладка Sources & ParserConfig
@@ -560,7 +558,8 @@ singbox-launcher/
 - `rule_state_utils.go`:
   - `GetEffectiveOutbound()` - получение эффективного outbound для правила
   - `EnsureDefaultOutbound()` - установка дефолтного outbound
-- `constants.go`:
+- `wizard_model.go`:
+  - `WizardModel` - основная модель данных
   - `DefaultOutboundTag`, `RejectActionName`, `RejectActionMethod` - константы для правил
 
 **presentation/** - Слой представления (MVP Presenter)
@@ -591,8 +590,10 @@ singbox-launcher/
 - `presenter_ui_updater.go`:
   - Реализация интерфейса `UIUpdater` для обновления GUI из бизнес-логики
   - Методы: `UpdateURLStatus()`, `UpdateCheckURLProgress()`, `UpdateOutboundsPreview()`, `UpdateParserConfig()`, `UpdateTemplatePreview()`, `UpdateSaveProgress()`
-- `utils.go`:
-  - `SafeFyneDo()` - безопасный вызов Fyne функций из других горутин
+- `presenter.go`:
+  - `WizardPresenter` struct - структура презентера
+  - `NewWizardPresenter()` - создание презентера
+  - `SafeFyneDo()` - безопасный вызов Fyne функций из других горутин (утилита для всех методов презентера)
 
 **tabs/** - UI вкладок
 - `source_tab.go`:

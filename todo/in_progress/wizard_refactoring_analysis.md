@@ -19,10 +19,9 @@
 
 #### Новые файлы:
 1. **models/** (179 строк):
-   - `wizard_model.go` - 76 строк
+   - `wizard_model.go` - 103 строки (включая константы)
    - `rule_state.go` - 40 строк
    - `rule_state_utils.go` - 36 строк
-   - `constants.go` - 27 строк
 
 2. **presentation/** (952 строки):
    - `gui_state.go` - 71 строка
@@ -59,8 +58,8 @@
    - Адаптеры добавляют слой абстракции, который может быть преждевременным
 
 3. **Мелкие файлы констант/утилит**
-   - `models/constants.go` (27 строк) - можно было в `models/wizard_model.go`
-   - `presentation/utils.go` (22 строки) - можно было в `presenter.go`
+   - `models/constants.go` (27 строк) - ✅ перенесено в `models/wizard_model.go`
+   - `presentation/utils.go` (22 строки) - ✅ перенесено в `presenter_ui_updater.go` (где используется)
 
 ### ✅ Что оправдано:
 
@@ -95,7 +94,7 @@
    - `presenter_methods.go` → в `presenter.go`
    - `presenter_rules.go` → в `presenter.go`
    - `presenter_ui_updater.go` → в `presenter.go`
-   - `utils.go` → в `presenter.go`
+   - `utils.go` → перенесено в `presenter_ui_updater.go` (где используется)
 
 2. **models/** → уменьшить с 4 до 2-3 файлов:
    ```

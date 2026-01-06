@@ -602,7 +602,7 @@
 - **UIUpdater интерфейс:** `ui/wizard/business/ui_updater.go` (в business, так как используется бизнес-логикой)
 - **helpers.go:** 
   - Логирование: убрать обертки (DebugLog, InfoLog, ErrorLog), использовать `internal/debuglog` напрямую
-  - `SafeFyneDo`: переместить в `ui/wizard/presentation/utils.go` (так как связан с GUI)
+  - `SafeFyneDo`: ✅ перемещено в `ui/wizard/presentation/presenter.go` (базовый файл презентера, используется во всех методах)
 
 ### 2. Методы WizardState
 
@@ -653,7 +653,7 @@
 
 - **Открытые диалоги:** хранятся в презентере (`WizardPresenter.OpenRuleDialogs map[int]fyne.Window`)
 
-- **Константы (DefaultOutboundTag, RejectActionName, RejectActionMethod):** переместить в `ui/wizard/models/constants.go`
+- **Константы (DefaultOutboundTag, RejectActionName, RejectActionMethod):** ✅ перемещены в `ui/wizard/models/wizard_model.go`
 
 - **TemplateData загрузка:**
   - Отдельный сервис/loader с интерфейсом `TemplateLoader`

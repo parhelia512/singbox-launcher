@@ -10,6 +10,11 @@
 //   - Правила (SelectableRuleStates, CustomRules, SelectedFinalOutbound)
 //   - Флаги состояния бизнес-операций (AutoParseInProgress, PreviewGenerationInProgress)
 //
+// Также содержит константы, связанные с бизнес-логикой визарда:
+//   - DefaultOutboundTag - тег outbound по умолчанию для правил маршрутизации ("direct-out")
+//   - RejectActionName - название действия reject для правил маршрутизации ("reject")
+//   - RejectActionMethod - метод действия reject ("drop")
+//
 // Это позволяет использовать WizardModel в бизнес-логике без зависимостей от GUI,
 // что делает код тестируемым и позволяет разделить бизнес-логику от представления.
 //
@@ -23,6 +28,16 @@ package models
 import (
 	"singbox-launcher/core/config"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
+)
+
+// Константы, связанные с бизнес-логикой визарда.
+const (
+	// DefaultOutboundTag - тег outbound по умолчанию для правил маршрутизации
+	DefaultOutboundTag = "direct-out"
+	// RejectActionName - название действия reject в правилах маршрутизации
+	RejectActionName = "reject"
+	// RejectActionMethod - метод действия reject (drop)
+	RejectActionMethod = "drop"
 )
 
 // OutboundStats содержит статистику по outbounds для preview.

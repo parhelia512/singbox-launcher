@@ -167,14 +167,14 @@
 **Проверяет:** Получение списка доступных outbound тегов из модели
 - Извлечение outbounds из `ParserConfig` объекта в модели
 - Извлечение outbounds из `ParserConfigJSON` строки в модели
-- Всегда включаются дефолтные outbounds: `direct-out`, `reject`, `drop`
+- Всегда включаются обязательные outbounds: `direct-out`, `reject`, `drop`
 - Включение outbounds из глобальных outbounds конфигурации
-- Корректность минимального количества outbounds в результате
+- Корректность минимального количества outbounds в результате (минимум 3: direct-out, reject, drop)
 - Все ожидаемые теги присутствуют в результате
 
 ### TestEnsureDefaultAvailableOutbounds
 **Проверяет:** Обеспечение наличия дефолтных outbounds
-- При пустом списке возвращаются дефолтные: `["direct-out", "reject"]`
+- При пустом списке возвращаются дефолтные: `["direct-out", "reject"]` (без "drop", так как это не дефолтный)
 - При непустом списке исходный список сохраняется без изменений
 
 ### TestEnsureFinalSelected

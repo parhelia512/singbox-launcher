@@ -9,6 +9,9 @@
 //   - Управляет открытыми диалогами (OpenRuleDialogs)
 //   - Координирует вызовы бизнес-логики и обновление GUI
 //
+// Также содержит утилиту SafeFyneDo для безопасного обновления GUI из других горутин.
+// SafeFyneDo используется во всех методах презентера, которые обновляют Fyne виджеты.
+//
 // Презентер является единственной точкой взаимодействия между GUI (табы, виджеты) и бизнес-логикой,
 // что обеспечивает четкое разделение ответственности и делает код тестируемым.
 //
@@ -69,4 +72,13 @@ func (p *WizardPresenter) ConfigServiceAdapter() wizardbusiness.ConfigService {
 // Controller возвращает AppController.
 func (p *WizardPresenter) Controller() *core.AppController {
 	return p.controller
+}
+
+// SafeFyneDo безопасно выполняет функцию в UI потоке Fyne.
+// Проверяет, что window не nil, перед вызовом fyne.Do.
+// Используется во всех методах презентера для безопасного обновления GUI из других горутин.
+func SafeFyneDo(window fyne.Window, fn func()) {
+	if window != nil {
+		fyne.Do(fn)
+	}
 }

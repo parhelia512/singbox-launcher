@@ -7,10 +7,9 @@
 ## 📋 Выполненные задачи
 
 ### 1. ✅ Созданы модели данных (`ui/wizard/models/`)
-- **`wizard_model.go`** - `WizardModel` - чистая модель данных без GUI зависимостей
+- **`wizard_model.go`** - `WizardModel` - чистая модель данных без GUI зависимостей + бизнес-константы (DefaultOutboundTag, RejectActionName, RejectActionMethod)
 - **`rule_state.go`** - `RuleState` - модель состояния правила маршрутизации
 - **`rule_state_utils.go`** - утилиты для работы с `RuleState`
-- **`constants.go`** - бизнес-константы (DefaultOutboundTag, RejectActionName, RejectActionMethod)
 
 ### 2. ✅ Создан слой представления (`ui/wizard/presentation/`)
 - **`gui_state.go`** - `GUIState` - только Fyne виджеты и UI-флаги
@@ -21,7 +20,8 @@
 - **`presenter_async.go`** - асинхронные операции (парсинг, preview)
 - **`presenter_save.go`** - логика сохранения конфигурации
 - **`presenter_rules.go`** - работа с правилами и диалогами
-- **`utils.go`** - утилиты для GUI (SafeFyneDo)
+- **`presenter_ui_updater.go`** - реализация UIUpdater
+- **`presenter.go`** - базовая структура WizardPresenter + утилита SafeFyneDo
 
 ### 3. ✅ Рефакторирована бизнес-логика (`ui/wizard/business/`)
 - **`parser.go`** - парсинг URL и ParserConfig (использует `WizardModel` и `UIUpdater`)
@@ -47,7 +47,7 @@
 
 ### 7. ✅ Удален старый код
 - **`ui/wizard/state/state.go`** - удален (заменен на `WizardModel` и `GUIState`)
-- **`ui/wizard/state/helpers.go`** - удален (функции перемещены в presentation/utils.go)
+- **`ui/wizard/state/helpers.go`** - удален (функции перемещены в presentation/presenter_ui_updater.go)
 
 ## 🏗️ Архитектура
 
