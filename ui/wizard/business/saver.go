@@ -25,19 +25,24 @@
 package business
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
 
 	"singbox-launcher/core/services"
+	"singbox-launcher/internal/debuglog"
 )
 
 // FileServiceAdapter адаптирует services.FileService для использования в бизнес-логике.
@@ -92,7 +97,7 @@ func SaveConfigWithBackup(fileService FileServiceInterface, configText string) (
 			}
 		}
 
-		finalJSONBytes, err := json.MarshalIndent(configJSON, "", "  ")
+		finalJSONBytes, err := json.MarshalIndent(configJSON, "", IndentBase)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal config: %w", err)
 		}
@@ -140,4 +145,77 @@ func generateRandomSecret(length int) string {
 		return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))[:length]
 	}
 	return base64.URLEncoding.EncodeToString(bytes)[:length]
+}
+
+// ValidateConfigWithSingBox validates configuration file using sing-box check command.
+// Works on all platforms (Windows, macOS, Linux) with console window hidden.
+// Returns nil if valid or if sing-box is not available (graceful degradation).
+func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
+	// Skip validation if sing-box path is not provided
+	if singBoxPath == "" {
+		debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
+			"Skipping sing-box validation: singBoxPath is empty")
+		return nil
+	}
+
+	// Check if sing-box executable exists
+	if _, err := os.Stat(singBoxPath); os.IsNotExist(err) {
+		debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
+			"Skipping sing-box validation: executable not found at %s", singBoxPath)
+		return nil
+	}
+
+	// Prepare command
+	cmd := exec.Command(singBoxPath, "check", "-c", configPath)
+
+	// Hide console window on all platforms
+	hideConsoleWindow(cmd)
+
+	// Capture output
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
+		"Running validation: %s check -c %s", singBoxPath, configPath)
+
+	// Run validation
+	err := cmd.Run()
+
+	if err != nil {
+		// Validation failed - extract meaningful error message
+		errorMsg := stderr.String()
+		if errorMsg == "" {
+			errorMsg = stdout.String()
+		}
+		if errorMsg == "" {
+			errorMsg = err.Error()
+		}
+
+		debuglog.Log("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
+			"Config validation failed: %v", err)
+		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
+			"Validation error output", errorMsg, 500)
+
+		return fmt.Errorf("sing-box config validation failed: %s", errorMsg)
+	}
+
+	debuglog.Log("ConfigValidator", debuglog.LevelInfo, debuglog.UseGlobal,
+		"Config validation passed successfully")
+
+	return nil
+}
+
+// hideConsoleWindow configures command to run without showing console window.
+// Works on Windows, macOS, and Linux.
+func hideConsoleWindow(cmd *exec.Cmd) {
+	if runtime.GOOS == "windows" {
+		// Windows: use SysProcAttr to hide window
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+		}
+	}
+	// Note: On macOS and Linux, exec.Command doesn't create visible windows by default,
+	// so no special handling needed
 }

@@ -67,7 +67,7 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 		configToSerialize := map[string]interface{}{
 			"ParserConfig": parserConfig.ParserConfig,
 		}
-		serialized, err := json.MarshalIndent(configToSerialize, "", "  ")
+		serialized, err := json.MarshalIndent(configToSerialize, "", IndentBase)
 		if err == nil {
 			parserConfigText = string(serialized)
 			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Serialized ParserConfig in %v (new length: %d bytes)",
@@ -108,7 +108,7 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 				cleaned := strings.TrimSpace(model.TemplateData.OutboundsAfterMarker)
 				cleaned = strings.TrimRight(cleaned, ",")
 				if cleaned != "" {
-					indented := IndentMultiline(cleaned, "    ")
+					indented := IndentMultiline(cleaned, Indent(2))
 					// Do NOT add comma before elements - it's already there after last element before @ParserEND
 					content += "\n" + indented
 				}
@@ -175,7 +175,7 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 // BuildParserOutboundsBlock builds the outbounds block content from generated outbounds.
 // If forPreview is true and nodes count exceeds MaxNodesForFullPreview, shows statistics instead.
 func BuildParserOutboundsBlock(model *wizardmodels.WizardModel, templateData *wizardtemplate.TemplateData, forPreview bool) string {
-	const indent = "    "
+	indent := Indent(2)
 	var builder strings.Builder
 	builder.WriteString(indent + "/** @ParserSTART */\n")
 

@@ -569,7 +569,7 @@ func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 	configToSerialize := map[string]interface{}{
 		"ParserConfig": parserConfig.ParserConfig,
 	}
-	data, err := json.MarshalIndent(configToSerialize, "", "  ")
+	data, err := json.MarshalIndent(configToSerialize, "", IndentBase)
 	if err != nil {
 		return "", err
 	}

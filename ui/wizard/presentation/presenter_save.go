@@ -117,15 +117,33 @@ func (p *WizardPresenter) SaveConfig() {
 			})
 			return
 		}
+		p.UpdateSaveProgress(0.9)
+
+		// Step 3: Validate config with sing-box (90-95%)
+		singBoxPath := ""
+		if p.controller.FileService != nil {
+			singBoxPath = p.controller.FileService.SingboxPath
+		}
+
+		validationErr := wizardbusiness.ValidateConfigWithSingBox(path, singBoxPath)
 		p.UpdateSaveProgress(0.95)
 
-		// Step 3: Completion (95-100%)
+		// Step 4: Completion (95-100%)
 		time.Sleep(100 * time.Millisecond)
 		p.UpdateSaveProgress(1.0)
 		time.Sleep(200 * time.Millisecond)
 
 		SafeFyneDo(p.guiState.Window, func() {
-			dialog.ShowInformation("Config Saved", fmt.Sprintf("Config written to %s", path), p.guiState.Window)
+			// Show result with validation status
+			message := fmt.Sprintf("Config written to %s", path)
+			if validationErr != nil {
+				message += fmt.Sprintf("\n\n⚠️ Validation warning:\n%v\n\nPlease check the config manually.", validationErr)
+				dialog.ShowInformation("Config Saved (with warnings)", message, p.guiState.Window)
+			} else {
+				message += "\n\n✅ Validation: Passed"
+				dialog.ShowInformation("Config Saved", message, p.guiState.Window)
+			}
+
 			// Update config status in Core Dashboard
 			if p.controller.UIService != nil && p.controller.UIService.UpdateConfigStatusFunc != nil {
 				p.controller.UIService.UpdateConfigStatusFunc()
