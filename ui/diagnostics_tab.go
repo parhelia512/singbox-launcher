@@ -58,7 +58,11 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 			return "", false, fmt.Errorf("failed to dial STUN server: %w", err)
 		}
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("checkSTUN: failed to close connection: %v", err)
+		}
+	}()
 
 	// Create STUN client
 	c, err := stun.NewClient(conn)
@@ -66,7 +70,11 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 		return "", usedProxy, fmt.Errorf("failed to create STUN client: %w", err)
 	}
 	// Гарантируем корректное освобождение внутренних горутин и ресурсов клиента
-	defer c.Close()
+	defer func() {
+		if err := c.Close(); err != nil {
+			log.Printf("checkSTUN: failed to close STUN client: %v", err)
+		}
+	}()
 
 	// Создаем сообщение для запроса
 	message := stun.MustBuild(stun.TransactionID, stun.BindingRequest)

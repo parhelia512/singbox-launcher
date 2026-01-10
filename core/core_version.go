@@ -345,7 +345,11 @@ func (ac *AppController) getLatestVersionFromURLWithPrefix(url string, keepPrefi
 		}
 		return "", fmt.Errorf("check failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("getLatestVersionFromURLWithPrefix: failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("check failed: HTTP %d", resp.StatusCode)

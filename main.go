@@ -251,13 +251,19 @@ func main() {
 	// Close log files through FileService
 	if controller.FileService != nil {
 		if controller.FileService.MainLogFile != nil {
-			controller.FileService.MainLogFile.Close()
+			if err := controller.FileService.MainLogFile.Close(); err != nil {
+				log.Printf("main: failed to close main log file: %v", err)
+			}
 		}
 		if controller.FileService.ChildLogFile != nil {
-			controller.FileService.ChildLogFile.Close()
+			if err := controller.FileService.ChildLogFile.Close(); err != nil {
+				log.Printf("main: failed to close child log file: %v", err)
+			}
 		}
 		if controller.FileService.ApiLogFile != nil {
-			controller.FileService.ApiLogFile.Close()
+			if err := controller.FileService.ApiLogFile.Close(); err != nil {
+				log.Printf("main: failed to close API log file: %v", err)
+			}
 		}
 	}
 }

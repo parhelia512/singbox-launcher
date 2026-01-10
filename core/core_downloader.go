@@ -66,7 +66,11 @@ func (ac *AppController) DownloadCore(ctx context.Context, version string, progr
 		progressChan <- DownloadProgress{Progress: 0, Message: fmt.Sprintf("Failed to create temp dir: %v", err), Status: "error", Error: fmt.Errorf("DownloadCore: failed to create temp dir: %w", err)}
 		return
 	}
-	defer os.RemoveAll(tempDir) // Remove temporary directory after completion
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("DownloadCore: failed to remove temp dir %s: %v", tempDir, err)
+		}
+	}()
 
 	// 4. Download archive
 	archivePath := filepath.Join(tempDir, asset.Name)
@@ -135,7 +139,11 @@ func (ac *AppController) getReleaseInfoFromGitHub(ctx context.Context, version s
 		}
 		return nil, fmt.Errorf("getReleaseInfoFromGitHub: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("getReleaseInfoFromGitHub: failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("getReleaseInfoFromGitHub: HTTP %d", resp.StatusCode)
@@ -336,7 +344,11 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 		}
 		return fmt.Errorf("downloadFileFromURL: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("downloadFileFromURL: failed to close response body for %s: %v", url, err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("downloadFileFromURL: HTTP %d", resp.StatusCode)
@@ -346,7 +358,11 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 	if err != nil {
 		return fmt.Errorf("downloadFileFromURL: failed to create file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("downloadFileFromURL: failed to close file %s: %v", destPath, err)
+		}
+	}()
 
 	totalSize := resp.ContentLength
 	var downloaded int64
@@ -422,7 +438,11 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("extractZip: failed to open zip: %w", err)
 	}
-	defer r.Close()
+	defer func() {
+		if err := r.Close(); err != nil {
+			log.Printf("extractZip: failed to close zip reader %s: %v", archivePath, err)
+		}
+	}()
 
 	singboxName := platform.GetExecutableNames()
 	var binaryPath string
@@ -438,13 +458,19 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 			binaryPath = filepath.Join(destDir, filepath.Base(f.Name))
 			outFile, err := os.Create(binaryPath)
 			if err != nil {
-				rc.Close()
+				if closeErr := rc.Close(); closeErr != nil {
+					log.Printf("extractZip: failed to close zip entry %s after create error: %v", f.Name, closeErr)
+				}
 				return "", fmt.Errorf("extractZip: failed to create output file: %w", err)
 			}
 
 			_, err = io.Copy(outFile, rc)
-			outFile.Close()
-			rc.Close()
+			if closeErr := outFile.Close(); closeErr != nil {
+				log.Printf("extractZip: failed to close output file %s: %v", binaryPath, closeErr)
+			}
+			if closeErr := rc.Close(); closeErr != nil {
+				log.Printf("extractZip: failed to close zip entry %s: %v", f.Name, closeErr)
+			}
 
 			if err != nil {
 				return "", fmt.Errorf("extractZip: failed to copy file: %w", err)
@@ -452,7 +478,9 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 
 			// Set execute permissions (for Unix-like systems)
 			if runtime.GOOS != "windows" {
-				_ = os.Chmod(binaryPath, 0755)
+				if err := os.Chmod(binaryPath, 0755); err != nil {
+					log.Printf("extractZip: failed to chmod %s: %v", binaryPath, err)
+				}
 			}
 
 			return binaryPath, nil
@@ -468,13 +496,21 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("extractTarGz: failed to open archive: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("extractTarGz: failed to close archive %s: %v", archivePath, err)
+		}
+	}()
 
 	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return "", fmt.Errorf("extractTarGz: failed to create gzip reader: %w", err)
 	}
-	defer gzr.Close()
+	defer func() {
+		if err := gzr.Close(); err != nil {
+			log.Printf("extractTarGz: failed to close gzip reader for %s: %v", archivePath, err)
+		}
+	}()
 
 	tr := tar.NewReader(gzr)
 	singboxName := platform.GetExecutableNames()
@@ -498,14 +534,18 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 			}
 
 			_, err = io.Copy(outFile, tr)
-			outFile.Close()
+			if closeErr := outFile.Close(); closeErr != nil {
+				log.Printf("extractTarGz: failed to close output file %s: %v", binaryPath, closeErr)
+			}
 
 			if err != nil {
 				return "", fmt.Errorf("extractTarGz: failed to copy file: %w", err)
 			}
 
 			// Set execute permissions
-			os.Chmod(binaryPath, 0755)
+			if err := os.Chmod(binaryPath, 0755); err != nil {
+				log.Printf("extractTarGz: failed to chmod %s: %v", binaryPath, err)
+			}
 
 			return binaryPath, nil
 		}
@@ -525,7 +565,9 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 	// If old binary exists, rename it
 	if _, err := os.Stat(destPath); err == nil {
 		oldPath := destPath + ".old"
-		os.Remove(oldPath) // Remove old backup if exists
+		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("installBinary: failed to remove old backup %s: %v", oldPath, err)
+		}
 		if err := os.Rename(destPath, oldPath); err != nil {
 			log.Printf("Warning: failed to rename old binary: %v", err)
 		}
@@ -536,13 +578,21 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("installBinary: failed to open source file: %w", err)
 	}
-	defer sourceFile.Close()
+	defer func() {
+		if err := sourceFile.Close(); err != nil {
+			log.Printf("installBinary: failed to close source file %s: %v", sourcePath, err)
+		}
+	}()
 
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("installBinary: failed to create destination file: %w", err)
 	}
-	defer destFile.Close()
+	defer func() {
+		if err := destFile.Close(); err != nil {
+			log.Printf("installBinary: failed to close destination file %s: %v", destPath, err)
+		}
+	}()
 
 	_, err = io.Copy(destFile, sourceFile)
 	if err != nil {
@@ -551,12 +601,16 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 
 	// Set execute permissions (for Unix)
 	if runtime.GOOS != "windows" {
-		_ = os.Chmod(destPath, 0755)
+		if err := os.Chmod(destPath, 0755); err != nil {
+			log.Printf("installBinary: failed to chmod %s: %v", destPath, err)
+		}
 	}
 
 	// Remove old backup
 	oldPath := destPath + ".old"
-	os.Remove(oldPath)
+	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("installBinary: failed to remove backup %s: %v", oldPath, err)
+	}
 
 	log.Printf("installBinary: binary installed successfully to %s", destPath)
 	return nil

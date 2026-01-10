@@ -284,7 +284,11 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 			if err != nil {
 				return fmt.Errorf("RunHidden: cannot open log file '%s': %w", logPath, err)
 			}
-			defer logFile.Close()
+			defer func() {
+				if err := logFile.Close(); err != nil {
+					log.Printf("RunHidden: failed to close log file %s: %v", logPath, err)
+				}
+			}()
 			cmd.Stdout = logFile
 			cmd.Stderr = logFile
 		}

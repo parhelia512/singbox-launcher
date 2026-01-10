@@ -54,7 +54,11 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 		return
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("DownloadWintunDLL: failed to remove temp dir %s: %v", tempDir, err)
+		}
+	}()
 
 	// 2. Download ZIP archive
 	zipURL := fmt.Sprintf(WinTunDownloadURL, WinTunVersion)
@@ -101,7 +105,11 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 		return
 	}
-	defer r.Close()
+	defer func() {
+		if err := r.Close(); err != nil {
+			log.Printf("DownloadWintunDLL: failed to close zip reader: %v", err)
+		}
+	}()
 
 	// Search for wintun.dll in the correct directory
 	var dllPath string
@@ -118,13 +126,19 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 			dllPath = filepath.Join(tempDir, "wintun.dll")
 			outFile, err := os.Create(dllPath)
 			if err != nil {
-				rc.Close()
+				if closeErr := rc.Close(); closeErr != nil {
+					log.Printf("DownloadWintunDLL: failed to close zip entry after create error: %v", closeErr)
+				}
 				continue
 			}
 
 			_, err = io.Copy(outFile, rc)
-			outFile.Close()
-			rc.Close()
+			if closeErr := outFile.Close(); closeErr != nil {
+				log.Printf("DownloadWintunDLL: failed to close output file %s: %v", dllPath, closeErr)
+			}
+			if closeErr := rc.Close(); closeErr != nil {
+				log.Printf("DownloadWintunDLL: failed to close zip entry: %v", closeErr)
+			}
 
 			if err != nil {
 				continue

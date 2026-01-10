@@ -86,7 +86,9 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 	guiState.SourceURLEntry.OnChanged = func(value string) {
 		model := presenter.Model()
 		model.PreviewNeedsParse = true
-		wizardbusiness.ApplyURLToParserConfig(model, presenter, strings.TrimSpace(value))
+		if err := wizardbusiness.ApplyURLToParserConfig(model, presenter, strings.TrimSpace(value)); err != nil {
+			log.Printf("source_tab: error applying URL to ParserConfig: %v", err)
+		}
 	}
 
 	// Hint under input field with Check button on right
