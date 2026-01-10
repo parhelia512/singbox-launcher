@@ -188,6 +188,9 @@ func main() {
 	if controller.UIService.MainWindow != nil {
 		controller.UIService.MainWindow.SetCloseIntercept(func() {
 			controller.UIService.MainWindow.Hide()
+			if controller.UIService.HideAppFromDock {
+				platform.HideDockIcon()
+			}
 		})
 	}
 
@@ -252,10 +255,10 @@ func main() {
 	if controller.FileService != nil {
 		if controller.FileService.MainLogFile != nil {
 			controller.FileService.MainLogFile.Close()
-	}
+		}
 		if controller.FileService.ChildLogFile != nil {
 			controller.FileService.ChildLogFile.Close()
-	}
+		}
 		if controller.FileService.ApiLogFile != nil {
 			controller.FileService.ApiLogFile.Close()
 		}
