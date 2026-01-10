@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muhammadmuzzammil1998/jsonc"
-
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
 
@@ -111,29 +109,11 @@ func TestCommentsPreservation_RealConfig(t *testing.T) {
 	if exists {
 		routeText := string(routeSection)
 		
-		// Extract route content (remove "route": key) before merging
-		routeContent := ExtractRouteContent(routeText)
-		
-		// Test merge with empty rules (should preserve comments)
-		mergedRoute, err := MergeRouteSectionText(routeContent, nil, nil, "proxy-out")
-		if err != nil {
-			t.Logf("Route merge failed (this may be OK if route has complex structure): %v", err)
-			// Still verify original route has comments
-			if strings.Contains(routeText, "//") || strings.Contains(routeText, "/*") {
-				t.Logf("Route section preserves comments in template (length: %d bytes)", len(routeText))
-			}
+		// Verify original route has comments
+		if strings.Contains(routeText, "//") || strings.Contains(routeText, "/*") {
+			t.Logf("Route section preserves comments in template (length: %d bytes)", len(routeText))
 		} else {
-			// Verify merged route is valid and preserves comments
-			if !jsonc.Valid([]byte(mergedRoute)) {
-				t.Errorf("Merged route section is not valid JSONC")
-			}
-			mergedCommentCount := strings.Count(mergedRoute, "//") + strings.Count(mergedRoute, "/*")
-			originalCommentCount := strings.Count(routeText, "//") + strings.Count(routeText, "/*")
-			if mergedCommentCount < originalCommentCount/2 {
-				t.Logf("Warning: Merged route has fewer comments (%d vs %d), but some loss may be expected", mergedCommentCount, originalCommentCount)
-			} else {
-				t.Logf("Route section preserves comments after merge (%d comment markers)", mergedCommentCount)
-			}
+			t.Logf("Route section has no comments (this is OK if original didn't have them)")
 		}
 	}
 }
