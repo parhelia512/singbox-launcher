@@ -184,7 +184,7 @@ go list $TEST_PACKAGE 2>/dev/null | while read -r pkg; do
     fi
     OUTPUT_FILE="$TEST_OUTPUT_DIR/${PKG_NAME}.test"
     echo "Compiling $pkg..."
-    if go test -c -o "$OUTPUT_FILE" "$pkg" 2>/dev/null; then
+    if go test -c -o "$OUTPUT_FILE" "$pkg" 2>&1; then
         echo "  Saved: $OUTPUT_FILE"
     else
         echo "  Failed to compile: $pkg"
