@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/debuglog"
 )
 
 // NetworkRequestTimeout defines the timeout for network requests
@@ -52,7 +53,7 @@ func FetchSubscription(url string) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("failed to fetch subscription: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer debuglog.RunAndLog("FetchSubscription: close response body", resp.Body.Close)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("subscription server returned status %d", resp.StatusCode)

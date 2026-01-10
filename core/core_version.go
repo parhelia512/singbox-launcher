@@ -16,6 +16,7 @@ import (
 
 	"fyne.io/fyne/v2"
 
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
 )

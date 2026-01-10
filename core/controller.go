@@ -12,11 +12,12 @@ import (
 	"sync"
 	"time"
 
+	"singbox-launcher/internal/debuglog"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"singbox-launcher/internal/debuglog"
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/config/parser"

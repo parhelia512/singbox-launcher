@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"singbox-launcher/internal/debuglog"
+
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
 
@@ -123,7 +125,7 @@ func TestAPIConnection(baseURL, token string, logFile *os.File) error {
 		}
 		return fmt.Errorf("failed to execute API test request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer debuglog.RunAndLog("TestAPIConnection: close response body", resp.Body.Close)
 
 	writeLog(logFile, "[%s] GET /version response status for API test: %d\n", time.Now().Format("2006-01-02 15:04:05"), resp.StatusCode)
 
@@ -177,7 +179,7 @@ func GetProxiesInGroup(baseURL, token, groupName string, logFile *os.File) ([]Pr
 		}
 		return nil, "", fmt.Errorf("failed to execute /proxies request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer debuglog.RunAndLog("GetProxiesInGroup: close response body", resp.Body.Close)
 
 	logMsg("GetProxiesInGroup: Response status: %s", resp.Status)
 
@@ -302,7 +304,7 @@ func SwitchProxy(baseURL, token, group, proxy string, logFile *os.File) error {
 		}
 		return fmt.Errorf("failed to execute switch request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer debuglog.RunAndLog("SwitchProxy: close response body", resp.Body.Close)
 
 	writeLog(logFile, "[%s] PUT /proxies/%s response status: %d\n", time.Now().Format("2006-01-02 15:04:05"), group, resp.StatusCode)
 
@@ -343,7 +345,7 @@ func GetDelay(baseURL, token, proxyName string, logFile *os.File) (int64, error)
 		}
 		return 0, fmt.Errorf("failed to execute delay request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer debuglog.RunAndLog("GetDelay: close response body", resp.Body.Close)
 
 	writeLog(logFile, "[%s] GET /proxies/%s/delay response status: %d\n", time.Now().Format("2006-01-02 15:04:05"), proxyName, resp.StatusCode)
 
