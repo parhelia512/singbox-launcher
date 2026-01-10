@@ -52,7 +52,7 @@ func FetchSubscription(url string) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("failed to fetch subscription: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("subscription server returned status %d", resp.StatusCode)
