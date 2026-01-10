@@ -140,7 +140,7 @@ func (ac *AppController) getReleaseInfoFromGitHub(ctx context.Context, version s
 		}
 		return nil, fmt.Errorf("getReleaseInfoFromGitHub: request failed: %w", err)
 	}
-	defer debuglog.CloseWithLog("getReleaseInfoFromGitHub: response body", resp.Body)
+	defer debuglog.RunAndLog("getReleaseInfoFromGitHub: close response body", resp.Body.Close)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("getReleaseInfoFromGitHub: HTTP %d", resp.StatusCode)
@@ -341,7 +341,7 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 		}
 		return fmt.Errorf("downloadFileFromURL: request failed: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("downloadFileFromURL: response body %s", url), resp.Body)
+	defer debuglog.RunAndLog(fmt.Sprintf("downloadFileFromURL: close response body %s", url), resp.Body.Close)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("downloadFileFromURL: HTTP %d", resp.StatusCode)
@@ -351,7 +351,7 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 	if err != nil {
 		return fmt.Errorf("downloadFileFromURL: failed to create file: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("downloadFileFromURL: file %s", destPath), file)
+	defer debuglog.RunAndLog(fmt.Sprintf("downloadFileFromURL: close file %s", destPath), file.Close)
 
 	totalSize := resp.ContentLength
 	var downloaded int64
@@ -427,7 +427,7 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("extractZip: failed to open zip: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("extractZip: zip reader %s", archivePath), r)
+	defer debuglog.RunAndLog(fmt.Sprintf("extractZip: close zip reader %s", archivePath), r.Close)
 
 	singboxName := platform.GetExecutableNames()
 	var binaryPath string
@@ -443,13 +443,13 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 			binaryPath = filepath.Join(destDir, filepath.Base(f.Name))
 			outFile, err := os.Create(binaryPath)
 			if err != nil {
-				debuglog.CloseWithLog(fmt.Sprintf("extractZip: zip entry %s after create error", f.Name), rc)
+				debuglog.RunAndLog(fmt.Sprintf("extractZip: close zip entry %s after create error", f.Name), rc.Close)
 				return "", fmt.Errorf("extractZip: failed to create output file: %w", err)
 			}
 
 			_, err = io.Copy(outFile, rc)
-			debuglog.CloseWithLog(fmt.Sprintf("extractZip: output file %s", binaryPath), outFile)
-			debuglog.CloseWithLog(fmt.Sprintf("extractZip: zip entry %s", f.Name), rc)
+			debuglog.RunAndLog(fmt.Sprintf("extractZip: close output file %s", binaryPath), outFile.Close)
+			debuglog.RunAndLog(fmt.Sprintf("extractZip: close zip entry %s", f.Name), rc.Close)
 
 			if err != nil {
 				return "", fmt.Errorf("extractZip: failed to copy file: %w", err)
@@ -475,13 +475,13 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("extractTarGz: failed to open archive: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("extractTarGz: archive %s", archivePath), file)
+	defer debuglog.RunAndLog(fmt.Sprintf("extractTarGz: close archive %s", archivePath), file.Close)
 
 	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return "", fmt.Errorf("extractTarGz: failed to create gzip reader: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("extractTarGz: gzip reader %s", archivePath), gzr)
+	defer debuglog.RunAndLog(fmt.Sprintf("extractTarGz: close gzip reader %s", archivePath), gzr.Close)
 
 	tr := tar.NewReader(gzr)
 	singboxName := platform.GetExecutableNames()
@@ -505,7 +505,7 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 			}
 
 			_, err = io.Copy(outFile, tr)
-			debuglog.CloseWithLog(fmt.Sprintf("extractTarGz: output file %s", binaryPath), outFile)
+			debuglog.RunAndLog(fmt.Sprintf("extractTarGz: close output file %s", binaryPath), outFile.Close)
 
 			if err != nil {
 				return "", fmt.Errorf("extractTarGz: failed to copy file: %w", err)
@@ -547,13 +547,13 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("installBinary: failed to open source file: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("installBinary: source file %s", sourcePath), sourceFile)
+	defer debuglog.RunAndLog(fmt.Sprintf("installBinary: close source file %s", sourcePath), sourceFile.Close)
 
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("installBinary: failed to create destination file: %w", err)
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("installBinary: destination file %s", destPath), destFile)
+	defer debuglog.RunAndLog(fmt.Sprintf("installBinary: close destination file %s", destPath), destFile.Close)
 
 	_, err = io.Copy(destFile, sourceFile)
 	if err != nil {

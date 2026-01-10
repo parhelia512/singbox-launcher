@@ -59,7 +59,7 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 			return "", false, fmt.Errorf("failed to dial STUN server: %w", err)
 		}
 	}
-	defer debuglog.CloseWithLog("checkSTUN: connection", conn)
+	defer debuglog.RunAndLog("checkSTUN: close connection", conn.Close)
 
 	// Create STUN client
 	c, err := stun.NewClient(conn)
@@ -67,7 +67,7 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 		return "", usedProxy, fmt.Errorf("failed to create STUN client: %w", err)
 	}
 	// Гарантируем корректное освобождение внутренних горутин и ресурсов клиента
-	defer debuglog.CloseWithLog("checkSTUN: STUN client", c)
+	defer debuglog.RunAndLog("checkSTUN: close STUN client", c.Close)
 
 	// Создаем сообщение для запроса
 	message := stun.MustBuild(stun.TransactionID, stun.BindingRequest)

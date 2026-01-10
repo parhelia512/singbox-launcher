@@ -82,15 +82,15 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 // CloseLogFiles closes all log files.
 func (fs *FileService) CloseLogFiles() {
 	if fs.MainLogFile != nil {
-		debuglog.CloseWithLog("CloseLogFiles: main log file", fs.MainLogFile)
+		debuglog.RunAndLog("CloseLogFiles: close main log file", fs.MainLogFile.Close)
 		fs.MainLogFile = nil
 	}
 	if fs.ChildLogFile != nil {
-		debuglog.CloseWithLog("CloseLogFiles: child log file", fs.ChildLogFile)
+		debuglog.RunAndLog("CloseLogFiles: close child log file", fs.ChildLogFile.Close)
 		fs.ChildLogFile = nil
 	}
 	if fs.ApiLogFile != nil {
-		debuglog.CloseWithLog("CloseLogFiles: API log file", fs.ApiLogFile)
+		debuglog.RunAndLog("CloseLogFiles: close API log file", fs.ApiLogFile.Close)
 		fs.ApiLogFile = nil
 	}
 }

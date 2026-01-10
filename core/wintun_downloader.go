@@ -108,7 +108,7 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 		return
 	}
-	defer debuglog.CloseWithLog("DownloadWintunDLL: zip reader", r)
+	defer debuglog.RunAndLog("DownloadWintunDLL: close zip reader", r.Close)
 
 	// Search for wintun.dll in the correct directory
 	var dllPath string
@@ -125,13 +125,13 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 			dllPath = filepath.Join(tempDir, "wintun.dll")
 			outFile, err := os.Create(dllPath)
 			if err != nil {
-				debuglog.CloseWithLog(fmt.Sprintf("DownloadWintunDLL: zip entry %s after create error", f.Name), rc)
+				debuglog.RunAndLog(fmt.Sprintf("DownloadWintunDLL: close zip entry %s after create error", f.Name), rc.Close)
 				continue
 			}
 
 			_, err = io.Copy(outFile, rc)
-			debuglog.CloseWithLog(fmt.Sprintf("DownloadWintunDLL: output file %s", dllPath), outFile)
-			debuglog.CloseWithLog("DownloadWintunDLL: zip entry", rc)
+			debuglog.RunAndLog(fmt.Sprintf("DownloadWintunDLL: close output file %s", dllPath), outFile.Close)
+			debuglog.RunAndLog("DownloadWintunDLL: close zip entry", rc.Close)
 
 			if err != nil {
 				continue
@@ -177,7 +177,7 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 		return
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("DownloadWintunDLL: source file %s", dllPath), sourceFile)
+	defer debuglog.RunAndLog(fmt.Sprintf("DownloadWintunDLL: close source file %s", dllPath), sourceFile.Close)
 
 	destFile, err := os.Create(ac.FileService.WintunPath)
 	if err != nil {
@@ -189,7 +189,7 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 		return
 	}
-	defer debuglog.CloseWithLog(fmt.Sprintf("DownloadWintunDLL: destination file %s", ac.FileService.WintunPath), destFile)
+	defer debuglog.RunAndLog(fmt.Sprintf("DownloadWintunDLL: close destination file %s", ac.FileService.WintunPath), destFile.Close)
 
 	_, err = io.Copy(destFile, sourceFile)
 	if err != nil {

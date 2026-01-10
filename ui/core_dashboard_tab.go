@@ -695,7 +695,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 			})
 			return
 		}
-		defer debuglog.CloseWithLog("downloadConfigTemplate: response body", resp.Body)
+		defer debuglog.RunAndLog("downloadConfigTemplate: close response body", resp.Body.Close)
 		if resp.StatusCode != http.StatusOK {
 			fyne.Do(func() {
 				if tab.templateDownloadButton != nil {
