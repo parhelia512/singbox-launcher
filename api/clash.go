@@ -110,9 +110,11 @@ func TestAPIConnection(baseURL, token string, logFile *os.File) error {
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := httpClient.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("TestAPIConnection: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("TestAPIConnection: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		writeLog(logFile, "[%s] Error executing API test request: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
 		// Проверяем тип ошибки для более понятного сообщения
@@ -170,9 +172,11 @@ func GetProxiesInGroup(baseURL, token, groupName string, logFile *os.File) ([]Pr
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := httpClient.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("GetProxiesInGroup: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("GetProxiesInGroup: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		logMsg("GetProxiesInGroup: ERROR: Failed to execute request: %v", err)
 		// Проверяем тип ошибки для более понятного сообщения
@@ -297,9 +301,11 @@ func SwitchProxy(baseURL, token, group, proxy string, logFile *os.File) error {
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("SwitchProxy: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("SwitchProxy: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		writeLog(logFile, "[%s] Error executing switch request for %s/%s: %v\n", time.Now().Format("2006-01-02 15:04:05"), group, proxy, err)
 		// Проверяем тип ошибки для более понятного сообщения
@@ -340,9 +346,11 @@ func GetDelay(baseURL, token, proxyName string, logFile *os.File) (int64, error)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := httpClient.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("GetDelay: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("GetDelay: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		writeLog(logFile, "[%s] Error executing delay request for %s: %v\n", time.Now().Format("2006-01-02 15:04:05"), proxyName, err)
 		// Проверяем тип ошибки для более понятного сообщения

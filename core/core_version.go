@@ -339,9 +339,11 @@ func (ac *AppController) getLatestVersionFromURLWithPrefix(url string, keepPrefi
 	req.Header.Set("User-Agent", "singbox-launcher/1.0")
 
 	resp, err := client.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("getLatestVersionFromURLWithPrefix: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("getLatestVersionFromURLWithPrefix: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		// Проверяем тип ошибки
 		if IsNetworkError(err) {

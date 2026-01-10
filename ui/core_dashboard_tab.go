@@ -686,9 +686,11 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 		}
 
 		resp, err := http.DefaultClient.Do(req)
-		if resp != nil {
-			defer debuglog.RunAndLog("downloadConfigTemplate: close response body", resp.Body.Close)
-		}
+		defer func() {
+			if resp != nil {
+				debuglog.RunAndLog("downloadConfigTemplate: close response body", resp.Body.Close)
+			}
+		}()
 		if err != nil {
 			fyne.Do(func() {
 				if tab.templateDownloadButton != nil {

@@ -47,9 +47,11 @@ func FetchSubscription(url string) ([]byte, error) {
 	req.Header.Set("User-Agent", config.SubscriptionUserAgent)
 
 	resp, err := client.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("FetchSubscription: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("FetchSubscription: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		if IsNetworkErrorFunc != nil && IsNetworkErrorFunc(err) {
 			return nil, fmt.Errorf("network error: %s", GetNetworkErrorMessageFunc(err))

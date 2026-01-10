@@ -133,9 +133,11 @@ func (ac *AppController) getReleaseInfoFromGitHub(ctx context.Context, version s
 	req.Header.Set("User-Agent", "singbox-launcher/1.0")
 
 	resp, err := client.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog("getReleaseInfoFromGitHub: close response body", resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog("getReleaseInfoFromGitHub: close response body", resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		// Check error type
 		if IsNetworkError(err) {
@@ -336,9 +338,11 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 	req.Header.Set("User-Agent", "singbox-launcher/1.0")
 
 	resp, err := client.Do(req)
-	if resp != nil {
-		defer debuglog.RunAndLog(fmt.Sprintf("downloadFileFromURL: close response body %s", url), resp.Body.Close)
-	}
+	defer func() {
+		if resp != nil {
+			debuglog.RunAndLog(fmt.Sprintf("downloadFileFromURL: close response body %s", url), resp.Body.Close)
+		}
+	}()
 	if err != nil {
 		// Check error type
 		if IsNetworkError(err) {
