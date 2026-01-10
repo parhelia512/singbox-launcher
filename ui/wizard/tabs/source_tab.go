@@ -19,6 +19,7 @@ package tabs
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"image/color"
