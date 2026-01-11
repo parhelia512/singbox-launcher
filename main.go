@@ -188,6 +188,9 @@ func main() {
 	if controller.UIService.MainWindow != nil {
 		controller.UIService.MainWindow.SetCloseIntercept(func() {
 			controller.UIService.MainWindow.Hide()
+			if controller.UIService.HideAppFromDock {
+				platform.HideDockIcon()
+			}
 		})
 	}
 
