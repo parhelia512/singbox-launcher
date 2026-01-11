@@ -87,6 +87,13 @@ static void hideDockIconImpl(void) {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 }
 
+// restoreDockIconImpl restores the Dock icon by setting activation policy to Regular
+// NSApplicationActivationPolicyRegular makes the app appear in the Dock and behave normally
+// This is used when dynamically restoring Dock visibility during a session
+static void restoreDockIconImpl(void) {
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+}
+
 // Export functions for Go - using inline to avoid duplicate symbols
 // CGO compiles code multiple times, so we use inline to avoid symbol duplication
 static inline void singboxLauncherSetupDockReopenHandler(void) {
@@ -99,6 +106,10 @@ static inline void singboxLauncherCleanupDockReopenHandler(void) {
 
 static inline void singboxLauncherHideDockIcon(void) {
     hideDockIconImpl();
+}
+
+static inline void singboxLauncherRestoreDockIcon(void) {
+    restoreDockIconImpl();
 }
 
 // Non-inline wrappers for Go to call (inline functions can't be called from Go)
@@ -114,6 +125,10 @@ __attribute__((weak)) void callCleanupDockReopenHandler(void) {
 
 __attribute__((weak)) void callHideDockIcon(void) {
     singboxLauncherHideDockIcon();
+}
+
+__attribute__((weak)) void callRestoreDockIcon(void) {
+    singboxLauncherRestoreDockIcon();
 }
 */
 import "C"
@@ -169,4 +184,13 @@ func HideDockIcon() {
 	}
 	C.callHideDockIcon()
 	log.Println("HideDockIcon: Dock icon hidden (NSApplicationActivationPolicyAccessory)")
+}
+
+// RestoreDockIcon restores the Dock icon on macOS (makes app appear in Dock again)
+func RestoreDockIcon() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	C.callRestoreDockIcon()
+	log.Println("RestoreDockIcon: Dock icon restored (NSApplicationActivationPolicyRegular)")
 }
