@@ -189,6 +189,9 @@ func main() {
 	if controller.UIService.MainWindow != nil {
 		controller.UIService.MainWindow.SetCloseIntercept(func() {
 			controller.UIService.MainWindow.Hide()
+			if controller.UIService.HideAppFromDock {
+				platform.HideDockIcon()
+			}
 		})
 	}
 
@@ -202,9 +205,11 @@ func main() {
 			fyne.Do(func() {
 				// Show() is safe to call even if window is already visible
 				if controller.UIService.MainWindow != nil {
+					// Ensure Dock is restored before showing the window
+					platform.RestoreDockIcon()
 					controller.UIService.MainWindow.Show()
 					controller.UIService.MainWindow.RequestFocus()
-					log.Println("Dock icon clicked (native handler): Window shown and focused")
+					log.Println("Dock icon clicked (native handler): Dock restored, window shown and focused")
 				}
 			})
 		})
