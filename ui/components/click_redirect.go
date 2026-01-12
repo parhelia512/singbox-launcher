@@ -1,10 +1,11 @@
 package components
 
 import (
+	"image/color"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/widget"
-	"image/color"
 
 	"singbox-launcher/core"
 )
@@ -16,11 +17,11 @@ import (
 // переиспользован или протестирован отдельно от композиции `App`.
 //
 // Особенности реализации:
-// - Это отдельный Widget (расширяет widget.BaseWidget), поэтому он корректно
-//   интегрируется в Fyne layout и не ломает систему событий.
-// - CreateRenderer возвращает прозрачный прямоугольник — оверлей визуально
-//   не видим, но принимает события кликов.
-// - Tapped использует fyne.Do для выполнения Show/RequestFocus в UI-потоке.
+//   - Это отдельный Widget (расширяет widget.BaseWidget), поэтому он корректно
+//     интегрируется в Fyne layout и не ломает систему событий.
+//   - CreateRenderer возвращает прозрачный прямоугольник — оверлей визуально
+//     не видим, но принимает события кликов.
+//   - Tapped использует fyne.Do для выполнения Show/RequestFocus в UI-потоке.
 //
 // Место использования: создаётся в InitWizardOverlay() и помещается поверх вкладок.
 // ClickRedirect — невидимый tappable-оverlay, который перехватывает клики

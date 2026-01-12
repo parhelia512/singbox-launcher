@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"image/color"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -42,47 +43,13 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 	guiState := presenter.GUIState()
 
 	// Section 1: Subscription URL or Direct Links
-	guiState.CheckURLButton = widget.NewButton("Check", func() {
-		if guiState.CheckURLInProgress {
-			return
-		}
-		// Sync GUI to model before checking URL
-		presenter.SyncGUIToModel()
-		go func() {
-			if err := wizardbusiness.CheckURL(presenter.Model(), presenter); err != nil {
-				log.Printf("source_tab: CheckURL failed: %v", err)
-			}
-		}()
-	})
-
-	// Create progress bar for Check button
-	guiState.CheckURLProgress = widget.NewProgressBar()
-	guiState.CheckURLProgress.Hide()
-	guiState.CheckURLProgress.SetValue(0)
-
-	// Set fixed size via placeholder
-	checkButtonWidth := float32(180)
-	checkButtonHeight := guiState.CheckURLButton.MinSize().Height + 4 // Slightly taller
-
-	// Create placeholder to preserve size (always show to preserve size)
-	checkURLPlaceholder := canvas.NewRectangle(color.Transparent)
-	checkURLPlaceholder.SetMinSize(fyne.NewSize(checkButtonWidth, checkButtonHeight))
-	checkURLPlaceholder.Show() // Always show to preserve size
-
-	// Create container with stack (placeholder, button, progress)
-	checkURLStack := container.NewStack(
-		checkURLPlaceholder,
-		guiState.CheckURLButton,
-		guiState.CheckURLProgress,
-	)
-
-	// Add padding from right edge (10 units in Fyne)
-	// Use empty Rectangle to create padding
+	// We perform automatic URL checking on input change (debounced) instead of
+	// requiring the user to click a "Check" button.
+	// Add a padding placeholder container on the right to keep layout similar.
 	paddingRect := canvas.NewRectangle(color.Transparent)
 	paddingRect.SetMinSize(fyne.NewSize(10, 0)) // 10px padding on right
 	guiState.CheckURLContainer = container.NewHBox(
-		checkURLStack, // Button/progress
-		paddingRect,   // Right padding
+		paddingRect,
 	)
 
 	urlLabel := widget.NewLabel("Subscription URL or Direct Links:")
@@ -94,9 +61,44 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 	guiState.SourceURLEntry.OnChanged = func(value string) {
 		model := presenter.Model()
 		model.PreviewNeedsParse = true
-		if err := wizardbusiness.ApplyURLToParserConfig(model, presenter, strings.TrimSpace(value)); err != nil {
+		trimmed := strings.TrimSpace(value)
+		if err := wizardbusiness.ApplyURLToParserConfig(model, presenter, trimmed); err != nil {
 			log.Printf("source_tab: error applying URL to ParserConfig: %v", err)
 		}
+
+		// Debounce CheckURL: cancel previous timer and set a new one (2s after last change)
+		if guiState.CheckURLTimer != nil {
+			guiState.CheckURLTimer.Stop()
+			guiState.CheckURLTimer = nil
+		}
+
+		// Define the actual check logic as a reusable closure so we can reschedule
+		var doCheck func(string)
+		doCheck = func(v string) {
+			// This runs in goroutine from timer - coordinate with UI thread for state
+			fyne.Do(func() {
+				// If a check is currently in progress, reschedule after delay
+				if guiState.CheckURLInProgress {
+					// reschedule
+					guiState.CheckURLTimer = time.AfterFunc(2*time.Second, func() { doCheck(v) })
+					return
+				}
+				// Mark in-progress and sync
+				guiState.CheckURLInProgress = true
+				presenter.SyncGUIToModel()
+				// Run the check in background
+				go func() {
+					if err := wizardbusiness.CheckURL(presenter.Model(), presenter); err != nil {
+						log.Printf("source_tab: CheckURL failed: %v", err)
+					}
+					// Clear in-progress flag
+					fyne.Do(func() { guiState.CheckURLInProgress = false })
+				}()
+			})
+		}
+
+		// Schedule the check after debounce interval
+		guiState.CheckURLTimer = time.AfterFunc(2*time.Second, func() { doCheck(trimmed) })
 	}
 
 	// Hint under input field with Check button on right

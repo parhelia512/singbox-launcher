@@ -19,7 +19,7 @@ type App struct {
 	// overlay is a concrete ClickRedirect component from `ui/components`.
 	// Using the concrete type gives us precise typing and enables future
 	// interactions with overlay-specific methods if needed.
-	overlay     *components.ClickRedirect
+	overlay *components.ClickRedirect
 }
 
 // NewApp creates a new App instance
