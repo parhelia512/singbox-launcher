@@ -10,4 +10,5 @@ updates:
     labels:
       - "dependencies"
       - "go"
+    target-branch: "develop"
 
