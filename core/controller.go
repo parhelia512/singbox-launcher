@@ -688,10 +688,9 @@ func (ac *AppController) addHideDockMenuItem(menuItems []*fyne.MenuItem) []*fyne
 				log.Println("Tray: Hide app from Dock enabled — Dock hidden and window hidden")
 			} else {
 				platform.RestoreDockIcon()
-				// Restore and show the main window when unchecking
-				if ac.UIService.MainWindow != nil {
-					ac.UIService.MainWindow.Show()
-					ac.UIService.MainWindow.RequestFocus()
+				// Restore and show the main window when unchecking (or focus wizard if open)
+				if ac.UIService != nil {
+					ac.UIService.ShowMainWindowOrFocusWizard()
 				}
 				log.Println("Tray: Hide app from Dock disabled — Dock restored and window shown")
 			}
@@ -715,9 +714,9 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 		// Return minimal menu if APIService is not initialized
 		menuItems := []*fyne.MenuItem{
 			fyne.NewMenuItem("Open", func() {
-				if ac.UIService != nil && ac.UIService.MainWindow != nil {
+				if ac.UIService != nil {
 					platform.RestoreDockIcon()
-					ac.UIService.MainWindow.Show()
+					ac.UIService.ShowMainWindowOrFocusWizard()
 				}
 			}),
 			fyne.NewMenuItemSeparator(),
@@ -802,9 +801,9 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	// Create main menu items
 	menuItems := []*fyne.MenuItem{
 		fyne.NewMenuItem("Open", func() {
-			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+			if ac.UIService != nil {
 				platform.RestoreDockIcon()
-				ac.UIService.MainWindow.Show()
+				ac.UIService.ShowMainWindowOrFocusWizard()
 			}
 		}),
 		fyne.NewMenuItemSeparator(),
