@@ -516,10 +516,11 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
 			newProxies = append(newProxies, proxySource)
 		}
+		// Don't preserve other existing ProxySource entries with connections - user removed them
+		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingConnectionsProxies)-1)
 	}
-	// Note: If len(connections) == 0, we don't preserve existing connection entries
-	// This allows users to remove direct links by deleting them from the input
-	// If len(connections) > 0, we only use the current input connections, not preserving old ones
+	// If user removed all connections (len(connections) == 0), don't add any connection ProxySources
+	// This allows user to clear connections by deleting them from GUI
 
 	// If there are no subscriptions or connections, create empty array
 	if len(newProxies) == 0 {
