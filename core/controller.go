@@ -716,6 +716,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 		menuItems := []*fyne.MenuItem{
 			fyne.NewMenuItem("Open", func() {
 				if ac.UIService != nil && ac.UIService.MainWindow != nil {
+					platform.RestoreDockIcon()
 					ac.UIService.MainWindow.Show()
 				}
 			}),
@@ -802,6 +803,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	menuItems := []*fyne.MenuItem{
 		fyne.NewMenuItem("Open", func() {
 			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+				platform.RestoreDockIcon()
 				ac.UIService.MainWindow.Show()
 			}
 		}),
