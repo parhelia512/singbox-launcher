@@ -179,7 +179,7 @@ func main() {
 
 	// Create App structure to manage UI
 	app := ui.NewApp(controller.UIService.MainWindow, controller)
-	controller.UIService.MainWindow.SetContent(app.GetContent())      // Set the window's content (with click redirect overlay)
+	controller.UIService.MainWindow.SetContent(app.GetContent())   // Set the window's content (with click redirect overlay)
 	controller.UIService.MainWindow.Resize(fyne.NewSize(350, 450)) // initial window size
 	controller.UIService.MainWindow.CenterOnScreen()               // Center the window on the screen
 
@@ -204,11 +204,11 @@ func main() {
 		platform.SetupDockReopenHandler(func() {
 			fyne.Do(func() {
 				// Show() is safe to call even if window is already visible
-					if controller.UIService != nil {
-						// Ensure Dock is restored before showing the window
-						platform.RestoreDockIcon()
-						controller.UIService.ShowMainWindowOrFocusWizard()
-						log.Println("Dock icon clicked (native handler): Dock restored and focused (main or wizard)")
+				if controller.UIService != nil {
+					// Ensure Dock is restored before showing the window
+					platform.RestoreDockIcon()
+					controller.UIService.ShowMainWindowOrFocusWizard()
+					log.Println("Dock icon clicked (native handler): Dock restored and focused (main or wizard)")
 				}
 			})
 		})

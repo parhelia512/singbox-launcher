@@ -2,8 +2,8 @@
 
 See [docs/release_notes/0-7-0.md](docs/release_notes/0-7-0.md) for detailed release notes 
 
-## Validate FREE VPN feature 
-With sincere thanks to igareck for the project vpn-configs-for-russia,
+## Validate FREE VPN feature
+With sincere thanks to [igareck](https://github.com/igareck) for the project [vpn-configs-for-russia](https://github.com/igareck/vpn-configs-for-russia),  
 whose ideas and contributions provided valuable inspiration for this release.
 
 ## CI / CD
@@ -25,14 +25,13 @@ https://github.com/Leadaxe/singbox-launcher/pull/23 thnx https://github.com/Must
 ## Fixes
 - Fix: Config Wizard now properly removes deleted subscription URLs and direct links when editing input in the wizard. Previously removed lines could remain in the generated `ParserConfig`; this has been fixed to respect full and partial deletions and preserve existing settings only for matching entries.
 
+# Unreleased (2026-01-12)
+
 ## UI
 - **Wizard single-instance**: окно конфигурационного визарда теперь может быть открыто только в одном экземпляре — повторный вызов фокусирует существующее окно вместо создания нового.
 - **Click-redirect overlay**: добавлен невидимый оверлей поверх основного окна, который при клике переводит фокус на открытый визард, чтобы предотвратить одновременное взаимодействие с основным окном.
 - **Open from tray**: при выборе "Open" в трее главное окно всегда восстанавливается; если визард открыт — он отображается поверх главного окна и получает фокус.
 - **Рефакторинг**: логика оверлея вынесена в `ui/components/ClickRedirect`, инициализация — в `ui/wizard_overlay.go`, а общее поведение интегрировано через `UIService` (метод `ShowMainWindowOrFocusWizard`).
-
-
-## Unreleased (2026-01-12)
 - **Wizard**: automatic URL checking on input change with a 2s debounce; the manual **Check** button was removed to prevent excessive calls and improve UX.
 
 

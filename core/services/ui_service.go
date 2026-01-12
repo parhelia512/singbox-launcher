@@ -19,8 +19,8 @@ import (
 // It encapsulates all Fyne components and UI state to reduce AppController complexity.
 type UIService struct {
 	// Fyne Components
-	Application    fyne.App
-	MainWindow     fyne.Window
+	Application fyne.App
+	MainWindow  fyne.Window
 	// WizardWindow holds the currently open configuration wizard window (if any).
 	// We store it here to implement singleton-like behavior for the wizard: only
 	// one wizard window exists at a time. Other UI code checks this field to
@@ -66,7 +66,7 @@ type UIService struct {
 	// UI-связанного состояния (например, открытие/закрытие визарда).
 	// Используется для того, чтобы UI-компоненты (например, overlay) могли
 	// подстраиваться под текущее состояние без жёсткой связи между слоями.
-	OnStateChange         func() // Called when UI state changes
+	OnStateChange func() // Called when UI state changes
 }
 
 // NewUIService creates and initializes a new UIService instance.
@@ -88,8 +88,6 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	log.Println("UIService: Initializing Fyne application...")
 	ui.Application = app.NewWithID("com.singbox.launcher")
 	ui.Application.SetIcon(ui.AppIconData)
-
-
 
 	// Set theme based on constants
 	switch constants.AppTheme {

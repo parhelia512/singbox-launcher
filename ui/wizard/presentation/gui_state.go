@@ -26,6 +26,8 @@
 package presentation
 
 import (
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -72,6 +74,7 @@ type GUIState struct {
 
 	// UI-флаги состояния операций
 	CheckURLInProgress      bool
+	CheckURLTimer           *time.Timer
 	SaveInProgress          bool
 	ParserConfigUpdating    bool
 	UpdatingOutboundOptions bool
