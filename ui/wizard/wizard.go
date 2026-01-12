@@ -52,7 +52,21 @@ import (
 )
 
 // ShowConfigWizard opens the configuration wizard window.
+//
+// Implemented as a singleton window: we keep a reference to the created
+// window in `controller.UIService.WizardWindow` so that subsequent calls
+// only focus the existing window instead of creating a second instance.
+// This prevents multiple parallel instances of the wizard from being
+// opened and simplifies lifecycle management.
 func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
+	// If wizard is already open - just focus it and return.
+	// Using RequestFocus() ensures the already-open window is brought
+	// to the foreground without creating a duplicate.
+	if controller.UIService != nil && controller.UIService.WizardWindow != nil {
+		controller.UIService.WizardWindow.RequestFocus()
+		return
+	}
+
 	// Create model and GUI state
 	model := wizardmodels.NewWizardModel()
 	guiState := &wizardpresentation.GUIState{}
@@ -76,6 +90,21 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	wizardWindow.Resize(fyne.NewSize(620, 660))
 	wizardWindow.CenterOnScreen()
 	guiState.Window = wizardWindow
+
+	// Store wizard window in UIService and clear on close
+	if controller.UIService != nil {
+		controller.UIService.WizardWindow = wizardWindow
+		// Notify UIService consumers that wizard state changed
+		if controller.UIService.OnStateChange != nil {
+			controller.UIService.OnStateChange()
+		}
+		wizardWindow.SetOnClosed(func() {
+			controller.UIService.WizardWindow = nil
+			if controller.UIService.OnStateChange != nil {
+				controller.UIService.OnStateChange()
+			}
+		})
+	}
 
 	// Create presenter
 	presenter := wizardpresentation.NewWizardPresenter(model, guiState, controller, templateLoader)
