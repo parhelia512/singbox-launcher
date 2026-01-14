@@ -92,9 +92,11 @@ if defined GITHUB_ACTIONS (
 )
 echo.
 
-set CGO_ENABLED=1
-set GOOS=windows
-set GOARCH=amd64
+if not defined CGO_ENABLED set CGO_ENABLED=1
+if not defined GOOS set GOOS=windows
+if not defined GOARCH set GOARCH=amd64
+
+echo Effective environment: CGO_ENABLED=%CGO_ENABLED% GOOS=%GOOS% GOARCH=%GOARCH%
 
 :: Проверяем наличие gcc для CGO
 if %CGO_ENABLED%==1 (
