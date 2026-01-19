@@ -283,33 +283,31 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 		}
 		updateNavigationButtons()
 		// Update Border container with new buttons
-		centerContent := fyne.CanvasObject(tabs)
-		if guiState.RuleDialogOverlay != nil {
-			centerContent = container.NewMax(tabs, guiState.RuleDialogOverlay)
-		}
 		content := container.NewBorder(
 			nil,                       // top
 			guiState.ButtonsContainer, // bottom
 			nil,                       // left
 			nil,                       // right
-			centerContent,             // center
+			tabs,                      // center
 		)
+		if guiState.RuleDialogOverlay != nil {
+			content = container.NewMax(content, guiState.RuleDialogOverlay)
+		}
 		wizardWindow.SetContent(content)
 	}
 
 	// Preview is generated only via "Show Preview" button
 
-	centerContent := fyne.CanvasObject(tabs)
-	if guiState.RuleDialogOverlay != nil {
-		centerContent = container.NewMax(tabs, guiState.RuleDialogOverlay)
-	}
 	content := container.NewBorder(
 		nil,                       // top
 		guiState.ButtonsContainer, // bottom
 		nil,                       // left
 		nil,                       // right
-		centerContent,             // center
+		tabs,                      // center
 	)
+	if guiState.RuleDialogOverlay != nil {
+		content = container.NewMax(content, guiState.RuleDialogOverlay)
+	}
 
 	wizardWindow.SetContent(content)
 	wizardWindow.Show()
