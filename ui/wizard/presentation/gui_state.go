@@ -43,6 +43,7 @@ type RuleWidget struct {
 // GUIState содержит только GUI-виджеты и UI-флаги состояния.
 type GUIState struct {
 	Window fyne.Window
+	RuleDialogOverlay fyne.CanvasObject
 
 	// Tab 1: Sources & ParserConfig
 	SourceURLEntry      *widget.Entry

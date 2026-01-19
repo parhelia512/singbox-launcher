@@ -63,16 +63,28 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		dialogTitle = "Edit Rule"
 	}
 
-	// Check if dialog is already open for this rule
+	// Ensure only one rule dialog is open at a time
 	openDialogs := presenter.OpenRuleDialogs()
+	for key, existingDialog := range openDialogs {
+		existingDialog.Close()
+		delete(openDialogs, key)
+	}
+	updateRuleDialogOverlay := func() {
+		if guiState.RuleDialogOverlay == nil {
+			return
+		}
+		if len(openDialogs) > 0 {
+			guiState.RuleDialogOverlay.Show()
+		} else {
+			guiState.RuleDialogOverlay.Hide()
+		}
+		guiState.RuleDialogOverlay.Refresh()
+	}
 	dialogKey := ruleIndex
 	if !isEdit {
 		dialogKey = -1
 	}
-	if existingDialog, exists := openDialogs[dialogKey]; exists {
-		existingDialog.Close()
-		delete(openDialogs, dialogKey)
-	}
+	updateRuleDialogOverlay()
 
 	// Input field height
 	inputFieldHeight := float32(90)
@@ -479,6 +491,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 		presenter.RefreshRulesTab(refreshWrapper)
 		delete(openDialogs, dialogKey)
+		updateRuleDialogOverlay()
 		dialogWindow.Close()
 	}
 
@@ -491,6 +504,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 
 	cancelButton := widget.NewButton("Cancel", func() {
 		delete(openDialogs, dialogKey)
+		updateRuleDialogOverlay()
 		dialogWindow.Close()
 	})
 
@@ -643,9 +657,11 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 
 	// Register dialog
 	openDialogs[dialogKey] = dialogWindow
+	updateRuleDialogOverlay()
 
 	dialogWindow.SetCloseIntercept(func() {
 		delete(openDialogs, dialogKey)
+		updateRuleDialogOverlay()
 		dialogWindow.Close()
 	})
 

@@ -58,6 +58,7 @@ type UIService struct {
 	UpdateConfigStatusFunc   func()
 	UpdateTrayMenuFunc       func()
 	UpdateParserProgressFunc func(progress float64, status string)
+	FocusOpenRuleDialogs     func()
 
 	// Dependencies (passed from AppController)
 	RunningStateIsRunning func() bool
