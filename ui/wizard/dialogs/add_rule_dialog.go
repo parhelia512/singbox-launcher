@@ -24,6 +24,9 @@
 package dialogs
 
 import (
+	"encoding/json"
+	"errors"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -32,6 +35,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
@@ -107,6 +111,17 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	processesLabel := widget.NewLabel("Processes (select one or more via popup):")
 	selectProcessesButton := widget.NewButton("Select Processes...", func() {})
 
+	// Custom JSON field (initialised early so it can be loaded when editing)
+	customEntry := widget.NewMultiLineEntry()
+	customEntry.SetPlaceHolder("Custom JSON (e.g., {})")
+	customEntry.SetText("{}")
+	customScroll := container.NewScroll(customEntry)
+	customSizeRect := canvas.NewRectangle(color.Transparent)
+	customSizeRect.SetMinSize(fyne.NewSize(0, inputFieldHeight))
+	customContainer := container.NewMax(customSizeRect, customScroll)
+	// Label for custom field (use variable so we can show/hide it with the field)
+	customLabel := widget.NewLabel("Custom JSON:")
+
 	// Helper to normalize process name (strip legacy "PID: name" format)
 	normalizeProcName := func(s string) string {
 		parts := strings.SplitN(strings.TrimSpace(s), ": ", 2)
@@ -159,6 +174,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	}
 
 	// Determine initial rule type and load data
+	domainRegexInitial := ""
+	domainRegexInitialSet := false
 	ruleType := RuleTypeDomain
 	if isEdit {
 		labelEntry.SetText(editRule.Rule.Label)
@@ -166,22 +183,51 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			outboundSelect.SetSelected(editRule.SelectedOutbound)
 		}
 
-		// Load IP, domains or processes
-		if ipVal, hasIP := editRule.Rule.Raw["ip_cidr"]; hasIP {
+		// Load IP, domain (list/regex), process, or custom JSON
+		hasIP := false
+		hasDomain := false
+		hasDomainRegex := false
+		hasProc := false
+		if ipVal, ok := editRule.Rule.Raw["ip_cidr"]; ok {
+			hasIP = true
 			ruleType = RuleTypeIP
 			if ips := ExtractStringArray(ipVal); len(ips) > 0 {
 				ipEntry.SetText(strings.Join(ips, "\n"))
 			}
-		} else if domainVal, hasDomain := editRule.Rule.Raw["domain"]; hasDomain {
+		} else if drVal, ok := editRule.Rule.Raw["domain_regex"]; ok {
+			hasDomainRegex = true
+			ruleType = RuleTypeDomain
+			if s, ok := drVal.(string); ok {
+				domainRegexInitial = s
+				domainRegexInitialSet = true
+			}
+		} else if domainVal, ok := editRule.Rule.Raw["domain"]; ok {
+			hasDomain = true
 			ruleType = RuleTypeDomain
 			if domains := ExtractStringArray(domainVal); len(domains) > 0 {
 				urlEntry.SetText(strings.Join(domains, "\n"))
 			}
-		} else if procVal, hasProc := editRule.Rule.Raw["process"]; hasProc {
+		} else if procVal, ok := editRule.Rule.Raw[ProcessKey]; ok {
+			hasProc = true
 			ruleType = RuleTypeProcess
 			if procs := ExtractStringArray(procVal); len(procs) > 0 {
 				processesSelected = dedupeProcessStrings(procs)
 				sortProcessStrings(processesSelected)
+			}
+		}
+
+		if !hasIP && !hasDomain && !hasDomainRegex && !hasProc {
+			// Custom rule: use Raw (minus outbound) as JSON content
+			ruleType = RuleTypeCustom
+			temp := make(map[string]interface{})
+			for k, v := range editRule.Rule.Raw {
+				if k == "outbound" {
+					continue
+				}
+				temp[k] = v
+			}
+			if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
+				customEntry.SetText(string(b))
 			}
 		}
 	}
@@ -189,33 +235,87 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	// Manage field visibility
 	ipLabel := widget.NewLabel("IP Addresses (one per line, CIDR format):")
 	urlLabel := widget.NewLabel("Domains/URLs (one per line):")
+	// Regex mode switch for domains
+	domainRegexCheck := widget.NewCheck("Regex", func(bool) {})
+	// Entry for domain regex (single-line)
+	domainRegexEntry := widget.NewEntry()
+	domainRegexEntry.SetPlaceHolder("Enter regular expression")
+	// If we loaded a domain_regex from existing rule, restore it
+	if domainRegexInitialSet {
+		domainRegexCheck.SetChecked(true)
+		domainRegexEntry.SetText(domainRegexInitial)
+	}
+
 	updateVisibility := func(selectedType string) {
-		isIP := selectedType == RuleTypeIP
-		isProcess := selectedType == RuleTypeProcess
-		if isIP {
+		showIP := func() {
 			ipLabel.Show()
 			ipContainer.Show()
 			urlLabel.Hide()
 			urlContainer.Hide()
+			domainRegexCheck.Hide()
+			domainRegexEntry.Hide()
 			processesLabel.Hide()
 			processesContainerWrap.Hide()
 			selectProcessesButton.Hide()
-		} else if isProcess {
+			customContainer.Hide()
+			customLabel.Hide()
+
+		}
+		showProcess := func() {
 			ipLabel.Hide()
 			ipContainer.Hide()
 			urlLabel.Hide()
 			urlContainer.Hide()
+			domainRegexCheck.Hide()
+			domainRegexEntry.Hide()
 			processesLabel.Show()
 			processesContainerWrap.Show()
 			selectProcessesButton.Show()
-		} else {
+			customContainer.Hide()
+			customLabel.Hide()
+		}
+		showDomain := func() {
 			ipLabel.Hide()
 			ipContainer.Hide()
 			urlLabel.Show()
 			urlContainer.Show()
+			domainRegexCheck.Show()
+			if domainRegexCheck.Checked {
+				domainRegexEntry.Show()
+				urlContainer.Hide()
+			} else {
+				domainRegexEntry.Hide()
+				urlContainer.Show()
+			}
 			processesLabel.Hide()
 			processesContainerWrap.Hide()
 			selectProcessesButton.Hide()
+			customContainer.Hide()
+			customLabel.Hide()
+		}
+		showCustom := func() {
+			ipLabel.Hide()
+			ipContainer.Hide()
+			urlLabel.Hide()
+			urlContainer.Hide()
+			domainRegexCheck.Hide()
+			domainRegexEntry.Hide()
+			processesLabel.Hide()
+			processesContainerWrap.Hide()
+			selectProcessesButton.Hide()
+			customContainer.Show()
+			customLabel.Show()
+		}
+
+		switch selectedType {
+		case RuleTypeIP:
+			showIP()
+		case RuleTypeProcess:
+			showProcess()
+		case RuleTypeCustom:
+			showCustom()
+		default:
+			showDomain()
 		}
 	}
 
@@ -226,6 +326,61 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	var ruleTypeRadio *widget.RadioGroup
 	var dialogWindow fyne.Window
 
+	parseCustomJSON := func() (map[string]interface{}, error) {
+		trimmed := strings.TrimSpace(customEntry.Text)
+		if trimmed == "" {
+			return nil, errors.New("Custom JSON is empty")
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+			return nil, err
+		}
+		if obj == nil {
+			return nil, errors.New("Custom JSON must be an object")
+		}
+		return obj, nil
+	}
+
+	buildRuleRaw := func(selectedType string, selectedOutbound string) (map[string]interface{}, error) {
+		switch selectedType {
+		case RuleTypeIP:
+			ipText := strings.TrimSpace(ipEntry.Text)
+			items := ParseLines(ipText, false)
+			return map[string]interface{}{
+				"ip_cidr":  items,
+				"outbound": selectedOutbound,
+			}, nil
+		case RuleTypeProcess:
+			items := make([]string, len(processesSelected))
+			copy(items, processesSelected)
+			return map[string]interface{}{
+				ProcessKey: items,
+				"outbound": selectedOutbound,
+			}, nil
+		case RuleTypeCustom:
+			obj, err := parseCustomJSON()
+			if err != nil {
+				return nil, err
+			}
+			obj["outbound"] = selectedOutbound
+			return obj, nil
+		default:
+			if domainRegexCheck != nil && domainRegexCheck.Checked {
+				re := strings.TrimSpace(domainRegexEntry.Text)
+				return map[string]interface{}{
+					"domain_regex": re,
+					"outbound":     selectedOutbound,
+				}, nil
+			}
+			urlText := strings.TrimSpace(urlEntry.Text)
+			items := ParseLines(urlText, false)
+			return map[string]interface{}{
+				"domain":   items,
+				"outbound": selectedOutbound,
+			}, nil
+		}
+	}
+
 	validateFields := func() bool {
 		if strings.TrimSpace(labelEntry.Text) == "" {
 			return false
@@ -233,14 +388,27 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		if ruleTypeRadio == nil {
 			return false
 		}
-		selectedType := ruleTypeRadio.Selected
-		if selectedType == RuleTypeIP {
+		switch ruleTypeRadio.Selected {
+		case RuleTypeIP:
 			return strings.TrimSpace(ipEntry.Text) != ""
-		}
-		if selectedType == RuleTypeProcess {
+		case RuleTypeProcess:
 			return len(processesSelected) > 0
+		case RuleTypeCustom:
+			return strings.TrimSpace(customEntry.Text) != ""
+		default:
+			// Domain mode: either domain list non-empty or regex provided and valid
+			if domainRegexCheck.Checked {
+				re := strings.TrimSpace(domainRegexEntry.Text)
+				if re == "" {
+					return false
+				}
+				if _, err := regexp.Compile(re); err != nil {
+					return false
+				}
+				return true
+			}
+			return strings.TrimSpace(urlEntry.Text) != ""
 		}
-		return strings.TrimSpace(urlEntry.Text) != ""
 	}
 
 	updateButtonState = func() {
@@ -254,7 +422,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	}
 
 	// RadioGroup for rule type selection
-	ruleTypeRadio = widget.NewRadioGroup([]string{RuleTypeIP, RuleTypeDomain, RuleTypeProcess}, func(selected string) {
+	ruleTypeRadio = widget.NewRadioGroup([]string{RuleTypeIP, RuleTypeDomain, RuleTypeProcess, RuleTypeCustom}, func(selected string) {
 		updateVisibility(selected)
 		if updateButtonState != nil {
 			updateButtonState()
@@ -272,28 +440,10 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			selectedOutbound = availableOutbounds[0] // availableOutbounds is always non-empty (see lines 107-109)
 		}
 
-		var ruleRaw map[string]interface{}
-		var items []string
-		var ruleKey string
-
-		if selectedType == RuleTypeIP {
-			ipText := strings.TrimSpace(ipEntry.Text)
-			items = ParseLines(ipText, false) // Trim spaces
-			ruleKey = "ip_cidr"
-		} else if selectedType == RuleTypeProcess {
-			// processesSelected already contains process names; store as-is
-			items = make([]string, len(processesSelected))
-			copy(items, processesSelected)
-			ruleKey = "process"
-		} else {
-			urlText := strings.TrimSpace(urlEntry.Text)
-			items = ParseLines(urlText, false) // Trim spaces
-			ruleKey = "domain"
-		}
-
-		ruleRaw = map[string]interface{}{
-			ruleKey:    items,
-			"outbound": selectedOutbound,
+		ruleRaw, err := buildRuleRaw(selectedType, selectedOutbound)
+		if err != nil {
+			dialog.ShowError(err, dialogWindow)
+			return
 		}
 
 		// Save or update rule
@@ -348,6 +498,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	labelEntry.OnChanged = func(string) { updateButtonState() }
 	ipEntry.OnChanged = func(string) { updateButtonState() }
 	urlEntry.OnChanged = func(string) { updateButtonState() }
+	domainRegexEntry.OnChanged = func(string) { updateButtonState() }
+	domainRegexCheck.OnChanged = func(bool) { updateVisibility(ruleTypeRadio.Selected); updateButtonState() }
 
 	// Helper to refresh selected processes UI (sorted by name)
 	var refreshSelectedProcessesUI func()
@@ -447,17 +599,19 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	inputContainer := container.NewVBox(
 		widget.NewLabel("Rule Name:"),
 		labelEntry,
-		widget.NewSeparator(),
 		widget.NewLabel("Rule Type:"),
 		ruleTypeRadio,
 		widget.NewSeparator(),
 		ipLabel,
 		ipContainer,
-		urlLabel,
+		container.NewHBox(urlLabel, layout.NewSpacer(), domainRegexCheck),
 		urlContainer,
+		domainRegexEntry,
 		processesLabel,
 		processesContainerWrap,
 		selectProcessesButton,
+		customLabel,
+		customContainer,
 		widget.NewSeparator(),
 		widget.NewLabel("Outbound:"),
 		outboundSelect,

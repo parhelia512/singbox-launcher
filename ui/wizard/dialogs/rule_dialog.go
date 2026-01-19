@@ -22,6 +22,9 @@ const (
 	RuleTypeIP      = "IP Addresses (CIDR)"
 	RuleTypeDomain  = "Domains/URLs"
 	RuleTypeProcess = "Processes"
+	RuleTypeCustom  = "Custom JSON"
+	// ProcessKey is the key used in saved rules and config for process-based rules
+	ProcessKey = "process_name"
 )
 
 // ExtractStringArray extracts []string from interface{} (supports []interface{} and []string).
