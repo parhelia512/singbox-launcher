@@ -43,6 +43,7 @@ import (
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
 	wizardmodels "singbox-launcher/ui/wizard/models"
@@ -91,23 +92,35 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	wizardWindow.CenterOnScreen()
 	guiState.Window = wizardWindow
 
-	// Store wizard window in UIService and clear on close
+	// Store wizard window in UIService
 	if controller.UIService != nil {
 		controller.UIService.WizardWindow = wizardWindow
 		// Notify UIService consumers that wizard state changed
 		if controller.UIService.OnStateChange != nil {
 			controller.UIService.OnStateChange()
 		}
+	}
+
+	// Create presenter
+	presenter := wizardpresentation.NewWizardPresenter(model, guiState, controller, templateLoader)
+	if controller.UIService != nil {
+		controller.UIService.FocusOpenRuleDialogs = func() {
+			openDialogs := presenter.OpenRuleDialogs()
+			for _, dlg := range openDialogs {
+				if dlg != nil {
+					dlg.Show()
+					dlg.RequestFocus()
+				}
+			}
+		}
 		wizardWindow.SetOnClosed(func() {
 			controller.UIService.WizardWindow = nil
+			controller.UIService.FocusOpenRuleDialogs = nil
 			if controller.UIService.OnStateChange != nil {
 				controller.UIService.OnStateChange()
 			}
 		})
 	}
-
-	// Create presenter
-	presenter := wizardpresentation.NewWizardPresenter(model, guiState, controller, templateLoader)
 
 	// Load config from file
 	fileService := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
@@ -139,6 +152,9 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	tab1Item := container.NewTabItem("Sources & ParserConfig", tab1)
 	tabs := container.NewAppTabs(tab1Item)
 	guiState.Tabs = tabs
+	// Overlay that redirects clicks to open rule dialog when present
+	guiState.RuleDialogOverlay = components.NewClickRedirect(controller)
+	guiState.RuleDialogOverlay.Hide()
 	var rulesTabItem *container.TabItem
 	var previewTabItem *container.TabItem
 	var currentTabIndex int = 0
@@ -267,24 +283,32 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 		}
 		updateNavigationButtons()
 		// Update Border container with new buttons
+		centerContent := fyne.CanvasObject(tabs)
+		if guiState.RuleDialogOverlay != nil {
+			centerContent = container.NewMax(tabs, guiState.RuleDialogOverlay)
+		}
 		content := container.NewBorder(
 			nil,                       // top
 			guiState.ButtonsContainer, // bottom
 			nil,                       // left
 			nil,                       // right
-			tabs,                      // center
+			centerContent,             // center
 		)
 		wizardWindow.SetContent(content)
 	}
 
 	// Preview is generated only via "Show Preview" button
 
+	centerContent := fyne.CanvasObject(tabs)
+	if guiState.RuleDialogOverlay != nil {
+		centerContent = container.NewMax(tabs, guiState.RuleDialogOverlay)
+	}
 	content := container.NewBorder(
 		nil,                       // top
 		guiState.ButtonsContainer, // bottom
 		nil,                       // left
 		nil,                       // right
-		tabs,                      // center
+		centerContent,             // center
 	)
 
 	wizardWindow.SetContent(content)
