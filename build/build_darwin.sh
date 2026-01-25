@@ -45,12 +45,13 @@ echo "=== Setting build environment ==="
 export CGO_ENABLED=1
 export GOOS=darwin
 
-# Determine build type: universal (default) or intel-only
+# Determine build type: universal (default), intel-only, or catalina
 BUILD_TYPE="${1:-universal}"
-if [ "$BUILD_TYPE" != "universal" ] && [ "$BUILD_TYPE" != "intel" ]; then
-    echo "Usage: $0 [universal|intel]"
+if [ "$BUILD_TYPE" != "universal" ] && [ "$BUILD_TYPE" != "intel" ] && [ "$BUILD_TYPE" != "catalina" ]; then
+    echo "Usage: $0 [universal|intel|catalina]"
     echo "  universal - Build universal binary for Apple Silicon + Intel (requires macOS 11.0+)"
-    echo "  intel     - Build Intel-only binary (supports macOS 11.0+)"
+    echo "  intel     - Build Intel-only binary (supports macOS 11.0+ by default)"
+    echo "  catalina  - Intel-only build targeting macOS 10.15 (Catalina)"
     exit 1
 fi
 
@@ -63,9 +64,12 @@ if [ "$BUILD_TYPE" = "universal" ]; then
     fi
     echo "Building universal binary for both architectures (arm64 + amd64)..."
     MIN_MACOS_VERSION="11.0"
-else
+elif [ "$BUILD_TYPE" = "intel" ]; then
     echo "Building Intel-only binary (amd64)..."
     MIN_MACOS_VERSION="11.0"
+else
+    echo "Building Intel-only Catalina binary (amd64) targeting macOS 10.15..."
+    MIN_MACOS_VERSION="10.15"
 fi
 
 # Check if full Xcode is required (Command Line Tools have incomplete SDK)
@@ -182,6 +186,12 @@ else
     echo "Binary architecture:"
     file "$OUTPUT_FILENAME"
 fi
+
+# Note: For the 'catalina' build type the script runs the same amd64 build
+# but sets the minimum supported macOS version to 10.15 earlier, so the
+# produced binary and .app will target macOS 10.15 (Catalina). If you need
+# to sign or notarize the binary on Catalina, run the corresponding steps
+# on a machine with Xcode and proper certificates.
 
 echo ""
 echo "=== Creating .app bundle ==="
