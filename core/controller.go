@@ -25,8 +25,7 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
-
-	ps "github.com/mitchellh/go-ps"
+	"singbox-launcher/internal/process"
 )
 
 // Constants for log file names
@@ -360,17 +359,17 @@ func (ac *AppController) GetActiveProxyName() string {
 	return ""
 }
 
-// SetLastSelectedProxy safely sets the last selected proxy name with mutex protection.
-func (ac *AppController) SetLastSelectedProxy(name string) {
+// SetLastSelectedProxyForGroup sets the last selected proxy name for a specific selector group.
+func (ac *AppController) SetLastSelectedProxyForGroup(group, name string) {
 	if ac.APIService != nil {
-		ac.APIService.SetLastSelectedProxy(name)
+		ac.APIService.SetLastSelectedProxyForGroup(group, name)
 	}
 }
 
-// GetLastSelectedProxy safely gets the last selected proxy name with mutex protection.
-func (ac *AppController) GetLastSelectedProxy() string {
+// GetLastSelectedProxyForGroup gets the last selected proxy name for a specific selector group.
+func (ac *AppController) GetLastSelectedProxyForGroup(group string) string {
 	if ac.APIService != nil {
-		return ac.APIService.GetLastSelectedProxy()
+		return ac.APIService.GetLastSelectedProxyForGroup(group)
 	}
 	return ""
 }
@@ -510,17 +509,17 @@ func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
 	execName := strings.ToLower(filepath.Base(execPath))
 	currentPID := os.Getpid()
 
-	processes, err := ps.Processes()
+	processes, err := process.GetProcesses()
 	if err != nil {
 		log.Printf("CheckIfLauncherAlreadyRunning: error listing processes: %v", err)
 		return
 	}
 
 	for _, p := range processes {
-		if p.Pid() == currentPID {
+		if p.PID == currentPID {
 			continue
 		}
-		if strings.EqualFold(p.Executable(), execName) {
+		if strings.EqualFold(p.Name, execName) {
 			if ac.UIService != nil && ac.UIService.MainWindow != nil {
 				dialogs.ShowInfo(ac.UIService.MainWindow, "Information", "The application is already running. Use the existing instance or close it before starting a new one.")
 			}
@@ -688,10 +687,9 @@ func (ac *AppController) addHideDockMenuItem(menuItems []*fyne.MenuItem) []*fyne
 				log.Println("Tray: Hide app from Dock enabled — Dock hidden and window hidden")
 			} else {
 				platform.RestoreDockIcon()
-				// Restore and show the main window when unchecking
-				if ac.UIService.MainWindow != nil {
-					ac.UIService.MainWindow.Show()
-					ac.UIService.MainWindow.RequestFocus()
+				// Restore and show the main window when unchecking (or focus wizard if open)
+				if ac.UIService != nil {
+					ac.UIService.ShowMainWindowOrFocusWizard()
 				}
 				log.Println("Tray: Hide app from Dock disabled — Dock restored and window shown")
 			}
@@ -715,9 +713,9 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 		// Return minimal menu if APIService is not initialized
 		menuItems := []*fyne.MenuItem{
 			fyne.NewMenuItem("Open", func() {
-				if ac.UIService != nil && ac.UIService.MainWindow != nil {
+				if ac.UIService != nil {
 					platform.RestoreDockIcon()
-					ac.UIService.MainWindow.Show()
+					ac.UIService.ShowMainWindowOrFocusWizard()
 				}
 			}),
 			fyne.NewMenuItemSeparator(),
@@ -802,9 +800,9 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	// Create main menu items
 	menuItems := []*fyne.MenuItem{
 		fyne.NewMenuItem("Open", func() {
-			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+			if ac.UIService != nil {
 				platform.RestoreDockIcon()
-				ac.UIService.MainWindow.Show()
+				ac.UIService.ShowMainWindowOrFocusWizard()
 			}
 		}),
 		fyne.NewMenuItemSeparator(),

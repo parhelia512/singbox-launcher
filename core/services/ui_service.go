@@ -19,8 +19,13 @@ import (
 // It encapsulates all Fyne components and UI state to reduce AppController complexity.
 type UIService struct {
 	// Fyne Components
-	Application    fyne.App
-	MainWindow     fyne.Window
+	Application fyne.App
+	MainWindow  fyne.Window
+	// WizardWindow holds the currently open configuration wizard window (if any).
+	// We store it here to implement singleton-like behavior for the wizard: only
+	// one wizard window exists at a time. Other UI code checks this field to
+	// decide whether to create a new wizard or focus the existing one.
+	WizardWindow   fyne.Window
 	TrayIcon       fyne.Resource
 	ApiStatusLabel *widget.Label
 
@@ -53,11 +58,16 @@ type UIService struct {
 	UpdateConfigStatusFunc   func()
 	UpdateTrayMenuFunc       func()
 	UpdateParserProgressFunc func(progress float64, status string)
+	FocusOpenRuleDialogs     func()
 
 	// Dependencies (passed from AppController)
 	RunningStateIsRunning func() bool
 	SingboxPath           string
-	OnStateChange         func() // Called when UI state changes
+	// OnStateChange — опциональный callback, который вызывается при изменениях
+	// UI-связанного состояния (например, открытие/закрытие визарда).
+	// Используется для того, чтобы UI-компоненты (например, overlay) могли
+	// подстраиваться под текущее состояние без жёсткой связи между слоями.
+	OnStateChange func() // Called when UI state changes
 }
 
 // NewUIService creates and initializes a new UIService instance.
@@ -101,6 +111,28 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	}
 
 	return ui, nil
+}
+
+// ShowMainWindowOrFocusWizard ensures the main window is shown (unhidden),
+// then if the Wizard is open it brings the Wizard to front and focuses it.
+// This avoids the case where both windows are hidden and clicking "Open" does nothing.
+func (ui *UIService) ShowMainWindowOrFocusWizard() {
+	if ui == nil {
+		return
+	}
+	fyne.Do(func() {
+		// Always show the main window first so the application becomes visible.
+		if ui.MainWindow != nil {
+			ui.MainWindow.Show()
+			ui.MainWindow.RequestFocus()
+		}
+
+		// If Wizard is open, ensure it is visible and focused on top of the main window.
+		if ui.WizardWindow != nil {
+			ui.WizardWindow.Show()
+			ui.WizardWindow.RequestFocus()
+		}
+	})
 }
 
 // UpdateUI updates all UI elements based on the current application state.

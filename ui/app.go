@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/container"
 
 	"singbox-launcher/core"
+	"singbox-launcher/ui/components"
 )
 
 // App manages the UI structure and tabs
@@ -14,6 +15,11 @@ type App struct {
 	tabs        *container.AppTabs
 	clashAPITab *container.TabItem
 	currentTab  *container.TabItem
+	content     fyne.CanvasObject
+	// overlay is a concrete ClickRedirect component from `ui/components`.
+	// Using the concrete type gives us precise typing and enables future
+	// interactions with overlay-specific methods if needed.
+	overlay *components.ClickRedirect
 }
 
 // NewApp creates a new App instance
@@ -69,11 +75,23 @@ func NewApp(window fyne.Window, controller *core.AppController) *App {
 	// Инициализируем состояние вкладки
 	app.updateClashAPITabState()
 
+	// Инициализируем overlay для перенаправления кликов на визард
+	// (реализация в ui/wizard_overlay.go)
+	InitWizardOverlay(app, controller)
+
 	return app
 }
 
 // GetTabs returns the tabs container
 func (a *App) GetTabs() *container.AppTabs {
+	return a.tabs
+}
+
+// GetContent returns the root content for the main window (tabs + overlay if any)
+func (a *App) GetContent() fyne.CanvasObject {
+	if a.content != nil {
+		return a.content
+	}
 	return a.tabs
 }
 

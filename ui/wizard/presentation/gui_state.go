@@ -26,6 +26,8 @@
 package presentation
 
 import (
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -40,7 +42,8 @@ type RuleWidget struct {
 
 // GUIState содержит только GUI-виджеты и UI-флаги состояния.
 type GUIState struct {
-	Window fyne.Window
+	Window            fyne.Window
+	RuleDialogOverlay fyne.CanvasObject
 
 	// Tab 1: Sources & ParserConfig
 	SourceURLEntry      *widget.Entry
@@ -71,8 +74,11 @@ type GUIState struct {
 	Tabs             *container.AppTabs
 
 	// UI-флаги состояния операций
-	CheckURLInProgress      bool
-	SaveInProgress          bool
-	ParserConfigUpdating    bool
-	UpdatingOutboundOptions bool
+	CheckURLInProgress       bool
+	CheckURLTimer            *time.Timer
+	SaveInProgress           bool
+	ParserConfigUpdating     bool
+	OutboundsPreviewUpdating bool
+	OutboundsPreviewLastText string
+	UpdatingOutboundOptions  bool
 }
