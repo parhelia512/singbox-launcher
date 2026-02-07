@@ -77,7 +77,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	templateData, err := templateLoader.LoadTemplateData(controller.FileService.ExecDir)
 	if err != nil {
 		templateFileName := wizardtemplate.GetTemplateFileName()
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(controller.FileService.ExecDir, "bin", templateFileName), err)
+		debuglog.ErrorLog( "ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(controller.FileService.ExecDir, "bin", templateFileName), err)
 		// Update config status in Core Dashboard
 		if controller.UIService != nil && controller.UIService.UpdateConfigStatusFunc != nil {
 			controller.UIService.UpdateConfigStatusFunc()
@@ -126,7 +126,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	fileService := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
 	loadedConfig, parserConfigJSON, sourceURLs, err := wizardbusiness.LoadConfigFromFile(fileService, templateData)
 	if err != nil {
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Failed to load config: %v", err)
+		debuglog.ErrorLog( "ConfigWizard: Failed to load config: %v", err)
 		dialog.ShowError(fmt.Errorf("Failed to load existing config: %w", err), wizardWindow)
 	}
 	if loadedConfig {

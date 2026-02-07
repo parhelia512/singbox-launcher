@@ -84,7 +84,7 @@ func (p *WizardPresenter) SaveConfig() {
 			iterations := 0
 			for p.model.AutoParseInProgress {
 				if time.Since(startTime) > maxWaitTime {
-					SafeFyneDo(p.guiState.Window, func() {
+					p.UpdateUI(func() {
 						dialog.ShowError(fmt.Errorf("Parsing timeout: operation took too long"), p.guiState.Window)
 					})
 					return
@@ -104,7 +104,7 @@ func (p *WizardPresenter) SaveConfig() {
 		p.UpdateSaveProgress(0.4)
 		text, err := wizardbusiness.BuildTemplateConfig(p.model, false)
 		if err != nil {
-			SafeFyneDo(p.guiState.Window, func() {
+			p.UpdateUI(func() {
 				dialog.ShowError(err, p.guiState.Window)
 			})
 			return
@@ -117,7 +117,7 @@ func (p *WizardPresenter) SaveConfig() {
 		}
 		path, err := wizardbusiness.SaveConfigWithBackup(fileService, text)
 		if err != nil {
-			SafeFyneDo(p.guiState.Window, func() {
+			p.UpdateUI(func() {
 				dialog.ShowError(err, p.guiState.Window)
 			})
 			return
@@ -138,7 +138,7 @@ func (p *WizardPresenter) SaveConfig() {
 		p.UpdateSaveProgress(1.0)
 		time.Sleep(200 * time.Millisecond)
 
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			// Show result with validation status
 			message := fmt.Sprintf("Config written to %s", path)
 			if validationErr != nil {

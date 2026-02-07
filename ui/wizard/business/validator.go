@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/parser"
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
@@ -170,13 +171,9 @@ func ValidateRule(rule map[string]interface{}) error {
 }
 
 // ValidateJSONSize validates that JSON data size is within limits.
-//
-// TODO: Устранить дублирование - использовать parser.MaxConfigFileSize из core/config/parser
-// вместо wizardutils.MaxJSONConfigSize (оба имеют одинаковое значение 50MB).
-// См. docs/wizard_refactoring.md раздел "Дублирование констант и валидации".
 func ValidateJSONSize(jsonData []byte) error {
-	if len(jsonData) > wizardutils.MaxJSONConfigSize {
-		return fmt.Errorf("JSON size (%d bytes) exceeds maximum (%d bytes)", len(jsonData), wizardutils.MaxJSONConfigSize)
+	if len(jsonData) > parser.MaxConfigFileSize {
+		return fmt.Errorf("JSON size (%d bytes) exceeds maximum (%d bytes)", len(jsonData), parser.MaxConfigFileSize)
 	}
 	return nil
 }

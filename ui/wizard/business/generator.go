@@ -36,17 +36,17 @@ import (
 // BuildTemplateConfig builds the final configuration from template and wizard model.
 // It processes all selected sections, merges route rules, and generates outbounds block.
 func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (string, error) {
-	startTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: START at %s", startTime.Format("15:04:05.000"))
+	timing := debuglog.StartTiming("buildTemplateConfig")
+	defer timing.EndWithDefer()
 
 	if model.TemplateData == nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: TemplateData is nil, returning error")
+		debuglog.DebugLog("buildTemplateConfig: TemplateData is nil, returning error")
 		return "", fmt.Errorf("template data not available")
 	}
 	parserConfigText := strings.TrimSpace(model.ParserConfigJSON)
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: ParserConfig text length: %d bytes", len(parserConfigText))
+	debuglog.DebugLog("buildTemplateConfig: ParserConfig text length: %d bytes", len(parserConfigText))
 	if parserConfigText == "" {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: ParserConfig is empty, returning error")
+		debuglog.DebugLog("buildTemplateConfig: ParserConfig is empty, returning error")
 		return "", fmt.Errorf("ParserConfig is empty and no template available")
 	}
 
@@ -55,12 +55,13 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 	var parserConfig config.ParserConfig
 	if err := json.Unmarshal([]byte(parserConfigText), &parserConfig); err != nil {
 		// If parsing fails, use text as-is (might be invalid JSON, but let user fix it)
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Failed to parse ParserConfig JSON (took %v): %v", time.Since(parseStartTime), err)
+		timing.LogTiming("parse ParserConfig JSON", time.Since(parseStartTime))
+		debuglog.DebugLog("buildTemplateConfig: Failed to parse ParserConfig JSON: %v", err)
 	} else {
 		// Normalize ParserConfig (migrate version, set defaults, update last_updated)
 		normalizeStartTime := time.Now()
 		config.NormalizeParserConfig(&parserConfig, true)
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Normalized ParserConfig in %v", time.Since(normalizeStartTime))
+		timing.LogTiming("normalize ParserConfig", time.Since(normalizeStartTime))
 
 		// Serialize back to JSON with proper formatting (always version 2 format)
 		serializeStartTime := time.Now()
@@ -70,23 +71,23 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 		serialized, err := json.MarshalIndent(configToSerialize, "", IndentBase)
 		if err == nil {
 			parserConfigText = string(serialized)
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Serialized ParserConfig in %v (new length: %d bytes)",
-				time.Since(serializeStartTime), len(parserConfigText))
+			timing.LogTiming("serialize ParserConfig", time.Since(serializeStartTime))
+			debuglog.DebugLog("buildTemplateConfig: Serialized ParserConfig (new length: %d bytes)", len(parserConfigText))
 		} else {
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Failed to serialize ParserConfig (took %v): %v",
-				time.Since(serializeStartTime), err)
+			timing.LogTiming("serialize ParserConfig", time.Since(serializeStartTime))
+			debuglog.DebugLog("buildTemplateConfig: Failed to serialize ParserConfig: %v", err)
 		}
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: ParserConfig processing took %v total", time.Since(parseStartTime))
+	timing.LogTiming("ParserConfig processing", time.Since(parseStartTime))
 
 	sectionsStartTime := time.Now()
 	sections := make([]string, 0)
 	sectionCount := 0
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Processing %d sections", len(model.TemplateData.SectionOrder))
+	debuglog.DebugLog("buildTemplateConfig: Processing %d sections", len(model.TemplateData.SectionOrder))
 	for _, key := range model.TemplateData.SectionOrder {
 		sectionStartTime := time.Now()
 		if selected, ok := model.TemplateSectionSelections[key]; !ok || !selected {
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Section '%s' not selected, skipping", key)
+			debuglog.DebugLog("buildTemplateConfig: Section '%s' not selected, skipping", key)
 			continue
 		}
 		raw := model.TemplateData.Sections[key]
@@ -96,11 +97,11 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 			// If template had @PARSER_OUTBOUNDS_BLOCK marker, replace entire outbounds array
 			// with generated content
 			outboundsStartTime := time.Now()
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Building outbounds block (generated outbounds: %d)",
+			debuglog.DebugLog("buildTemplateConfig: Building outbounds block (generated outbounds: %d)",
 				len(model.GeneratedOutbounds))
 			content := BuildParserOutboundsBlock(model, model.TemplateData, forPreview)
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Built outbounds block in %v (content length: %d bytes)",
-				time.Since(outboundsStartTime), len(content))
+			timing.LogTiming("build outbounds block", time.Since(outboundsStartTime))
+			debuglog.DebugLog("buildTemplateConfig: Built outbounds block (content length: %d bytes)", len(content))
 
 			// Add elements after marker if they exist (any elements, not just direct-out)
 			if model.TemplateData.OutboundsAfterMarker != "" {
@@ -120,12 +121,12 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 			formatted = "[\n" + content + "\n  ]"
 		} else if key == "route" {
 			routeStartTime := time.Now()
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Merging route section (template rules: %d, custom rules: %d)",
+			debuglog.DebugLog("buildTemplateConfig: Merging route section (template rules: %d, custom rules: %d)",
 				len(model.SelectableRuleStates), len(model.CustomRules))
 			merged, err := MergeRouteSection(raw, model.SelectableRuleStates, model.CustomRules, model.SelectedFinalOutbound)
 			if err != nil {
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Route merge failed (took %v): %v",
-					time.Since(routeStartTime), err)
+				timing.LogTiming("merge route section", time.Since(routeStartTime))
+				debuglog.DebugLog("buildTemplateConfig: Route merge failed: %v", err)
 				return "", fmt.Errorf("route merge failed: %w", err)
 			}
 			raw = merged
@@ -134,26 +135,27 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 			if err != nil {
 				formatted = string(raw)
 			}
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Formatted route section in %v (total route processing: %v)",
-				time.Since(formatStartTime), time.Since(routeStartTime))
+			timing.LogTiming("format route section", time.Since(formatStartTime))
+			timing.LogTiming("total route processing", time.Since(routeStartTime))
 		} else {
 			formatStartTime := time.Now()
 			formatted, err = FormatSectionJSON(raw, 2)
 			if err != nil {
 				formatted = string(raw)
 			}
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Formatted section '%s' in %v", key, time.Since(formatStartTime))
+			timing.LogTiming(fmt.Sprintf("format section '%s'", key), time.Since(formatStartTime))
 		}
 		sections = append(sections, fmt.Sprintf(`  "%s": %s`, key, formatted))
 		sectionCount++
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Processed section '%s' in %v (total sections processed: %d)",
-			key, time.Since(sectionStartTime), sectionCount)
+		timing.LogTiming(fmt.Sprintf("process section '%s'", key), time.Since(sectionStartTime))
+		debuglog.DebugLog("buildTemplateConfig: Processed section '%s' (total sections processed: %d)",
+			key, sectionCount)
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Processed all sections in %v (total: %d)",
-		time.Since(sectionsStartTime), sectionCount)
+	timing.LogTiming("process all sections", time.Since(sectionsStartTime))
+	debuglog.DebugLog("buildTemplateConfig: Processed all sections (total: %d)", sectionCount)
 
 	if len(sections) == 0 {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: No sections selected, returning error")
+		debuglog.DebugLog("buildTemplateConfig: No sections selected, returning error")
 		return "", fmt.Errorf("no sections selected")
 	}
 
@@ -166,9 +168,8 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 	builder.WriteString(strings.Join(sections, ",\n"))
 	builder.WriteString("\n}\n")
 	result := builder.String()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: Built final config in %v (result length: %d bytes)",
-		time.Since(buildStartTime), len(result))
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "buildTemplateConfig: END (total duration: %v)", time.Since(startTime))
+	timing.LogTiming("build final config", time.Since(buildStartTime))
+	debuglog.DebugLog("buildTemplateConfig: Built final config (result length: %d bytes)", len(result))
 	return result, nil
 }
 

@@ -152,15 +152,13 @@ func generateRandomSecret(length int) string {
 func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 	// Skip validation if sing-box path is not provided
 	if singBoxPath == "" {
-		debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
-			"Skipping sing-box validation: singBoxPath is empty")
+		debuglog.DebugLog("Skipping sing-box validation: singBoxPath is empty")
 		return nil
 	}
 
 	// Check if sing-box executable exists
 	if _, err := os.Stat(singBoxPath); os.IsNotExist(err) {
-		debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
-			"Skipping sing-box validation: executable not found at %s", singBoxPath)
+		debuglog.DebugLog("Skipping sing-box validation: executable not found at %s", singBoxPath)
 		return nil
 	}
 
@@ -175,8 +173,7 @@ func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
-		"Running validation: %s check -c %s", singBoxPath, configPath)
+	debuglog.DebugLog("Running validation: %s check -c %s", singBoxPath, configPath)
 
 	// Run validation
 	err := cmd.Run()
@@ -191,16 +188,14 @@ func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 			errorMsg = err.Error()
 		}
 
-		debuglog.Log("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
-			"Config validation failed: %v", err)
+		debuglog.ErrorLog("Config validation failed: %v", err)
 		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
 			"Validation error output", errorMsg, 500)
 
 		return fmt.Errorf("sing-box config validation failed: %s", errorMsg)
 	}
 
-	debuglog.Log("ConfigValidator", debuglog.LevelInfo, debuglog.UseGlobal,
-		"Config validation passed successfully")
+	debuglog.InfoLog("Config validation passed successfully")
 
 	return nil
 }
