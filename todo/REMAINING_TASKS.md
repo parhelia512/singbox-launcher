@@ -4,252 +4,256 @@
 
 ### ✅ Выполнено
 
-1. **Рефакторинг UI визарда** (`REFACTOR_UI_WIZARD_STRUCTURE.md`)
-   - ✅ Создана модульная структура `ui/wizard/`
-   - ✅ Разделение на `state/`, `tabs/`, `dialogs/`, `business/`, `template/`, `utils/`
-   - ✅ Удалены старые файлы (`config_wizard.go`, `config_wizard_state.go`, и т.д.)
-
-2. **Рефакторинг структуры конфигурации** (`REFACTOR_CONFIG_STRUCTURE.md`)
-   - ✅ Создана структура `core/config/`
-   - ✅ Разделение на `models.go`, `parser/`, `subscription/`, `generator.go`, `updater.go`
-   - ✅ Удалены старые файлы
-
-3. **Рефакторинг AppController**
-   - ✅ Выделены сервисы: `UIService`, `APIService`, `StateService`, `FileService`
-   - ✅ Разделение ответственности
-
-4. **Централизация логирования**
-   - ✅ Удален дубликат `core/logging.go` (функции перенесены в `FileService`)
-   - ✅ Функции логирования сделаны публичными: `CheckAndRotateLogFile()`, `OpenLogFileWithRotation()`
-   - ✅ Лимит размера лог-файла уменьшен с 10 МБ до 2 МБ
-
-5. **Документация**
-   - ✅ Создан `ARCHITECTURE.md` с детальным описанием структуры
+1. **Рефакторинг UI визарда** - создана модульная структура `ui/wizard/` с архитектурой MVP (Model-View-Presenter)
+2. **Рефакторинг структуры конфигурации** - создана структура `core/config/` с разделением ответственности
+3. **Рефакторинг AppController** - выделены сервисы: `UIService`, `APIService`, `StateService`, `FileService`
+4. **Централизация логирования** - используется `internal/debuglog` с глобальным уровнем через `SINGBOX_DEBUG`
+5. **Консолидация валидации** - реализована `ValidateStringLength()` и используется в валидаторах
+6. **Документация** - создан `ARCHITECTURE.md` с детальным описанием структуры
 
 ---
 
-## ❌ Не выполнено: Оптимизации из `OPTIMIZATION_RECOMMENDATIONS.md`
+## Актуальные задачи оптимизации
 
-### Фаза 1: Быстрые победы (приоритет: ВЫСОКИЙ)
+### Приоритет 1: Упрощение кода (СРЕДНИЙ приоритет)
 
-#### 1. Условное логирование (~300 строк экономии)
-**Статус:** ❌ НЕ РЕАЛИЗОВАНО
+#### Задача 1.1: Удобные функции логирования в debuglog
 
-**Что нужно:**
-- Добавить `LogLevel` тип и `SetLogLevel()` в `ui/wizard/state/helpers.go`
-- Сделать `DebugLog()` условным (проверять уровень логирования)
-- В production можно отключить debug логи
+**Текущая ситуация:**
+- В `internal/debuglog` есть только функция `Log()` с 5 параметрами
+- Во всем проекте используется паттерн: `debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, format, args...)`
+- В `ui/wizard/business/parser.go` более 20 таких вызовов, что ухудшает читаемость
+- Аналогичные вызовы есть и в других частях проекта (`core/`, `ui/wizard/`)
+
+**Обоснование:**
+- Упростит код: вместо 5 параметров будет 2 (`debuglog.DebugLog(format, args...)`)
+- Улучшит читаемость: явные имена функций (`DebugLog`, `InfoLog`, `ErrorLog`) понятнее, чем магические константы
+- Уменьшит вероятность ошибок: не нужно помнить порядок параметров `debuglog.Log`
+- Глобальная доступность: функции будут доступны во всем проекте, а не только в wizard
+- Не нарушает существующую функциональность: глобальный уровень логирования уже контролируется через `SINGBOX_DEBUG`
+
+**Что сделать:**
+1. Добавить удобные функции в `internal/debuglog/debuglog.go`:
+   ```go
+   // DebugLog logs a debug message (LevelVerbose) with "DEBUG" prefix
+   func DebugLog(format string, args ...interface{}) {
+       Log("DEBUG", LevelVerbose, UseGlobal, format, args...)
+   }
+   
+   // InfoLog logs an info message (LevelInfo) with "INFO" prefix
+   func InfoLog(format string, args ...interface{}) {
+       Log("INFO", LevelInfo, UseGlobal, format, args...)
+   }
+   
+   // ErrorLog logs an error message (LevelError) with "ERROR" prefix
+   func ErrorLog(format string, args ...interface{}) {
+       Log("ERROR", LevelError, UseGlobal, format, args...)
+   }
+   ```
+2. Заменить вызовы `debuglog.Log()` на новые функции в:
+   - `ui/wizard/business/parser.go`
+   - `ui/wizard/business/generator.go`
+   - `ui/wizard/business/loader.go`
+   - `ui/wizard/business/saver.go`
+   - `ui/wizard/wizard.go`
+   - Другие файлы, где используется длинный паттерн
+
+**Ожидаемый результат:**
+- Упрощение ~30-40 вызовов логирования в wizard
+- Улучшение читаемости кода во всем проекте
+- Единообразный стиль логирования
+- Расширение глобального механизма логирования, а не создание дублирующего функционала
 
 **Файлы для изменения:**
-- `ui/wizard/state/helpers.go` - добавить LogLevel и условную логику
-- Возможно, `main.go` - установка уровня логирования при старте
-
-**Приоритет:** ВЫСОКИЙ (экономия ~300 строк в production)
+- `internal/debuglog/debuglog.go` (добавить функции)
+- `ui/wizard/business/parser.go`
+- `ui/wizard/business/generator.go`
+- `ui/wizard/business/loader.go`
+- `ui/wizard/business/saver.go`
+- `ui/wizard/wizard.go`
 
 ---
 
-#### 2. Упрощение SafeFyneDo (~100 строк экономии)
-**Статус:** ⚠️ ЧАСТИЧНО РЕАЛИЗОВАНО
+#### Задача 1.2: Упрощение SafeFyneDo через метод UpdateUI
 
-**Что сделано:**
-- ✅ Есть `SafeFyneDo()` в `ui/wizard/state/helpers.go`
+**Текущая ситуация:**
+- В `presentation/` слое используется `SafeFyneDo(p.guiState.Window, func() { ... })` напрямую
+- Более 20 таких вызовов в разных файлах презентера
+- Дублирование `p.guiState.Window` в каждом вызове
 
-**Что осталось:**
-- ❌ Нет helper-методов в `WizardState` для упрощения вызовов
-- ❌ Нет `SetURLStatus()`, `SetProgress()`, `SetButtonText()` методов
+**Обоснование:**
+- Инкапсуляция: `p.guiState.Window` должен быть скрыт внутри презентера
+- Упрощение: `p.UpdateUI(fn)` короче и понятнее, чем `SafeFyneDo(p.guiState.Window, fn)`
+- Консистентность: все методы презентера будут использовать единый способ обновления UI
+- Меньше ошибок: не нужно помнить передавать `p.guiState.Window` каждый раз
 
-**Что нужно:**
-- Добавить методы в `WizardState`:
-  - `UpdateUI(fn func())` - обертка над SafeFyneDo
-  - `SetURLStatus(text string)` - установка статуса URL
-  - `SetProgress(progress float64)` - обновление прогресса
-  - `SetButtonText(button *widget.Button, text string)` - установка текста кнопки
+**Что сделать:**
+1. Добавить метод `UpdateUI(fn func())` в `WizardPresenter`:
+   ```go
+   func (p *WizardPresenter) UpdateUI(fn func()) {
+       SafeFyneDo(p.guiState.Window, fn)
+   }
+   ```
+2. Заменить прямые вызовы `SafeFyneDo(p.guiState.Window, ...)` на `p.UpdateUI(...)`
+
+**Ожидаемый результат:**
+- Упрощение ~20 вызовов
+- Улучшение инкапсуляции: доступ к `guiState.Window` только через метод презентера
+- Более чистый и читаемый код
 
 **Файлы для изменения:**
-- `ui/wizard/state/state.go` - добавить методы в WizardState
-- `ui/wizard/business/parser.go` - использовать новые методы
-- `ui/wizard/tabs/*.go` - использовать новые методы
-
-**Приоритет:** СРЕДНИЙ (экономия ~100 строк)
+- `ui/wizard/presentation/presenter.go` (добавить метод)
+- `ui/wizard/presentation/presenter_methods.go`
+- `ui/wizard/presentation/presenter_save.go`
+- `ui/wizard/presentation/presenter_sync.go`
+- `ui/wizard/presentation/presenter_ui_updater.go`
 
 ---
 
-#### 3. Консолидация валидации (~50 строк экономии)
-**Статус:** ⚠️ ЧАСТИЧНО РЕАЛИЗОВАНО
+### Приоритет 2: Утилиты для повторяющихся паттернов (СРЕДНИЙ приоритет)
 
-**Что сделано:**
-- ✅ Есть `validator.go` с функциями валидации
+#### Задача 2.1: Утилита для измерения времени выполнения
 
-**Что осталось:**
-- ❌ Дублирование проверок длины строк в разных функциях
-- ❌ Нет общей функции `ValidateStringLength()`
+**Текущая ситуация:**
+- В `business/parser.go` и `business/generator.go` используется паттерн:
+  ```go
+  startTime := time.Now()
+  debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "funcName: START at %s", startTime.Format("15:04:05.000"))
+  // ... код ...
+  debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "funcName: END (total duration: %v)", time.Since(startTime))
+  ```
+- Повторяется в 5-6 местах
+- Форматирование времени и логирование дублируется
 
-**Что нужно:**
-- Создать общую функцию `ValidateStringLength(s, fieldName string, min, max int) error`
-- Использовать её в `ValidateURL()`, `ValidateURI()` и других функциях
+**Обоснование:**
+- DRY принцип: убрать дублирование кода измерения времени
+- Упрощение: вместо 3-4 строк достаточно 2 (`timing := debuglog.StartTiming("funcName")` + `defer timing.EndWithDefer()`)
+- Единообразие: все измерения времени будут в одном стиле
+- Расширяемость: легко добавить промежуточные измерения через `LogTiming()`
+- Логичное размещение: утилита тесно связана с логированием и использует `debuglog`, поэтому должна быть в пакете `debuglog`
+
+**Что сделать:**
+1. Добавить в `internal/debuglog/debuglog.go`:
+   ```go
+   // TimingContext tracks timing for a function execution
+   type TimingContext struct {
+       startTime time.Time
+       funcName  string
+   }
+   
+   // StartTiming creates a new timing context and logs start
+   func StartTiming(funcName string) *TimingContext {
+       startTime := time.Now()
+       DebugLog("%s: START at %s", funcName, startTime.Format("15:04:05.000"))
+       return &TimingContext{
+           startTime: startTime,
+           funcName: funcName,
+       }
+   }
+   
+   // End logs total duration and returns it
+   func (tc *TimingContext) End() time.Duration {
+       duration := time.Since(tc.startTime)
+       DebugLog("%s: END (total duration: %v)", tc.funcName, duration)
+       return duration
+   }
+   
+   // EndWithDefer returns a defer function for automatic logging
+   func (tc *TimingContext) EndWithDefer() func() {
+       return func() {
+           tc.End()
+       }
+   }
+   
+   // LogTiming logs elapsed time for a specific operation
+   func (tc *TimingContext) LogTiming(operation string, duration time.Duration) {
+       DebugLog("%s: %s took %v", tc.funcName, operation, duration)
+   }
+   ```
+2. Заменить паттерны в `business/parser.go` и `business/generator.go`
+
+**Ожидаемый результат:**
+- Упрощение ~15-20 строк кода
+- Единообразный стиль измерения времени
+- Легче добавлять промежуточные измерения
+- Утилита доступна во всем проекте через `debuglog`
 
 **Файлы для изменения:**
-- `ui/wizard/business/validator.go` - добавить общую функцию и использовать её
-
-**Приоритет:** СРЕДНИЙ (экономия ~50 строк)
+- `internal/debuglog/debuglog.go` (добавить TimingContext и методы)
+- `ui/wizard/business/parser.go`
+- `ui/wizard/business/generator.go`
 
 ---
 
-### Фаза 2: Средние оптимизации (приоритет: СРЕДНИЙ)
+### Приоритет 3: Мелкие улучшения (НИЗКИЙ приоритет)
 
-#### 4. Утилита для таймингов (~200 строк экономии)
-**Статус:** ❌ НЕ РЕАЛИЗОВАНО
+#### Задача 3.1: Устранение дублирования констант
 
-**Что нужно:**
-- Создать `ui/wizard/utils/timing.go` с:
-  - `TimingContext` struct
-  - `StartTiming(funcName string) *TimingContext`
-  - `LogTiming(operation string, duration time.Duration)`
-  - `End() time.Duration`
-  - `EndWithDefer() func()`
+**Текущая ситуация:**
+- В `ui/wizard/business/validator.go` есть TODO:
+  ```go
+  // TODO: Устранить дублирование - использовать parser.MaxConfigFileSize из core/config/parser
+  // вместо wizardutils.MaxJSONConfigSize (оба имеют одинаковое значение 50MB).
+  ```
+- Две константы с одинаковым значением в разных пакетах
 
-**Использование:**
-```go
-// Было:
-startTime := time.Now()
-DebugLog("checkURL: START at %s", startTime.Format("15:04:05.000"))
-// ... код ...
-DebugLog("checkURL: END (total duration: %v)", time.Since(startTime))
+**Обоснование:**
+- Устранение дублирования: одна константа вместо двух
+- Консистентность: изменения лимита в одном месте
+- НО: нужно проверить, не нарушит ли это разделение ответственности (wizard utils vs core config)
 
-// Стало:
-timing := wizardutils.StartTiming("checkURL")
-defer timing.EndWithDefer()
-```
+**Что сделать:**
+1. Проверить, можно ли использовать `parser.MaxConfigFileSize` вместо `wizardutils.MaxJSONConfigSize`
+2. Убедиться, что это не создаст циклических зависимостей
+3. Если безопасно - заменить использование
+
+**Ожидаемый результат:**
+- Устранение дублирования
+- Одна точка истины для лимита размера конфигурации
 
 **Файлы для изменения:**
-- `ui/wizard/utils/timing.go` - создать новый файл
-- `ui/wizard/business/parser.go` - использовать новую утилиту
-- Другие файлы с измерениями времени
-
-**Приоритет:** СРЕДНИЙ (экономия ~200 строк)
-
----
-
-#### 5. Упрощение обработки ошибок (~80 строк экономии)
-**Статус:** ❌ НЕ РЕАЛИЗОВАНО
-
-**Что нужно:**
-- Создать `ui/wizard/business/errors.go` с:
-  - `WrapError(err error, context string, args ...interface{}) error`
-  - `ValidateAndWrap(validate func() error, context string, args ...interface{}) error`
-
-**Использование:**
-```go
-// Было:
-if err := ValidateURL(line); err != nil {
-    return fmt.Errorf("proxy source %d: invalid URL: %w", i, err)
-}
-
-// Стало:
-if err := ValidateAndWrap(
-    func() error { return ValidateURL(line) },
-    "proxy source %d: invalid URL", i,
-); err != nil {
-    return err
-}
-```
-
-**Файлы для изменения:**
-- `ui/wizard/business/errors.go` - создать новый файл
-- `ui/wizard/business/validator.go` - использовать новые функции
-- `ui/wizard/business/parser.go` - использовать новые функции
-
-**Приоритет:** НИЗКИЙ (экономия ~80 строк)
-
----
-
-### Фаза 3: Опциональные улучшения (приоритет: НИЗКИЙ)
-
-#### 6. Упрощение тестов (~400 строк экономии)
-**Статус:** ❌ НЕ РЕАЛИЗОВАНО
-
-**Что нужно:**
-- Создать `ui/wizard/business/testdata.go` с:
-  - `ValidParserConfig() *config.ParserConfig`
-  - `InvalidParserConfig() *config.ParserConfig`
-  - Другие helper-функции для тестовых данных
-
-**Приоритет:** НИЗКИЙ (тесты улучшают качество, можно отложить)
-
----
-
-## Другие потенциальные улучшения
-
-### Проверка качества кода
-
-1. **Статический анализ**
-   - ✅ Проверить `go vet` - нет ли ошибок
-   - ✅ Проверить `golangci-lint` - нет ли предупреждений
-
-2. **Тесты**
-   - ✅ Проверить покрытие тестами критической логики
-   - ⚠️ Возможно, добавить интеграционные тесты (да)
-
-3. **Документация**
-   - ✅ `ARCHITECTURE.md` создан
-   - ⚠️ Возможно, добавить примеры использования API (пока не надо)
-
-### Производительность
-
-1. **Оптимизация памяти**
-   - Проверить, нет ли утечек памяти
-   - Проверить использование буферов для больших данных
-
-2. **Оптимизация сетевых запросов**
-   - Проверить таймауты (уже добавлены в `fetcher.go`)
-   - Проверить лимиты размеров (уже добавлены)
+- `ui/wizard/business/validator.go`
+- Возможно `ui/wizard/utils/constants.go`
 
 ---
 
 ## Рекомендуемый порядок выполнения
 
-### Этап 1: Критичные оптимизации
-1. ❌ Условное логирование (ВЫСОКИЙ приоритет)
-2. ⚠️ Упрощение SafeFyneDo - добавить helper-методы (СРЕДНИЙ приоритет)
-3. ⚠️ Консолидация валидации (СРЕДНИЙ приоритет)
+### Этап 1: Упрощение кода (1-2 дня)
+1. Задача 1.1: Wrapper-функции для логирования
+2. Задача 1.2: Упрощение SafeFyneDo
 
-**Ожидаемая экономия:** ~450 строк
+**Ожидаемая экономия:** ~50-60 строк, значительное улучшение читаемости
 
-### Этап 2: Средние оптимизации (2-3 дня)
-4. ❌ Утилита для таймингов (СРЕДНИЙ приоритет)
-5. ❌ Упрощение ошибок (НИЗКИЙ приоритет, можно отложить)
+### Этап 2: Утилиты (1 день)
+3. Задача 2.1: Утилита для таймингов
 
-**Ожидаемая экономия:** ~280 строк
+**Ожидаемая экономия:** ~15-20 строк, единообразие кода
 
-### Этап 3: Опциональные (по необходимости)
-6. ❌ Упрощение тестов (НИЗКИЙ приоритет)
-7. ❌ Оптимизация комментариев (НИЗКИЙ приоритет)
+### Этап 3: Мелкие улучшения (по необходимости)
+4. Задача 3.1: Устранение дублирования констант
 
-**Ожидаемая экономия:** ~500 строк (опционально)
+**Ожидаемая экономия:** ~5-10 строк, улучшение консистентности
 
 ---
 
 ## Итоговая статистика
 
-| Категория | Статус | Приоритет | Экономия |
-|-----------|--------|-----------|----------|
-| Условное логирование | ❌ | ВЫСОКИЙ | ~300 строк |
-| Упрощение SafeFyneDo | ⚠️ | СРЕДНИЙ | ~100 строк |
-| Консолидация валидации | ⚠️ | СРЕДНИЙ | ~50 строк |
-| Утилита для таймингов | ❌ | СРЕДНИЙ | ~200 строк |
-| Упрощение ошибок | ❌ | НИЗКИЙ | ~80 строк |
-| Упрощение тестов | ❌ | НИЗКИЙ | ~400 строк |
-| Оптимизация комментариев | ❌ | НИЗКИЙ | ~100 строк |
-| **ИТОГО** | | | **~1,230 строк** |
+| Задача | Приоритет | Ожидаемая экономия | Обоснование |
+|--------|-----------|---------------------|-------------|
+| Wrapper-функции для логирования | СРЕДНИЙ | ~30-40 упрощений | Улучшение читаемости, единообразие |
+| Упрощение SafeFyneDo | СРЕДНИЙ | ~20 упрощений | Инкапсуляция, читаемость |
+| Утилита для таймингов | СРЕДНИЙ | ~15-20 строк | DRY, единообразие |
+| Устранение дублирования констант | НИЗКИЙ | ~5-10 строк | Консистентность |
 
 ---
 
 ## Примечания
 
 - Все оптимизации должны проходить `go vet` и `go test`
-- Не жертвовать читаемостью кода
-- Сохранять обратную совместимость API (где возможно)
-- Измерять реальную экономию строк после каждой оптимизации
+- Не жертвовать читаемостью ради экономии строк
+- Сохранять обратную совместимость API
+- Измерять реальную экономию после каждой оптимизации
+- Архитектура MVP (WizardPresenter + GUIState) должна сохраняться
 
-**Примечание по оптимизации комментариев:** Удалять только тривиальные и явно лишние комментарии. Не удалять комментарии, которые объясняют сложную логику, бизнес-правила или важные детали реализации. Цель - убрать очевидные комментарии типа `// Set value` над `value = x`, но сохранить все полезные пояснения.
-
+**Важно:** Эти оптимизации направлены на улучшение читаемости и поддержки кода, а не на радикальное сокращение объема. Основная цель - сделать код более понятным и единообразным.
