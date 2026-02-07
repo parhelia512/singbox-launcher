@@ -22,7 +22,7 @@ import (
 
 // SyncModelToGUI синхронизирует данные из модели в GUI.
 func (p *WizardPresenter) SyncModelToGUI() {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.SourceURLEntry != nil {
 			p.guiState.SourceURLEntry.SetText(p.model.SourceURLs)
 		}

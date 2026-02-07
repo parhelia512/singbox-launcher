@@ -82,3 +82,9 @@ func SafeFyneDo(window fyne.Window, fn func()) {
 		fyne.Do(fn)
 	}
 }
+
+// UpdateUI безопасно обновляет UI элементы через SafeFyneDo.
+// Инкапсулирует доступ к guiState.Window внутри презентера.
+func (p *WizardPresenter) UpdateUI(fn func()) {
+	SafeFyneDo(p.guiState.Window, fn)
+}

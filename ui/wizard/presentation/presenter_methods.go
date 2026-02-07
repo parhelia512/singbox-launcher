@@ -25,7 +25,7 @@ import (
 
 // SetCheckURLState управляет состоянием кнопки Check и прогресс-бара.
 func (p *WizardPresenter) SetCheckURLState(statusText string, buttonText string, progress float64) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if statusText != "" && p.guiState.URLStatusLabel != nil {
 			p.guiState.URLStatusLabel.SetText(statusText)
 		}
@@ -74,7 +74,7 @@ func (p *WizardPresenter) SetCheckURLState(statusText string, buttonText string,
 
 // SetSaveState управляет состоянием кнопки Save и прогресс-бара.
 func (p *WizardPresenter) SetSaveState(buttonText string, progress float64) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		progressVisible := false
 		if progress < 0 {
 			if p.guiState.SaveProgress != nil {
@@ -150,7 +150,7 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 		p.guiState.UpdatingOutboundOptions = false
 	}()
 
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		for _, ruleWidget := range p.guiState.RuleOutboundSelects {
 			if ruleWidget.RuleState == nil {
 				continue
@@ -233,7 +233,7 @@ func (p *WizardPresenter) SetTemplatePreviewText(text string) {
 
 	// For large texts (>50KB) show loading message before insertion
 	if len(text) > 50000 {
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
 			if p.guiState.TemplatePreviewStatusLabel != nil {
 				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
@@ -241,13 +241,13 @@ func (p *WizardPresenter) SetTemplatePreviewText(text string) {
 		})
 
 		go func() {
-			SafeFyneDo(p.guiState.Window, func() {
+			p.UpdateUI(func() {
 				p.guiState.TemplatePreviewEntry.SetText(text)
 				p.model.TemplatePreviewNeedsUpdate = false
 			})
 		}()
 	} else {
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			p.guiState.TemplatePreviewEntry.SetText(text)
 			p.model.TemplatePreviewNeedsUpdate = false
 		})

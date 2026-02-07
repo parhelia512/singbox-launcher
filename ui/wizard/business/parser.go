@@ -34,12 +34,12 @@ import (
 // CheckURL validates subscription URLs or direct links and updates the model through UIUpdater.
 // It checks availability of subscription URLs and validates direct links.
 func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
-	startTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: START at %s", startTime.Format("15:04:05.000"))
+	timing := debuglog.StartTiming("checkURL")
+	defer timing.EndWithDefer()
 
 	input := strings.TrimSpace(model.SourceURLs)
 	if input == "" {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Empty input, returning early")
+		debuglog.DebugLog("checkURL: Empty input, returning early")
 		updater.UpdateURLStatus("❌ Please enter a URL or direct link")
 		updater.UpdateCheckURLButtonText("Check")
 		updater.UpdateCheckURLProgress(-1)
@@ -52,7 +52,7 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 
 	// Split input into lines for processing
 	inputLines := strings.Split(input, "\n")
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Processing %d input lines", len(inputLines))
+	debuglog.DebugLog("checkURL: Processing %d input lines", len(inputLines))
 	totalValid := 0
 	previewLines := make([]string, 0)
 	errors := make([]string, 0)
@@ -64,13 +64,11 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 			continue
 		}
 
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Processing line %d/%d: %s (elapsed: %v)", i+1, len(inputLines),
-			func() string {
-				if len(line) > 50 {
-					return line[:50] + "..."
-				}
-				return line
-			}(), time.Since(startTime))
+		linePreview := line
+		if len(line) > 50 {
+			linePreview = line[:50] + "..."
+		}
+		debuglog.DebugLog("checkURL: Processing line %d/%d: %s", i+1, len(inputLines), linePreview)
 
 		progress := float64(i+1) / float64(len(inputLines))
 		updater.UpdateURLStatus(fmt.Sprintf("⏳ Checking... (%d/%d)", i+1, len(inputLines)))
@@ -79,35 +77,35 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 		if subscription.IsSubscriptionURL(line) {
 			// Validate URL before fetching
 			if err := ValidateURL(line); err != nil {
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Invalid subscription URL %d/%d: %v", i+1, len(inputLines), err)
+				debuglog.DebugLog("checkURL: Invalid subscription URL %d/%d: %v", i+1, len(inputLines), err)
 				errors = append(errors, fmt.Sprintf("Invalid subscription URL: %v", err))
 				continue
 			}
 
 			// This is a subscription URL - check availability
 			fetchStartTime := time.Now()
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Fetching subscription %d/%d: %s", i+1, len(inputLines), line)
+			debuglog.DebugLog("checkURL: Fetching subscription %d/%d: %s", i+1, len(inputLines), line)
 			content, err := subscription.FetchSubscription(line)
 			fetchDuration := time.Since(fetchStartTime)
 			if err != nil {
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Failed to fetch subscription %d/%d (took %v): %v", i+1, len(inputLines), fetchDuration, err)
+				debuglog.DebugLog("checkURL: Failed to fetch subscription %d/%d (took %v): %v", i+1, len(inputLines), fetchDuration, err)
 				errors = append(errors, fmt.Sprintf("Failed to fetch %s: %v", line, err))
 				continue
 			}
 
 			// Validate response size
 			if err := ValidateHTTPResponseSize(int64(len(content))); err != nil {
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Subscription response too large %d/%d: %v", i+1, len(inputLines), err)
+				debuglog.DebugLog("checkURL: Subscription response too large %d/%d: %v", i+1, len(inputLines), err)
 				errors = append(errors, fmt.Sprintf("Subscription response too large: %v", err))
 				continue
 			}
 
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Fetched subscription %d/%d: %d bytes in %v", i+1, len(inputLines), len(content), fetchDuration)
+			debuglog.DebugLog("checkURL: Fetched subscription %d/%d: %d bytes in %v", i+1, len(inputLines), len(content), fetchDuration)
 
 			// Check subscription content
 			parseStartTime := time.Now()
 			subLines := strings.Split(string(content), "\n")
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Parsing subscription %d/%d: %d lines", i+1, len(inputLines), len(subLines))
+			debuglog.DebugLog("checkURL: Parsing subscription %d/%d: %d lines", i+1, len(inputLines), len(subLines))
 			validInSub := 0
 			for _, subLine := range subLines {
 				subLine = strings.TrimSpace(subLine)
@@ -120,7 +118,7 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 				}
 			}
 			parseDuration := time.Since(parseStartTime)
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Parsed subscription %d/%d: %d valid links in %v (line processing took %v total)",
+			debuglog.DebugLog("checkURL: Parsed subscription %d/%d: %d valid links in %v (line processing took %v total)",
 				i+1, len(inputLines), validInSub, parseDuration, time.Since(lineStartTime))
 			if validInSub == 0 {
 				errors = append(errors, fmt.Sprintf("Subscription %s contains no valid proxy links", line))
@@ -128,35 +126,33 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 		} else if subscription.IsDirectLink(line) {
 			// Validate URI before parsing
 			if err := ValidateURI(line); err != nil {
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Invalid URI format %d/%d: %v", i+1, len(inputLines), err)
+				debuglog.DebugLog("checkURL: Invalid URI format %d/%d: %v", i+1, len(inputLines), err)
 				errors = append(errors, fmt.Sprintf("Invalid URI format: %v", err))
 				continue
 			}
 
 			// This is a direct link - validate parsing
 			parseStartTime := time.Now()
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Parsing direct link %d/%d", i+1, len(inputLines))
+			debuglog.DebugLog("checkURL: Parsing direct link %d/%d", i+1, len(inputLines))
 			_, err := subscription.ParseNode(line, nil)
 			parseDuration := time.Since(parseStartTime)
 			if err != nil {
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Invalid direct link %d/%d (took %v): %v", i+1, len(inputLines), parseDuration, err)
+				debuglog.DebugLog("checkURL: Invalid direct link %d/%d (took %v): %v", i+1, len(inputLines), parseDuration, err)
 				errors = append(errors, fmt.Sprintf("Invalid direct link: %v", err))
 			} else {
 				totalValid++
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Valid direct link %d/%d (took %v)", i+1, len(inputLines), parseDuration)
+				debuglog.DebugLog("checkURL: Valid direct link %d/%d (took %v)", i+1, len(inputLines), parseDuration)
 				if len(previewLines) < wizardutils.MaxPreviewLines {
 					previewLines = append(previewLines, fmt.Sprintf("%d. %s", totalValid, line))
 				}
 			}
 		} else {
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Unknown format for line %d/%d: %s", i+1, len(inputLines), line)
+			debuglog.DebugLog("checkURL: Unknown format for line %d/%d: %s", i+1, len(inputLines), line)
 			errors = append(errors, fmt.Sprintf("Unknown format: %s", line))
 		}
 	}
 
-	totalDuration := time.Since(startTime)
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: Processed all lines in %v (total valid: %d, errors: %d)",
-		totalDuration, totalValid, len(errors))
+	debuglog.DebugLog("checkURL: Processed all lines (total valid: %d, errors: %d)", totalValid, len(errors))
 
 	if totalValid == 0 {
 		errorMsg := "❌ No valid proxy links found"
@@ -180,7 +176,6 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 	}
 	updater.UpdateCheckURLButtonText("Check")
 	updater.UpdateCheckURLProgress(-1)
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "checkURL: END (total duration: %v)", totalDuration)
 	return nil
 }
 
@@ -195,12 +190,9 @@ func min(a, b int) int {
 // ParseAndPreview parses ParserConfig and generates outbounds preview.
 // It updates the model and UI through UIUpdater.
 func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configService ConfigService) error {
-	startTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: START at %s", startTime.Format("15:04:05.000"))
-
+	timing := debuglog.StartTiming("parseAndPreview")
 	defer func() {
-		totalDuration := time.Since(startTime)
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: END (total duration: %v)", totalDuration)
+		timing.End()
 		model.AutoParseInProgress = false
 	}()
 
@@ -211,9 +203,9 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 	// Parse ParserConfig from field
 	parseStartTime := time.Now()
 	parserConfigJSON := strings.TrimSpace(model.ParserConfigJSON)
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: ParserConfig text length: %d bytes", len(parserConfigJSON))
+	debuglog.DebugLog("parseAndPreview: ParserConfig text length: %d bytes", len(parserConfigJSON))
 	if parserConfigJSON == "" {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: ParserConfig is empty, returning early")
+		debuglog.DebugLog("parseAndPreview: ParserConfig is empty, returning early")
 		updater.UpdateOutboundsPreview("Error: ParserConfig is empty")
 		updater.UpdateCheckURLButtonText("Check") // Restore check URL button
 		updater.UpdateSaveButtonText("Save")      // Restore save button
@@ -222,7 +214,7 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 
 	// Validate JSON size before parsing
 	if err := ValidateJSONSize([]byte(parserConfigJSON)); err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: ParserConfig JSON size validation failed: %v", err)
+		debuglog.DebugLog("parseAndPreview: ParserConfig JSON size validation failed: %v", err)
 		updater.UpdateOutboundsPreview(fmt.Sprintf("Error: %v", err))
 		updater.UpdateCheckURLButtonText("Check")
 		updater.UpdateSaveButtonText("Save")
@@ -231,7 +223,8 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 
 	var parserConfig config.ParserConfig
 	if err := json.Unmarshal([]byte(parserConfigJSON), &parserConfig); err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Failed to parse ParserConfig JSON (took %v): %v", time.Since(parseStartTime), err)
+		timing.LogTiming("parse ParserConfig JSON", time.Since(parseStartTime))
+		debuglog.DebugLog("parseAndPreview: Failed to parse ParserConfig JSON: %v", err)
 		updater.UpdateOutboundsPreview(fmt.Sprintf("Error: Failed to parse ParserConfig JSON: %v", err))
 		updater.UpdateCheckURLButtonText("Check")
 		updater.UpdateSaveButtonText("Save")
@@ -240,20 +233,21 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 
 	// Validate ParserConfig structure
 	if err := ValidateParserConfig(&parserConfig); err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: ParserConfig validation failed: %v", err)
+		debuglog.DebugLog("parseAndPreview: ParserConfig validation failed: %v", err)
 		updater.UpdateOutboundsPreview(fmt.Sprintf("Error: Invalid ParserConfig: %v", err))
 		updater.UpdateCheckURLButtonText("Check")
 		updater.UpdateSaveButtonText("Save")
 		return err
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Parsed ParserConfig in %v (sources: %d, outbounds: %d)",
-		time.Since(parseStartTime), len(parserConfig.ParserConfig.Proxies), len(parserConfig.ParserConfig.Outbounds))
+	timing.LogTiming("parse ParserConfig", time.Since(parseStartTime))
+	debuglog.DebugLog("parseAndPreview: Parsed ParserConfig (sources: %d, outbounds: %d)",
+		len(parserConfig.ParserConfig.Proxies), len(parserConfig.ParserConfig.Outbounds))
 
 	// Check for URL or direct links
 	url := strings.TrimSpace(model.SourceURLs)
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: URL text length: %d bytes", len(url))
+	debuglog.DebugLog("parseAndPreview: URL text length: %d bytes", len(url))
 	if url == "" {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: URL is empty, returning early")
+		debuglog.DebugLog("parseAndPreview: URL is empty, returning early")
 		updater.UpdateOutboundsPreview("Error: VLESS URL or direct links are empty")
 		updater.UpdateCheckURLButtonText("Check")
 		updater.UpdateSaveButtonText("Save")
@@ -262,35 +256,37 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 
 	// Update config through ApplyURLToParserConfig, which correctly separates subscriptions and connections
 	applyStartTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Applying URL to ParserConfig")
+	debuglog.DebugLog("parseAndPreview: Applying URL to ParserConfig")
 	if err := ApplyURLToParserConfig(model, updater, url); err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Failed to apply URL to ParserConfig: %v", err)
+		debuglog.DebugLog("parseAndPreview: Failed to apply URL to ParserConfig: %v", err)
 		log.Printf("parseAndPreview: error applying URL to ParserConfig: %v", err)
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Applied URL to ParserConfig in %v", time.Since(applyStartTime))
+	timing.LogTiming("apply URL to ParserConfig", time.Since(applyStartTime))
 
 	// Reload parserConfig after update
 	reloadStartTime := time.Now()
 	parserConfigJSON = strings.TrimSpace(model.ParserConfigJSON)
 	if parserConfigJSON != "" {
 		if err := json.Unmarshal([]byte(parserConfigJSON), &parserConfig); err != nil {
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Failed to parse updated ParserConfig JSON (took %v): %v", time.Since(reloadStartTime), err)
+			timing.LogTiming("reload ParserConfig JSON", time.Since(reloadStartTime))
+			debuglog.DebugLog("parseAndPreview: Failed to parse updated ParserConfig JSON: %v", err)
 			updater.UpdateOutboundsPreview(fmt.Sprintf("Error: Failed to parse updated ParserConfig JSON: %v", err))
 			updater.UpdateCheckURLButtonText("Check")
 			updater.UpdateSaveButtonText("Save")
 			return fmt.Errorf("failed to parse updated ParserConfig JSON: %w", err)
 		}
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Reloaded ParserConfig in %v (sources: %d)",
-			time.Since(reloadStartTime), len(parserConfig.ParserConfig.Proxies))
+		timing.LogTiming("reload ParserConfig", time.Since(reloadStartTime))
+		debuglog.DebugLog("parseAndPreview: Reloaded ParserConfig (sources: %d)",
+			len(parserConfig.ParserConfig.Proxies))
 	}
 
 	// Generate all outbounds using unified function
 	// This eliminates code duplication and adds support for local outbounds
 	generateStartTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Starting outbound generation using unified function")
+	debuglog.DebugLog("parseAndPreview: Starting outbound generation using unified function")
 
 	tagCounts := make(map[string]int)
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Initializing tag deduplication tracker")
+	debuglog.DebugLog("parseAndPreview: Initializing tag deduplication tracker")
 
 	var lastProgressUpdate time.Time
 	progressCallback := func(p float64, s string) {
@@ -305,7 +301,8 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 	result, err := configService.GenerateOutboundsFromParserConfig(
 		&parserConfig, tagCounts, progressCallback)
 	if err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Failed to generate outbounds (took %v): %v", time.Since(generateStartTime), err)
+		timing.LogTiming("generate outbounds", time.Since(generateStartTime))
+		debuglog.DebugLog("parseAndPreview: Failed to generate outbounds: %v", err)
 		updater.UpdateOutboundsPreview(fmt.Sprintf("Error: Failed to generate outbounds: %v", err))
 		updater.UpdateCheckURLButtonText("Check")
 		updater.UpdateSaveButtonText("Save")
@@ -331,14 +328,16 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 			result.GlobalSelectorsCount,
 			len(result.OutboundsJSON))
 		previewText = statsComment
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Generated statistics comment in %v (nodes: %d > %d)", time.Since(joinStartTime), result.NodesCount, wizardutils.MaxNodesForFullPreview)
+		timing.LogTiming("generate statistics comment", time.Since(joinStartTime))
+		debuglog.DebugLog("parseAndPreview: Generated statistics comment (nodes: %d > %d)", result.NodesCount, wizardutils.MaxNodesForFullPreview)
 	} else {
 		joinStartTime := time.Now()
 		previewText = strings.Join(result.OutboundsJSON, "\n")
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Joined %d JSON strings in %v (total preview text length: %d bytes)",
-			len(result.OutboundsJSON), time.Since(joinStartTime), len(previewText))
+		timing.LogTiming("join JSON strings", time.Since(joinStartTime))
+		debuglog.DebugLog("parseAndPreview: Joined %d JSON strings (total preview text length: %d bytes)",
+			len(result.OutboundsJSON), len(previewText))
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "parseAndPreview: Total outbound generation took %v", time.Since(generateStartTime))
+	timing.LogTiming("total outbound generation", time.Since(generateStartTime))
 
 	updater.UpdateOutboundsPreview(previewText)
 	updater.UpdateCheckURLButtonText("Check")
@@ -356,34 +355,35 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 // ApplyURLToParserConfig applies URL input to ParserConfig, correctly separating subscriptions and connections.
 // It preserves existing local outbounds, tag_prefix, and tag_postfix for each source.
 func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, input string) error {
-	startTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: START at %s (input length: %d bytes)",
-		startTime.Format("15:04:05.000"), len(input))
+	timing := debuglog.StartTiming("applyURLToParserConfig")
+	defer timing.EndWithDefer()
+	debuglog.DebugLog("applyURLToParserConfig: input length: %d bytes", len(input))
 
 	if input == "" {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: input is empty, returning early")
+		debuglog.DebugLog("applyURLToParserConfig: input is empty, returning early")
 		return fmt.Errorf("input is empty")
 	}
 	text := strings.TrimSpace(model.ParserConfigJSON)
 	if text == "" {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: ParserConfigJSON text is empty, returning early")
+		debuglog.DebugLog("applyURLToParserConfig: ParserConfigJSON text is empty, returning early")
 		return fmt.Errorf("parserConfigJSON is empty")
 	}
 
 	parseStartTime := time.Now()
 	var parserConfig config.ParserConfig
 	if err := json.Unmarshal([]byte(text), &parserConfig); err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Failed to parse ParserConfig (took %v): %v",
-			time.Since(parseStartTime), err)
+		timing.LogTiming("parse ParserConfig", time.Since(parseStartTime))
+		debuglog.DebugLog("applyURLToParserConfig: Failed to parse ParserConfig: %v", err)
 		return fmt.Errorf("failed to parse ParserConfig: %w", err)
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Parsed ParserConfig in %v (outbounds: %d)",
-		time.Since(parseStartTime), len(parserConfig.ParserConfig.Outbounds))
+	timing.LogTiming("parse ParserConfig", time.Since(parseStartTime))
+	debuglog.DebugLog("applyURLToParserConfig: Parsed ParserConfig (outbounds: %d)",
+		len(parserConfig.ParserConfig.Outbounds))
 
 	// Separate subscriptions and direct links
 	splitStartTime := time.Now()
 	lines := strings.Split(input, "\n")
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Split input into %d lines", len(lines))
+	debuglog.DebugLog("applyURLToParserConfig: Split input into %d lines", len(lines))
 	subscriptions := make([]string, 0)
 	connections := make([]string, 0)
 
@@ -398,8 +398,9 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 			connections = append(connections, line)
 		}
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Classified lines: %d subscriptions, %d connections (took %v)",
-		len(subscriptions), len(connections), time.Since(splitStartTime))
+	timing.LogTiming("classify lines", time.Since(splitStartTime))
+	debuglog.DebugLog("applyURLToParserConfig: Classified lines: %d subscriptions, %d connections",
+		len(subscriptions), len(connections))
 
 	// Preserve existing local outbounds, tag_prefix, and tag_postfix for each source
 	// Use source URL as key for matching
@@ -433,11 +434,11 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 	restoreTagPrefixAndPostfix := func(proxySource *config.ProxySource, lookupKey string, logContext string) {
 		if existingTagPrefix, ok := existingTagPrefixMap[lookupKey]; ok {
 			proxySource.TagPrefix = existingTagPrefix
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Restored tag_prefix '%s' for %s", existingTagPrefix, logContext)
+			debuglog.DebugLog("applyURLToParserConfig: Restored tag_prefix '%s' for %s", existingTagPrefix, logContext)
 		}
 		if existingTagPostfix, ok := existingTagPostfixMap[lookupKey]; ok {
 			proxySource.TagPostfix = existingTagPostfix
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Restored tag_postfix '%s' for %s", existingTagPostfix, logContext)
+			debuglog.DebugLog("applyURLToParserConfig: Restored tag_postfix '%s' for %s", existingTagPostfix, logContext)
 		}
 	}
 
@@ -449,14 +450,14 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 		// Restore local outbounds if they existed for this source
 		if existingOutbounds, ok := existingOutboundsMap[sub]; ok {
 			proxySource.Outbounds = existingOutbounds
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), sub)
+			debuglog.DebugLog("applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), sub)
 		}
 		// Restore tag_prefix and tag_postfix
 		restoreTagPrefixAndPostfix(&proxySource, sub, fmt.Sprintf("subscription: %s", sub))
 		// Automatically add tag_prefix if not restored and auto-add is enabled
 		if proxySource.TagPrefix == "" && autoAddPrefix {
 			proxySource.TagPrefix = GenerateTagPrefix(idx + 1)
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Added automatic tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
+			debuglog.DebugLog("applyURLToParserConfig: Added automatic tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
 		}
 		newProxies = append(newProxies, proxySource)
 	}
@@ -503,7 +504,7 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 				}
 				newProxies = append(newProxies, matchedProxy)
 				matched = true
-				debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
+				debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
 					matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
 				break
 			}
@@ -513,11 +514,11 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 			proxySource := config.ProxySource{
 				Connections: connections,
 			}
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
+			debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
 			newProxies = append(newProxies, proxySource)
 		}
 		// Don't preserve other existing ProxySource entries with connections - user removed them
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingConnectionsProxies)-1)
+		debuglog.DebugLog("applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingConnectionsProxies)-1)
 	}
 	// If user removed all connections (len(connections) == 0), don't add any connection ProxySources
 	// This allows user to clear connections by deleting them from GUI
@@ -529,23 +530,23 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 
 	// Update proxies array
 	parserConfig.ParserConfig.Proxies = newProxies
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Created %d proxy sources (%d subscriptions, %d with connections)",
+	debuglog.DebugLog("applyURLToParserConfig: Created %d proxy sources (%d subscriptions, %d with connections)",
 		len(newProxies), len(subscriptions), len(connections))
 
 	serializeStartTime := time.Now()
 	serialized, err := SerializeParserConfig(&parserConfig)
 	if err != nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Failed to serialize ParserConfig (took %v): %v",
-			time.Since(serializeStartTime), err)
+		timing.LogTiming("serialize ParserConfig", time.Since(serializeStartTime))
+		debuglog.DebugLog("applyURLToParserConfig: Failed to serialize ParserConfig: %v", err)
 		return fmt.Errorf("failed to serialize ParserConfig: %w", err)
 	}
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: Serialized ParserConfig in %v (result length: %d bytes, outbounds before: %d)",
-		time.Since(serializeStartTime), len(serialized), len(parserConfig.ParserConfig.Outbounds))
+	timing.LogTiming("serialize ParserConfig", time.Since(serializeStartTime))
+	debuglog.DebugLog("applyURLToParserConfig: Serialized ParserConfig (result length: %d bytes, outbounds before: %d)",
+		len(serialized), len(parserConfig.ParserConfig.Outbounds))
 
 	updater.UpdateParserConfig(serialized)
 	model.ParserConfig = &parserConfig
 	model.PreviewNeedsParse = true
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "applyURLToParserConfig: END (total duration: %v)", time.Since(startTime))
 	return nil
 }
 
