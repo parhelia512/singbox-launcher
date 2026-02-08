@@ -28,6 +28,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -57,6 +58,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 
 	// Set flag to block callbacks during initialization
 	guiState.UpdatingOutboundOptions = true
+	debuglog.DebugLog("rules_tab: UpdatingOutboundOptions set to true before creating widgets")
 
 	// Initialize CustomRules if needed
 	if model.CustomRules == nil {
@@ -84,6 +86,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 					}
 					model.SelectableRuleStates[idx].SelectedOutbound = value
 					model.TemplatePreviewNeedsUpdate = true
+					presenter.MarkAsChanged()
 				})
 				outboundSelect.SetSelected(ruleState.SelectedOutbound)
 				if !ruleState.Enabled {
@@ -103,14 +106,21 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 			guiState.RuleOutboundSelects = append(guiState.RuleOutboundSelects, ruleWidget)
 
 			checkbox := widget.NewCheck(ruleState.Rule.Label, func(val bool) {
+				// Always update model and UI state to keep them in sync
 				model.SelectableRuleStates[idx].Enabled = val
 				model.TemplatePreviewNeedsUpdate = true
+
 				if outboundSelect != nil {
 					if val {
 						outboundSelect.Enable()
 					} else {
 						outboundSelect.Disable()
 					}
+				}
+
+				// Only mark as changed if not during programmatic update
+				if !guiState.UpdatingOutboundOptions {
+					presenter.MarkAsChanged()
 				}
 			})
 			checkbox.SetChecked(ruleState.Enabled)
@@ -146,6 +156,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 			}
 			model.CustomRules[idx].SelectedOutbound = value
 			model.TemplatePreviewNeedsUpdate = true
+			presenter.MarkAsChanged()
 		})
 		outboundSelect.SetSelected(customRule.SelectedOutbound)
 		if !customRule.Enabled {
@@ -180,6 +191,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 			}
 			guiState.RuleOutboundSelects = newRuleWidgets
 			model.TemplatePreviewNeedsUpdate = true
+			presenter.MarkAsChanged()
 			// Recreate tab content
 			refreshWrapper := func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
 				return CreateRulesTab(p, showAddRuleDialog)
@@ -189,12 +201,19 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 		deleteButton.Importance = widget.LowImportance
 
 		checkbox := widget.NewCheck(customRule.Rule.Label, func(val bool) {
+			// Always update model and UI state to keep them in sync
 			model.CustomRules[idx].Enabled = val
 			model.TemplatePreviewNeedsUpdate = true
+
 			if val {
 				outboundSelect.Enable()
 			} else {
 				outboundSelect.Disable()
+			}
+
+			// Only mark as changed if not during programmatic update
+			if !guiState.UpdatingOutboundOptions {
+				presenter.MarkAsChanged()
 			}
 		})
 		checkbox.SetChecked(customRule.Enabled)
@@ -212,6 +231,10 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 		rulesBox.Add(container.NewHBox(rowContent...))
 	}
 
+	// Set flag BEFORE creating finalSelect to prevent callback from firing during initialization
+	guiState.UpdatingOutboundOptions = true
+	debuglog.DebugLog("rules_tab: UpdatingOutboundOptions set to true before creating finalSelect")
+
 	wizardbusiness.EnsureFinalSelected(model, availableOutbounds)
 	finalSelect := widget.NewSelect(availableOutbounds, func(value string) {
 		// Ignore callback during programmatic update
@@ -220,6 +243,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 		}
 		model.SelectedFinalOutbound = value
 		model.TemplatePreviewNeedsUpdate = true
+		presenter.MarkAsChanged()
 	})
 	finalSelect.SetSelected(model.SelectedFinalOutbound)
 	guiState.FinalOutboundSelect = finalSelect
@@ -233,8 +257,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 
 	rulesScroll := CreateRulesScroll(guiState, rulesBox)
 
-	// Reset flag before refreshOutboundOptions, as it will set it if needed
-	guiState.UpdatingOutboundOptions = false
+	// RefreshOutboundOptions will reset UpdatingOutboundOptions flag and hasChanges after all SetSelected() calls
 	presenter.RefreshOutboundOptions()
 
 	return container.NewVBox(
