@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -87,7 +86,7 @@ func FetchSubscription(url string) ([]byte, error) {
 	if len(preview) > previewLen {
 		preview = preview[:previewLen] + "..."
 	}
-	log.Printf("[DEBUG] FetchSubscription: Raw content preview (first %d bytes): %q", len(content), preview)
+	debuglog.DebugLog("[DEBUG] FetchSubscription: Raw content preview (first %d bytes): %q", len(content), preview)
 
 	// Use DecodeSubscriptionContent for decoding
 	decoded, err := DecodeSubscriptionContent(content)

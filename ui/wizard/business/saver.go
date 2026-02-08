@@ -189,7 +189,7 @@ func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 		}
 
 		debuglog.ErrorLog("Config validation failed: %v", err)
-		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
+		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError,
 			"Validation error output", errorMsg, 500)
 
 		return fmt.Errorf("sing-box config validation failed: %s", errorMsg)

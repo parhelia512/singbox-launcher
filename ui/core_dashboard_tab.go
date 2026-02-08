@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image/color"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -223,7 +222,7 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	// Используем Button вместо Label для возможности клика
 	title := widget.NewButton("Config", func() {
-		log.Println("CoreDashboard: Config title clicked, reading config...")
+		debuglog.DebugLog("CoreDashboard: Config title clicked, reading config...")
 		tab.readConfigOnDemand()
 	})
 	// Делаем кнопку похожей на Label (без рамки)
@@ -231,7 +230,7 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 
 	// Используем Button для configStatusLabel, чтобы сделать его кликабельным
 	tab.configStatusLabel = widget.NewButton("Checking config...", func() {
-		log.Println("CoreDashboard: Config status label clicked, reading config...")
+		debuglog.DebugLog("CoreDashboard: Config status label clicked, reading config...")
 		tab.readConfigOnDemand()
 	})
 	tab.configStatusLabel.Importance = widget.LowImportance
@@ -512,12 +511,12 @@ func (tab *CoreDashboardTab) readConfigOnDemand() {
 	// Читаем конфиг
 	config, err := parser.ExtractParserConfig(tab.controller.FileService.ConfigPath)
 	if err != nil {
-		log.Printf("CoreDashboard: Failed to read config on demand: %v", err)
+		debuglog.ErrorLog("CoreDashboard: Failed to read config on demand: %v", err)
 		// Можно показать сообщение пользователю через dialog
 		return
 	}
 
-	log.Printf("CoreDashboard: Config read successfully on demand (version %d, %d proxy sources, %d outbounds)",
+	debuglog.InfoLog("CoreDashboard: Config read successfully on demand (version %d, %d proxy sources, %d outbounds)",
 		config.ParserConfig.Version,
 		len(config.ParserConfig.Proxies),
 		len(config.ParserConfig.Outbounds))

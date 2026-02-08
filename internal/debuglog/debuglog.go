@@ -1,3 +1,29 @@
+// Package debuglog provides a centralized logging system with configurable log levels.
+//
+// The package supports multiple log levels (Off, Error, Warn, Info, Verbose/Debug, Trace)
+// and can be controlled globally via the SINGBOX_DEBUG environment variable.
+//
+// Usage:
+//
+//	// Set environment variable to control log level:
+//	// (default: warn - shows warnings and errors only)
+//	// SINGBOX_DEBUG=debug  (shows debug and above)
+//	// SINGBOX_DEBUG=info   (shows info and above)
+//	// SINGBOX_DEBUG=warn   (shows warnings and errors, default)
+//	// SINGBOX_DEBUG=error  (shows only errors)
+//	// SINGBOX_DEBUG=off    (disables all logs)
+//
+//	debuglog.DebugLog("Processing item %d", 42)
+//	debuglog.InfoLog("Operation completed successfully")
+//	debuglog.WarnLog("Deprecated function used")
+//	debuglog.ErrorLog("Failed to process: %v", err)
+//
+//	// Timing operations
+//	timing := debuglog.StartTiming("processData")
+//	defer timing.EndWithDefer()
+//
+//	// Log large text fragments with automatic truncation
+//	debuglog.LogTextFragment("Parser", debuglog.LevelVerbose, "Config content", configText, 500)
 package debuglog
 
 import (
@@ -8,25 +34,42 @@ import (
 	"time"
 )
 
+// Level represents the log level threshold.
+// Higher values mean more verbose logging.
 type Level uint8
 
 const (
+	// LevelOff disables all logging.
 	LevelOff Level = iota
-	LevelError
-	LevelWarn
-	LevelInfo
-	LevelVerbose
-	LevelTrace
 
-	UseGlobal Level = 255
+	// LevelError shows only error messages.
+	LevelError
+
+	// LevelWarn shows warnings and errors.
+	LevelWarn
+
+	// LevelInfo shows informational messages, warnings, and errors.
+	LevelInfo
+
+	// LevelVerbose (also known as Debug) shows detailed debug information.
+	// This is the default level and shows all logs except trace.
+	LevelVerbose
+
+	// LevelTrace shows the most detailed information including trace logs.
+	LevelTrace
 )
 
 const envKey = "SINGBOX_DEBUG"
 
 var (
+	// GlobalLevel is the global log level threshold controlled by SINGBOX_DEBUG environment variable.
+	// By default, it is set to LevelWarn (warnings and errors only).
 	GlobalLevel = parseEnvLevel(os.Getenv(envKey))
 )
 
+// parseEnvLevel parses the log level from environment variable string.
+// Valid values: "trace", "verbose"/"debug", "info", "warn", "error", "off".
+// Returns LevelWarn by default if the value is not recognized.
 func parseEnvLevel(raw string) Level {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "trace":
@@ -42,17 +85,22 @@ func parseEnvLevel(raw string) Level {
 	case "off":
 		return LevelOff
 	default:
-		// По умолчанию показываем DEBUG логи
-		return LevelVerbose
+		// Default level: warn (LevelWarn)
+		// Shows only warnings and errors by default
+		return LevelWarn
 	}
 }
 
-func Log(prefix string, level Level, local Level, format string, args ...interface{}) {
-	effective := GlobalLevel
-	if local != UseGlobal {
-		effective = local
-	}
-	if level > effective {
+// Log writes a log message with the specified prefix and level.
+// The message is only logged if the level is less than or equal to GlobalLevel.
+//
+// Parameters:
+//   - prefix: log prefix (e.g., "DEBUG", "ERROR"). If empty, no prefix is added.
+//   - level: log level threshold for this message.
+//   - format: format string (same as fmt.Printf).
+//   - args: arguments for the format string.
+func Log(prefix string, level Level, format string, args ...interface{}) {
+	if level > GlobalLevel {
 		return
 	}
 	message := fmt.Sprintf(format, args...)
@@ -63,12 +111,10 @@ func Log(prefix string, level Level, local Level, format string, args ...interfa
 	}
 }
 
-func ShouldLog(level Level, local Level) bool {
-	effective := GlobalLevel
-	if local != UseGlobal {
-		effective = local
-	}
-	return level <= effective
+// ShouldLog checks if a message with the given level would be logged.
+// Returns true if level <= GlobalLevel.
+func ShouldLog(level Level) bool {
+	return level <= GlobalLevel
 }
 
 // LogTextFragment логирует фрагмент текста с автоматической обрезкой для читаемости.
@@ -77,12 +123,11 @@ func ShouldLog(level Level, local Level) bool {
 // Параметры:
 //   - prefix: префикс модуля для логов
 //   - level: уровень логирования
-//   - local: локальный уровень (или UseGlobal)
 //   - description: описание фрагмента
 //   - text: текст для логирования
 //   - maxChars: максимум символов для показа (рекомендуется 500-1000)
-func LogTextFragment(prefix string, level Level, local Level, description, text string, maxChars int) {
-	if !ShouldLog(level, local) {
+func LogTextFragment(prefix string, level Level, description, text string, maxChars int) {
+	if !ShouldLog(level) {
 		return
 	}
 
@@ -90,39 +135,57 @@ func LogTextFragment(prefix string, level Level, local Level, description, text 
 
 	// Если текст короткий, показываем полностью
 	if textLen <= maxChars*2 {
-		Log(prefix, level, local, "%s (len=%d): %s", description, textLen, text)
+		Log(prefix, level, "%s (len=%d): %s", description, textLen, text)
 		return
 	}
 
 	// Для длинных текстов показываем начало и конец
-	Log(prefix, level, local, "%s (len=%d): first %d chars: %s",
+	Log(prefix, level, "%s (len=%d): first %d chars: %s",
 		description, textLen, maxChars, text[:maxChars])
-	Log(prefix, level, local, "%s (len=%d): last %d chars: %s",
+	Log(prefix, level, "%s (len=%d): last %d chars: %s",
 		description, textLen, maxChars, text[textLen-maxChars:])
 }
 
 // DebugLog logs a debug message (LevelVerbose) with "DEBUG" prefix.
 func DebugLog(format string, args ...interface{}) {
-	Log("DEBUG", LevelVerbose, UseGlobal, format, args...)
+	Log("DEBUG", LevelVerbose, format, args...)
 }
 
 // InfoLog logs an info message (LevelInfo) with "INFO" prefix.
 func InfoLog(format string, args ...interface{}) {
-	Log("INFO", LevelInfo, UseGlobal, format, args...)
+	Log("INFO", LevelInfo, format, args...)
 }
 
 // ErrorLog logs an error message (LevelError) with "ERROR" prefix.
 func ErrorLog(format string, args ...interface{}) {
-	Log("ERROR", LevelError, UseGlobal, format, args...)
+	Log("ERROR", LevelError, format, args...)
+}
+
+// WarnLog logs a warning message (LevelWarn) with "WARN" prefix.
+func WarnLog(format string, args ...interface{}) {
+	Log("WARN", LevelWarn, format, args...)
 }
 
 // TimingContext tracks timing for a function execution.
+// Use StartTiming to create a new context, then call End() or use EndWithDefer() for automatic logging.
+//
+// Example:
+//
+//	timing := debuglog.StartTiming("processData")
+//	defer timing.EndWithDefer()
+//	// ... your code ...
 type TimingContext struct {
 	startTime time.Time
 	funcName  string
 }
 
-// StartTiming creates a new timing context and logs start.
+// StartTiming creates a new timing context and logs the start time.
+// Returns a TimingContext that can be used to measure and log execution duration.
+//
+// Example:
+//
+//	timing := debuglog.StartTiming("myFunction")
+//	defer timing.EndWithDefer()
 func StartTiming(funcName string) *TimingContext {
 	startTime := time.Now()
 	DebugLog("%s: START at %s", funcName, startTime.Format("15:04:05.000"))
@@ -132,7 +195,8 @@ func StartTiming(funcName string) *TimingContext {
 	}
 }
 
-// End logs total duration and returns it.
+// End logs the total duration since StartTiming was called and returns the duration.
+// This method should be called when the operation completes.
 func (tc *TimingContext) End() time.Duration {
 	duration := time.Since(tc.startTime)
 	DebugLog("%s: END (total duration: %v)", tc.funcName, duration)
@@ -140,13 +204,29 @@ func (tc *TimingContext) End() time.Duration {
 }
 
 // EndWithDefer returns a defer function for automatic logging.
+// Use this with defer to automatically log timing when the function returns.
+//
+// Example:
+//
+//	timing := debuglog.StartTiming("myFunction")
+//	defer timing.EndWithDefer()
 func (tc *TimingContext) EndWithDefer() func() {
 	return func() {
 		tc.End()
 	}
 }
 
-// LogTiming logs elapsed time for a specific operation.
+// LogTiming logs elapsed time for a specific operation within the timing context.
+// Useful for logging intermediate operations while tracking overall execution time.
+//
+// Example:
+//
+//	timing := debuglog.StartTiming("processData")
+//	defer timing.EndWithDefer()
+//
+//	start := time.Now()
+//	doSomething()
+//	timing.LogTiming("doSomething", time.Since(start))
 func (tc *TimingContext) LogTiming(operation string, duration time.Duration) {
 	DebugLog("%s: %s took %v", tc.funcName, operation, duration)
 }

@@ -134,8 +134,9 @@ __attribute__((weak)) void callRestoreDockIcon(void) {
 import "C"
 
 import (
-	"log"
 	"runtime"
+
+	"singbox-launcher/internal/debuglog"
 )
 
 var dockReopenCallback func()
@@ -155,7 +156,7 @@ func SetupDockReopenHandler(showWindowCallback func()) {
 		return
 	}
 	if showWindowCallback == nil {
-		log.Println("SetupDockReopenHandler: callback is nil, skipping setup")
+		debuglog.DebugLog("SetupDockReopenHandler: callback is nil, skipping setup")
 		return
 	}
 
@@ -164,7 +165,7 @@ func SetupDockReopenHandler(showWindowCallback func()) {
 
 	// Setup the handler
 	C.callSetupDockReopenHandler()
-	log.Println("SetupDockReopenHandler: Dock reopen handler registered for macOS (using runtime API)")
+	debuglog.InfoLog("SetupDockReopenHandler: Dock reopen handler registered for macOS (using runtime API)")
 }
 
 // CleanupDockReopenHandler cleans up the Dock reopen handler
@@ -174,7 +175,7 @@ func CleanupDockReopenHandler() {
 	}
 	C.callCleanupDockReopenHandler()
 	dockReopenCallback = nil
-	log.Println("CleanupDockReopenHandler: Dock reopen handler cleaned up")
+	debuglog.InfoLog("CleanupDockReopenHandler: Dock reopen handler cleaned up")
 }
 
 // HideDockIcon hides the Dock icon on macOS (tray-only mode)
@@ -183,7 +184,7 @@ func HideDockIcon() {
 		return
 	}
 	C.callHideDockIcon()
-	log.Println("HideDockIcon: Dock icon hidden (NSApplicationActivationPolicyAccessory)")
+	debuglog.InfoLog("HideDockIcon: Dock icon hidden (NSApplicationActivationPolicyAccessory)")
 }
 
 // RestoreDockIcon restores the Dock icon on macOS (makes app appear in Dock again)
@@ -192,5 +193,5 @@ func RestoreDockIcon() {
 		return
 	}
 	C.callRestoreDockIcon()
-	log.Println("RestoreDockIcon: Dock icon restored (NSApplicationActivationPolicyRegular)")
+	debuglog.InfoLog("RestoreDockIcon: Dock icon restored (NSApplicationActivationPolicyRegular)")
 }

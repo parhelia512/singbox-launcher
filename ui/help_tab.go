@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 )
 
@@ -21,7 +21,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 	logsButton := widget.NewButton("📁 Open Logs Folder", func() {
 		logsDir := platform.GetLogsDir(ac.FileService.ExecDir)
 		if err := platform.OpenFolder(logsDir); err != nil {
-			log.Printf("toolsTab: Failed to open logs folder: %v", err)
+			debuglog.ErrorLog("toolsTab: Failed to open logs folder: %v", err)
 			ShowError(ac.UIService.MainWindow, err)
 		}
 	})
@@ -29,7 +29,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 	configButton := widget.NewButton("⚙️ Open Config Folder", func() {
 		binDir := platform.GetBinDir(ac.FileService.ExecDir)
 		if err := platform.OpenFolder(binDir); err != nil {
-			log.Printf("toolsTab: Failed to open config folder: %v", err)
+			debuglog.ErrorLog("toolsTab: Failed to open config folder: %v", err)
 			ShowError(ac.UIService.MainWindow, err)
 		}
 	})
@@ -102,7 +102,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 	_ = telegramLink.SetURLFromString("https://t.me/singbox_launcher")
 	telegramLink.OnTapped = func() {
 		if err := platform.OpenURL("https://t.me/singbox_launcher"); err != nil {
-			log.Printf("toolsTab: Failed to open Telegram link: %v", err)
+			debuglog.ErrorLog("toolsTab: Failed to open Telegram link: %v", err)
 			ShowError(ac.UIService.MainWindow, err)
 		}
 	}
@@ -111,7 +111,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 	_ = githubLink.SetURLFromString("https://github.com/Leadaxe/singbox-launcher")
 	githubLink.OnTapped = func() {
 		if err := platform.OpenURL("https://github.com/Leadaxe/singbox-launcher"); err != nil {
-			log.Printf("toolsTab: Failed to open GitHub link: %v", err)
+			debuglog.ErrorLog("toolsTab: Failed to open GitHub link: %v", err)
 			ShowError(ac.UIService.MainWindow, err)
 		}
 	}

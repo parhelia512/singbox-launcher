@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"log"
 	"sort"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"singbox-launcher/api"
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/debuglog"
 )
 
 // CreateClashAPITab creates and returns the content for the "Clash API" tab.
@@ -27,7 +27,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	selectorOptions, defaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
 	if err != nil {
-		log.Printf("clash_api_tab: failed to get selector groups: %v", err)
+		debuglog.ErrorLog("clash_api_tab: failed to get selector groups: %v", err)
 	}
 	if len(selectorOptions) == 0 {
 		selectorOptions = []string{"proxy-out"}
@@ -175,7 +175,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	onResetAPIState := func() {
-		log.Println("clash_api_tab: Resetting API state.")
+		debuglog.InfoLog("clash_api_tab: Resetting API state.")
 		ac.SetProxiesList([]api.ProxyInfo{})
 		ac.SetActiveProxyName("")
 		ac.SetSelectedIndex(-1)

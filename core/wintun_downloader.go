@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -59,7 +58,7 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 	}
 	defer func() {
 		if err := os.RemoveAll(tempDir); err != nil {
-			log.Printf("DownloadWintunDLL: failed to remove temp dir %s: %v", tempDir, err)
+			debuglog.WarnLog("DownloadWintunDLL: failed to remove temp dir %s: %v", tempDir, err)
 		}
 	}()
 
