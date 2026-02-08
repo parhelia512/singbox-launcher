@@ -85,16 +85,20 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 
 	// Периодически обновляем информацию (если версия еще не получена)
 	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
 		for i := 0; i < 10; i++ {
-			time.Sleep(2 * time.Second)
-			fyne.Do(func() {
-				if ac.GetCachedLauncherVersion() == "" {
-					updateLauncherVersionInfo()
-				} else {
-					updateLauncherVersionInfo()
-					return
-				}
-			})
+			select {
+			case <-ticker.C:
+				fyne.Do(func() {
+					if ac.GetCachedLauncherVersion() == "" {
+						updateLauncherVersionInfo()
+					} else {
+						updateLauncherVersionInfo()
+						return
+					}
+				})
+			}
 		}
 	}()
 

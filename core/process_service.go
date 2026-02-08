@@ -133,7 +133,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	// Start auto-loading proxies after sing-box is running
 	go func() {
 		// Small delay to ensure API is ready
-		time.Sleep(2 * time.Second)
+		<-time.After(2 * time.Second)
 		ac.AutoLoadProxies()
 	}()
 
@@ -199,7 +199,7 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 
 	// Wait 2 seconds before restart
 	ac.CmdMutex.Unlock()
-	time.Sleep(2 * time.Second)
+	<-time.After(2 * time.Second)
 	svc.Start(true) // skipRunningCheck = true для автоперезапуска
 	ac.CmdMutex.Lock()
 
@@ -278,7 +278,7 @@ func (svc *ProcessService) Stop() {
 		// Start watchdog timer that will kill the process if it doesn't close itself
 		debuglog.InfoLog("stopSingBox: Signal sent, starting watchdog timer...")
 		go func(pid int) {
-			time.Sleep(gracefulShutdownTimeout)
+			<-time.After(gracefulShutdownTimeout)
 			pInfo, found, err := process.FindProcess(pid)
 			if err == nil && found {
 				_ = pInfo // pInfo is the process info; we only need to know it exists

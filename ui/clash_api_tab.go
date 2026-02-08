@@ -470,7 +470,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 					status.SetText(fmt.Sprintf("Pinging %d/%d...", i+1, len(proxies)))
 				})
 				// Небольшая задержка между запросами, чтобы не перегружать API
-				time.Sleep(100 * time.Millisecond)
+				<-time.After(100 * time.Millisecond)
 			}
 			fyne.Do(func() {
 				status.SetText(fmt.Sprintf("Ping test completed for %d proxies", len(proxies)))

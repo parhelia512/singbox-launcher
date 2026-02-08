@@ -152,7 +152,7 @@ func main() {
 			if *autoStart {
 				go func() {
 					// Wait a bit for everything to initialize
-					time.Sleep(autoStartDelay)
+					<-time.After(autoStartDelay)
 					debuglog.InfoLog("Auto-start: Starting VPN due to -start parameter")
 					core.StartSingBoxProcess(controller)
 				}()
@@ -162,7 +162,7 @@ func main() {
 			if *startInTray {
 				go func() {
 					// Wait a bit for window to be fully initialized
-					time.Sleep(500 * time.Millisecond)
+					<-time.After(500 * time.Millisecond)
 					fyne.Do(func() {
 						if controller.UIService.MainWindow != nil {
 							controller.UIService.MainWindow.Hide()
