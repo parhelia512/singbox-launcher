@@ -20,7 +20,6 @@ package business
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -259,7 +258,6 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 	debuglog.DebugLog("parseAndPreview: Applying URL to ParserConfig")
 	if err := ApplyURLToParserConfig(model, updater, url); err != nil {
 		debuglog.DebugLog("parseAndPreview: Failed to apply URL to ParserConfig: %v", err)
-		log.Printf("parseAndPreview: error applying URL to ParserConfig: %v", err)
 	}
 	timing.LogTiming("apply URL to ParserConfig", time.Since(applyStartTime))
 

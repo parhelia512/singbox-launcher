@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -35,7 +34,7 @@ func LoadClashAPIConfig(configPath string) (baseURL, token string, err error) {
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Printf("LoadClashAPIConfig: Failed to read config.json: %v", err)
+		debuglog.ErrorLog("LoadClashAPIConfig: Failed to read config.json: %v", err)
 		return "", "", fmt.Errorf("failed to read config.json: %w", err)
 	}
 	// Convert JSONC (with comments/trailing commas) into clean JSON.
@@ -44,7 +43,7 @@ func LoadClashAPIConfig(configPath string) (baseURL, token string, err error) {
 
 	var jsonData map[string]interface{}
 	if err := json.Unmarshal(cleanData, &jsonData); err != nil {
-		log.Printf("LoadClashAPIConfig: Failed to parse JSON: %v", err)
+		debuglog.ErrorLog("LoadClashAPIConfig: Failed to parse JSON: %v", err)
 		return "", "", fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
@@ -67,7 +66,7 @@ func LoadClashAPIConfig(configPath string) (baseURL, token string, err error) {
 	baseURL = "http://" + host
 	token = secret
 
-	log.Printf("Clash API loaded from config: %s / %s", baseURL, token)
+	debuglog.DebugLog("Clash API loaded from config: %s / %s", baseURL, token)
 	return baseURL, token, nil
 }
 

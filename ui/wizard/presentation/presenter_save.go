@@ -27,12 +27,12 @@ package presentation
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2/dialog"
 
+	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
@@ -74,7 +74,7 @@ func (p *WizardPresenter) SaveConfig() {
 				}
 				go func() {
 					if err := wizardbusiness.ParseAndPreview(p.model, p, configService); err != nil {
-						log.Printf("presenter_save: ParseAndPreview failed: %v", err)
+						debuglog.ErrorLog("presenter_save: ParseAndPreview failed: %v", err)
 					}
 				}()
 			}

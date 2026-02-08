@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,13 +168,13 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.APIService = apiService
 
 	// Initialize UI callbacks (delegated to UIService)
-	ac.UIService.RefreshAPIFunc = func() { log.Println("RefreshAPIFunc handler is not set yet.") }
-	ac.UIService.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
-	ac.UIService.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
-	ac.UIService.UpdateConfigStatusFunc = func() { log.Println("UpdateConfigStatusFunc handler is not set yet.") }
-	ac.UIService.UpdateTrayMenuFunc = func() { log.Println("UpdateTrayMenuFunc handler is not set yet.") }
+	ac.UIService.RefreshAPIFunc = func() { debuglog.DebugLog("RefreshAPIFunc handler is not set yet.") }
+	ac.UIService.ResetAPIStateFunc = func() { debuglog.DebugLog("ResetAPIStateFunc handler is not set yet.") }
+	ac.UIService.UpdateCoreStatusFunc = func() { debuglog.DebugLog("UpdateCoreStatusFunc handler is not set yet.") }
+	ac.UIService.UpdateConfigStatusFunc = func() { debuglog.DebugLog("UpdateConfigStatusFunc handler is not set yet.") }
+	ac.UIService.UpdateTrayMenuFunc = func() { debuglog.DebugLog("UpdateTrayMenuFunc handler is not set yet.") }
 	ac.UIService.UpdateParserProgressFunc = func(progress float64, status string) {
-		log.Printf("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
+		debuglog.DebugLog("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
 	}
 
 	// Initialize context for goroutine cancellation
@@ -186,7 +185,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 
 	// Check if config file exists before starting auto-update
 	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
-		log.Printf("Auto-update: Config file does not exist (%s), auto-update disabled", ac.FileService.ConfigPath)
+		debuglog.InfoLog("Auto-update: Config file does not exist (%s), auto-update disabled", ac.FileService.ConfigPath)
 		ac.StateService.SetAutoUpdateEnabled(false)
 	}
 	go ac.startAutoUpdateLoop()
@@ -221,7 +220,7 @@ func (ac *AppController) GracefulExit() {
 	// Cancel context to signal all goroutines to stop
 	if ac.cancelFunc != nil {
 		ac.cancelFunc()
-		log.Println("GracefulExit: Context cancelled, signalling goroutines to stop")
+		debuglog.InfoLog("GracefulExit: Context cancelled, signalling goroutines to stop")
 	}
 
 	// Stop any pending menu update timer
@@ -231,17 +230,17 @@ func (ac *AppController) GracefulExit() {
 
 	StopSingBoxProcess(ac)
 
-	log.Println("GracefulExit: Waiting for sing-box to stop...")
+	debuglog.InfoLog("GracefulExit: Waiting for sing-box to stop...")
 	// Use ProcessService constant for timeout
 	timeout := time.After(2 * time.Second) // gracefulShutdownTimeout from ProcessService
 	for {
 		if !ac.RunningState.IsRunning() {
-			log.Println("GracefulExit: Sing-box confirmed stopped.")
+			debuglog.InfoLog("GracefulExit: Sing-box confirmed stopped.")
 			break
 		}
 		select {
 		case <-timeout:
-			log.Println("GracefulExit: Timeout waiting for sing-box to stop. Forcing kill.")
+			debuglog.WarnLog("GracefulExit: Timeout waiting for sing-box to stop. Forcing kill.")
 			ac.CmdMutex.Lock()
 			if ac.SingboxCmd != nil && ac.SingboxCmd.Process != nil {
 				_ = ac.SingboxCmd.Process.Kill()
@@ -297,7 +296,7 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 // CheckLinuxCapabilities checks Linux capabilities and shows a suggestion if needed
 func CheckLinuxCapabilities(ac *AppController) {
 	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
-		log.Printf("CheckLinuxCapabilities: %s", suggestion)
+		debuglog.InfoLog("CheckLinuxCapabilities: %s", suggestion)
 		// Show info dialog (not error) - capabilities can be set later
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
 			dialogs.ShowInfo(ac.UIService.MainWindow, "Linux Capabilities", suggestion)
@@ -433,7 +432,7 @@ func parseCSVLine(line string) []string {
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func StartSingBoxProcess(ac *AppController, skipRunningCheck ...bool) {
 	if ac.ProcessService == nil {
-		log.Printf("StartSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
+		debuglog.WarnLog("StartSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
 	}
 	ac.ProcessService.Start(skipRunningCheck...)
@@ -443,7 +442,7 @@ func StartSingBoxProcess(ac *AppController, skipRunningCheck ...bool) {
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func MonitorSingBoxProcess(ac *AppController, cmdToMonitor *exec.Cmd) {
 	if ac.ProcessService == nil {
-		log.Printf("MonitorSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
+		debuglog.WarnLog("MonitorSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
 	}
 	ac.ProcessService.Monitor(cmdToMonitor)
@@ -453,7 +452,7 @@ func MonitorSingBoxProcess(ac *AppController, cmdToMonitor *exec.Cmd) {
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func StopSingBoxProcess(ac *AppController) {
 	if ac.ProcessService == nil {
-		log.Printf("StopSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
+		debuglog.WarnLog("StopSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
 	}
 	ac.ProcessService.Stop()
@@ -463,7 +462,7 @@ func StopSingBoxProcess(ac *AppController) {
 // Note: ConfigService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func RunParserProcess(ac *AppController) {
 	if ac.ConfigService == nil {
-		log.Printf("RunParserProcess: ConfigService is nil, this should not happen. Initializing...")
+		debuglog.WarnLog("RunParserProcess: ConfigService is nil, this should not happen. Initializing...")
 		ac.ConfigService = NewConfigService(ac)
 	}
 	ac.ConfigService.RunParserProcess()
@@ -473,7 +472,7 @@ func RunParserProcess(ac *AppController) {
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func CheckIfSingBoxRunningAtStartUtil(ac *AppController) {
 	if ac.ProcessService == nil {
-		log.Printf("CheckIfSingBoxRunningAtStartUtil: ProcessService is nil, this should not happen. Initializing...")
+		debuglog.WarnLog("CheckIfSingBoxRunningAtStartUtil: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
 	}
 	ac.ProcessService.CheckIfRunningAtStart()
@@ -482,7 +481,7 @@ func CheckIfSingBoxRunningAtStartUtil(ac *AppController) {
 // CheckConfigFileExists checks if config.json exists and shows a warning if it doesn't
 func CheckConfigFileExists(ac *AppController) {
 	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
-		log.Printf("CheckConfigFileExists: config.json not found at %s", ac.FileService.ConfigPath)
+		debuglog.WarnLog("CheckConfigFileExists: config.json not found at %s", ac.FileService.ConfigPath)
 
 		message := fmt.Sprintf(
 			"⚠️ Configuration file not found!\n\n"+
@@ -503,7 +502,7 @@ func CheckConfigFileExists(ac *AppController) {
 func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Printf("CheckIfLauncherAlreadyRunning: cannot detect executable path: %v", err)
+		debuglog.ErrorLog("CheckIfLauncherAlreadyRunning: cannot detect executable path: %v", err)
 		return
 	}
 	execName := strings.ToLower(filepath.Base(execPath))
@@ -511,7 +510,7 @@ func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
 
 	processes, err := process.GetProcesses()
 	if err != nil {
-		log.Printf("CheckIfLauncherAlreadyRunning: error listing processes: %v", err)
+		debuglog.ErrorLog("CheckIfLauncherAlreadyRunning: error listing processes: %v", err)
 		return
 	}
 
@@ -684,14 +683,14 @@ func (ac *AppController) addHideDockMenuItem(menuItems []*fyne.MenuItem) []*fyne
 				if ac.UIService.MainWindow != nil {
 					ac.UIService.MainWindow.Hide()
 				}
-				log.Println("Tray: Hide app from Dock enabled — Dock hidden and window hidden")
+				debuglog.InfoLog("Tray: Hide app from Dock enabled — Dock hidden and window hidden")
 			} else {
 				platform.RestoreDockIcon()
 				// Restore and show the main window when unchecking (or focus wizard if open)
 				if ac.UIService != nil {
 					ac.UIService.ShowMainWindowOrFocusWizard()
 				}
-				log.Println("Tray: Hide app from Dock disabled — Dock restored and window shown")
+				debuglog.InfoLog("Tray: Hide app from Dock disabled — Dock restored and window shown")
 			}
 		}
 
@@ -776,7 +775,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 					err := ac.APIService.SwitchProxy(selectedGroup, pName)
 					fyne.Do(func() {
 						if err != nil {
-							log.Printf("CreateTrayMenu: Failed to switch proxy: %v", err)
+							debuglog.ErrorLog("CreateTrayMenu: Failed to switch proxy: %v", err)
 							if ac.UIService != nil && ac.UIService.MainWindow != nil {
 								dialogs.ShowError(ac.UIService.MainWindow, err)
 							}
@@ -869,13 +868,13 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 // Handles errors with retries (10 attempts, 10 seconds between retries)
 // Resumes after successful manual update
 func (ac *AppController) startAutoUpdateLoop() {
-	log.Println("Auto-update: Starting auto-update loop")
+	debuglog.InfoLog("Auto-update: Starting auto-update loop")
 
 	for {
 		// Check if context is cancelled
 		select {
 		case <-ac.ctx.Done():
-			log.Println("Auto-update: Context cancelled, stopping loop")
+			debuglog.InfoLog("Auto-update: Context cancelled, stopping loop")
 			return
 		default:
 		}
@@ -894,22 +893,22 @@ func (ac *AppController) startAutoUpdateLoop() {
 		// Calculate check interval from config
 		checkInterval, err := ac.calculateAutoUpdateInterval()
 		if err != nil {
-			log.Printf("Auto-update: Failed to calculate interval: %v, using default", err)
+			debuglog.WarnLog("Auto-update: Failed to calculate interval: %v, using default", err)
 			checkInterval = autoUpdateMinInterval
 		}
 
-		log.Printf("Auto-update: Calculated interval: %v (min: %v)", checkInterval, autoUpdateMinInterval)
+		debuglog.DebugLog("Auto-update: Calculated interval: %v (min: %v)", checkInterval, autoUpdateMinInterval)
 
 		// Check if update is needed immediately (before waiting)
 		requiredInterval, err := ac.calculateAutoUpdateInterval()
 		if err != nil {
-			log.Printf("Auto-update: Failed to calculate required interval: %v, using default", err)
+			debuglog.WarnLog("Auto-update: Failed to calculate required interval: %v, using default", err)
 			requiredInterval = autoUpdateMinInterval
 		}
 
 		needsUpdate, err := ac.shouldAutoUpdate(requiredInterval)
 		if err != nil {
-			log.Printf("Auto-update: Failed to check if update needed: %v, skipping this check", err)
+			debuglog.WarnLog("Auto-update: Failed to check if update needed: %v, skipping this check", err)
 			// Don't stop auto-update on check errors, just skip this check and wait
 		} else if needsUpdate {
 			// Update is needed - check if already in progress
@@ -918,19 +917,19 @@ func (ac *AppController) startAutoUpdateLoop() {
 			ac.ParserMutex.Unlock()
 
 			if !updateInProgress {
-				log.Println("Auto-update: Update needed, attempting update...")
+				debuglog.InfoLog("Auto-update: Update needed, attempting update...")
 				success := ac.attemptAutoUpdateWithRetries(autoUpdateRetryInterval, autoUpdateMaxRetries)
 				if success {
 					// Success - error counter already reset in attemptAutoUpdateWithRetries
 					ac.StateService.ResumeAutoUpdate()
-					log.Println("Auto-update: Resumed after successful update")
-					log.Println("Auto-update: Completed successfully, error counter reset")
+					debuglog.InfoLog("Auto-update: Resumed after successful update")
+					debuglog.InfoLog("Auto-update: Completed successfully, error counter reset")
 				} else {
 					// Failed after all retries - check if we reached max consecutive failures
 					failedAttempts := ac.StateService.GetAutoUpdateFailedAttempts()
 					if failedAttempts >= autoUpdateMaxRetries {
 						ac.StateService.SetAutoUpdateEnabled(false)
-						log.Printf("Auto-update: Stopped after %d consecutive failed attempts", failedAttempts)
+						debuglog.WarnLog("Auto-update: Stopped after %d consecutive failed attempts", failedAttempts)
 						fyne.Do(func() {
 							if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
 								dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Auto-update", "Automatic configuration update stopped after 10 failed attempts. Use manual update.")
@@ -939,10 +938,10 @@ func (ac *AppController) startAutoUpdateLoop() {
 					}
 				}
 			} else {
-				log.Println("Auto-update: Update already in progress, skipping")
+				debuglog.DebugLog("Auto-update: Update already in progress, skipping")
 			}
 		} else {
-			log.Printf("Auto-update: Update not needed yet, will check again in %v", checkInterval)
+			debuglog.DebugLog("Auto-update: Update not needed yet, will check again in %v", checkInterval)
 		}
 
 		// Wait for check interval before next check
@@ -977,7 +976,7 @@ func (ac *AppController) calculateAutoUpdateInterval() (time.Duration, error) {
 	// Parse reload string to duration
 	reloadDuration, err := time.ParseDuration(reloadStr)
 	if err != nil {
-		log.Printf("Auto-update: Failed to parse reload duration '%s': %v, using default", reloadStr, err)
+		debuglog.WarnLog("Auto-update: Failed to parse reload duration '%s': %v, using default", reloadStr, err)
 		defaultDuration, _ := time.ParseDuration(autoUpdateDefaultReload)
 		return maxDuration(autoUpdateMinInterval, defaultDuration), nil
 	}
@@ -1014,14 +1013,14 @@ func (ac *AppController) shouldAutoUpdate(requiredInterval time.Duration) (bool,
 	// Parse last_updated timestamp
 	lastUpdated, err := time.Parse(time.RFC3339, lastUpdatedStr)
 	if err != nil {
-		log.Printf("Auto-update: Failed to parse last_updated '%s': %v", lastUpdatedStr, err)
+		debuglog.WarnLog("Auto-update: Failed to parse last_updated '%s': %v", lastUpdatedStr, err)
 		// If parsing fails, assume update is needed
 		return true, nil
 	}
 
 	// Calculate elapsed time
 	elapsed := time.Since(lastUpdated.UTC())
-	log.Printf("Auto-update: Checking if update needed (last_updated: %s, elapsed: %v, required: %v)", lastUpdatedStr, elapsed, requiredInterval)
+	debuglog.DebugLog("Auto-update: Checking if update needed (last_updated: %s, elapsed: %v, required: %v)", lastUpdatedStr, elapsed, requiredInterval)
 
 	// Check if elapsed >= required interval
 	return elapsed >= requiredInterval, nil
@@ -1031,7 +1030,7 @@ func (ac *AppController) shouldAutoUpdate(requiredInterval time.Duration) (bool,
 // Returns true if update succeeded, false if all retries failed
 func (ac *AppController) attemptAutoUpdateWithRetries(retryInterval time.Duration, maxRetries int) bool {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		log.Printf("Auto-update: Attempting update (attempt %d/%d)", attempt, maxRetries)
+		debuglog.InfoLog("Auto-update: Attempting update (attempt %d/%d)", attempt, maxRetries)
 
 		// Call UpdateConfigFromSubscriptions synchronously
 		err := ac.ConfigService.UpdateConfigFromSubscriptions()
@@ -1045,11 +1044,11 @@ func (ac *AppController) attemptAutoUpdateWithRetries(retryInterval time.Duratio
 		ac.StateService.IncrementAutoUpdateFailedAttempts()
 		currentAttempts := ac.StateService.GetAutoUpdateFailedAttempts()
 
-		log.Printf("Auto-update: Failed (attempt %d/%d, total consecutive failures: %d): %v", attempt, maxRetries, currentAttempts, err)
+		debuglog.WarnLog("Auto-update: Failed (attempt %d/%d, total consecutive failures: %d): %v", attempt, maxRetries, currentAttempts, err)
 
 		if attempt < maxRetries {
 			// Wait before retry (except for last attempt)
-			log.Printf("Auto-update: Retrying in %v...", retryInterval)
+			debuglog.DebugLog("Auto-update: Retrying in %v...", retryInterval)
 			select {
 			case <-ac.ctx.Done():
 				return false
@@ -1068,6 +1067,6 @@ func (ac *AppController) attemptAutoUpdateWithRetries(retryInterval time.Duratio
 func (ac *AppController) resumeAutoUpdate() {
 	if ac.StateService != nil {
 		ac.StateService.ResumeAutoUpdate()
-		log.Println("Auto-update: Resumed after successful manual update")
+		debuglog.InfoLog("Auto-update: Resumed after successful manual update")
 	}
 }

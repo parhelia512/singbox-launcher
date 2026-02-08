@@ -53,7 +53,7 @@ func main() {
 	// Configure the system tray if the application is running on a Desktop platform.
 	//nolint:unused // desktop is used for type assertion, even if linter can't detect it
 	if desk, ok := controller.UIService.Application.(desktop.App); ok {
-		log.Println("System tray: Desktop platform detected, initializing...")
+		debuglog.InfoLog("System tray: Desktop platform detected, initializing...")
 		// Create the menu update function for the system tray with proxy selection submenu
 		// Safe wrapper with debounce to prevent "Invalid menu handle" errors
 		// when menu updates happen too quickly
@@ -113,7 +113,7 @@ func main() {
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
-								log.Printf("updateTrayMenu: Recovered from panic: %v", r)
+								debuglog.ErrorLog("updateTrayMenu: Recovered from panic: %v", r)
 							}
 						}()
 						desk.SetSystemTrayMenu(menu)
@@ -125,24 +125,24 @@ func main() {
 
 		// Initialize system tray immediately (required on macOS, works on Windows too)
 		// On macOS, system tray must be initialized BEFORE app.Run() to work properly
-		log.Println("System tray: Setting icon...")
+		debuglog.InfoLog("System tray: Setting icon...")
 		desk.SetSystemTrayIcon(controller.UIService.GreyIconData)
-		log.Println("System tray: Creating initial menu...")
+		debuglog.InfoLog("System tray: Creating initial menu...")
 		initialMenu := controller.CreateTrayMenu()
 		desk.SetSystemTrayMenu(initialMenu)
-		log.Println("System tray: Icon and menu initialized successfully")
+		debuglog.InfoLog("System tray: Icon and menu initialized successfully")
 
 		// Set a handler that fires when the application is fully ready
 		controller.UIService.Application.Lifecycle().SetOnStarted(func() {
 			// Read config once at application startup
 			go func() {
-				log.Println("Application startup: Reading config...")
+				debuglog.InfoLog("Application startup: Reading config...")
 				config, err := parser.ExtractParserConfig(controller.FileService.ConfigPath)
 				if err != nil {
-					log.Printf("Application startup: Failed to read config: %v", err)
+					debuglog.WarnLog("Application startup: Failed to read config: %v", err)
 					return
 				}
-				log.Printf("Application startup: Config read successfully (version %d, %d proxy sources, %d outbounds)",
+				debuglog.InfoLog("Application startup: Config read successfully (version %d, %d proxy sources, %d outbounds)",
 					config.ParserConfig.Version,
 					len(config.ParserConfig.Proxies),
 					len(config.ParserConfig.Outbounds))
@@ -153,7 +153,7 @@ func main() {
 				go func() {
 					// Wait a bit for everything to initialize
 					time.Sleep(autoStartDelay)
-					log.Println("Auto-start: Starting VPN due to -start parameter")
+					debuglog.InfoLog("Auto-start: Starting VPN due to -start parameter")
 					core.StartSingBoxProcess(controller)
 				}()
 			}
@@ -166,7 +166,7 @@ func main() {
 					fyne.Do(func() {
 						if controller.UIService.MainWindow != nil {
 							controller.UIService.MainWindow.Hide()
-							log.Println("Tray mode: Window hidden")
+							debuglog.InfoLog("Tray mode: Window hidden")
 						}
 					})
 				}()
@@ -208,11 +208,11 @@ func main() {
 					// Ensure Dock is restored before showing the window
 					platform.RestoreDockIcon()
 					controller.UIService.ShowMainWindowOrFocusWizard()
-					log.Println("Dock icon clicked (native handler): Dock restored and focused (main or wizard)")
+					debuglog.InfoLog("Dock icon clicked (native handler): Dock restored and focused (main or wizard)")
 				}
 			})
 		})
-		log.Println("Dock icon click handler registered for macOS (native NSApplicationDelegate)")
+		debuglog.InfoLog("Dock icon click handler registered for macOS (native NSApplicationDelegate)")
 	}
 
 	controller.UpdateUI()
@@ -244,7 +244,7 @@ func main() {
 
 	// The code below executes only after app.Run() finishes (when app.Quit() is called).
 	// This is where final cleanup is performed.
-	log.Println("Application shutting down.")
+	debuglog.InfoLog("Application shutting down.")
 
 	// Cleanup platform-specific handlers
 	if runtime.GOOS == "darwin" {

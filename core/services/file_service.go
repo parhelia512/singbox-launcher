@@ -61,7 +61,7 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 	// Open child log file
 	childLogFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, childLogFileName))
 	if err != nil {
-		log.Printf("OpenLogFiles: failed to open sing-box child log file: %v", err)
+		debuglog.WarnLog("OpenLogFiles: failed to open sing-box child log file: %v", err)
 		fs.ChildLogFile = nil
 	} else {
 		fs.ChildLogFile = childLogFile
@@ -70,7 +70,7 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 	// Open API log file
 	apiLogFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, apiLogFileName))
 	if err != nil {
-		log.Printf("OpenLogFiles: failed to open API log file: %v", err)
+		debuglog.WarnLog("OpenLogFiles: failed to open API log file: %v", err)
 		fs.ApiLogFile = nil
 	} else {
 		fs.ApiLogFile = apiLogFile
@@ -117,9 +117,9 @@ func (fs *FileService) CheckAndRotateLogFile(logPath string) {
 		oldPath := logPath + ".old"
 		_ = os.Remove(oldPath) // Remove old backup if exists
 		if err := os.Rename(logPath, oldPath); err != nil {
-			log.Printf("CheckAndRotateLogFile: Failed to rotate log file %s: %v", logPath, err)
+			debuglog.WarnLog("CheckAndRotateLogFile: Failed to rotate log file %s: %v", logPath, err)
 		} else {
-			log.Printf("CheckAndRotateLogFile: Rotated log file %s (size: %d bytes)", logPath, info.Size())
+			debuglog.DebugLog("CheckAndRotateLogFile: Rotated log file %s (size: %d bytes)", logPath, info.Size())
 		}
 	}
 }

@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"runtime"
 	"time"
@@ -30,7 +29,7 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 	if runtime.GOOS == "darwin" {
 		proxyHost, proxyPort, proxyEnabled, proxyErr := platform.GetSystemSOCKSProxy()
 		if proxyErr == nil && proxyEnabled && proxyHost != "" && proxyPort > 0 {
-			log.Printf("diagnosticsTab: Using system SOCKS5 proxy %s:%d for STUN test", proxyHost, proxyPort)
+			debuglog.DebugLog("diagnosticsTab: Using system SOCKS5 proxy %s:%d for STUN test", proxyHost, proxyPort)
 			// Create SOCKS5 client
 			socksClient, err := socks5.NewClient(fmt.Sprintf("%s:%d", proxyHost, proxyPort), "", "", 0, 60)
 			if err != nil {
@@ -45,7 +44,7 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 		} else {
 			// Proxy not enabled or error getting settings, use direct connection
 			if proxyErr != nil {
-				log.Printf("diagnosticsTab: Failed to get system proxy settings: %v, using direct connection", proxyErr)
+				debuglog.DebugLog("diagnosticsTab: Failed to get system proxy settings: %v, using direct connection", proxyErr)
 			}
 			conn, err = net.Dial("udp", serverAddr)
 			if err != nil {
@@ -128,15 +127,15 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 			fyne.Do(func() {
 				waitDialog.Hide()
 				if err != nil {
-					log.Printf("diagnosticsTab: STUN check failed: %v", err)
+					debuglog.ErrorLog("diagnosticsTab: STUN check failed: %v", err)
 					ShowError(ac.UIService.MainWindow, err)
 				} else {
 					var connectionInfo string
 					if usedProxy {
-						log.Printf("diagnosticsTab: STUN check successful via SOCKS5 proxy, IP: %s", ip)
+						debuglog.InfoLog("diagnosticsTab: STUN check successful via SOCKS5 proxy, IP: %s", ip)
 						connectionInfo = fmt.Sprintf("(determined via [UDP]%s)\nvia system proxy SOCKS5", stunServer)
 					} else {
-						log.Printf("diagnosticsTab: STUN check successful, IP: %s", ip)
+						debuglog.InfoLog("diagnosticsTab: STUN check successful, IP: %s", ip)
 						connectionInfo = fmt.Sprintf("(determined via [UDP]%s, direct connection)", stunServer)
 					}
 					// Создаем кастомный диалог с кнопкой "Copy"
@@ -156,7 +155,7 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 	openBrowserButton := func(label, url string) fyne.CanvasObject {
 		return widget.NewButton(label, func() {
 			if err := platform.OpenURL(url); err != nil {
-				log.Printf("diagnosticsTab: Failed to open URL %s: %v", url, err)
+				debuglog.ErrorLog("diagnosticsTab: Failed to open URL %s: %v", url, err)
 				ShowError(ac.UIService.MainWindow, err)
 			}
 		})

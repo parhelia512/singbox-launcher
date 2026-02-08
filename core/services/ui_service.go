@@ -1,7 +1,6 @@
 package services
 
 import (
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/constants"
+	"singbox-launcher/internal/debuglog"
 )
 
 // UIService manages UI-related state, callbacks, and tray menu logic.
@@ -86,7 +86,7 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	ui.RedIconData = fyne.NewStaticResource("errorIcon", redIconData)
 
 	// Initialize Fyne application
-	log.Println("UIService: Initializing Fyne application...")
+	debuglog.InfoLog("UIService: Initializing Fyne application...")
 	ui.Application = app.NewWithID("com.singbox.launcher")
 	ui.Application.SetIcon(ui.AppIconData)
 
@@ -101,13 +101,13 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	}
 
 	// Initialize callbacks with default no-op handlers
-	ui.RefreshAPIFunc = func() { log.Println("RefreshAPIFunc handler is not set yet.") }
-	ui.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
-	ui.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
-	ui.UpdateConfigStatusFunc = func() { log.Println("UpdateConfigStatusFunc handler is not set yet.") }
-	ui.UpdateTrayMenuFunc = func() { log.Println("UpdateTrayMenuFunc handler is not set yet.") }
+	ui.RefreshAPIFunc = func() { debuglog.DebugLog("RefreshAPIFunc handler is not set yet.") }
+	ui.ResetAPIStateFunc = func() { debuglog.DebugLog("ResetAPIStateFunc handler is not set yet.") }
+	ui.UpdateCoreStatusFunc = func() { debuglog.DebugLog("UpdateCoreStatusFunc handler is not set yet.") }
+	ui.UpdateConfigStatusFunc = func() { debuglog.DebugLog("UpdateConfigStatusFunc handler is not set yet.") }
+	ui.UpdateTrayMenuFunc = func() { debuglog.DebugLog("UpdateTrayMenuFunc handler is not set yet.") }
 	ui.UpdateParserProgressFunc = func(progress float64, status string) {
-		log.Printf("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
+		debuglog.DebugLog("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
 	}
 
 	return ui, nil
@@ -140,11 +140,11 @@ func (ui *UIService) UpdateUI() {
 	fyne.Do(func() {
 		// Update tray icon
 		if desk, ok := ui.Application.(desktop.App); ok {
-			// Check that icons are initialized
-			if ui.GreenIconData == nil || ui.GreyIconData == nil || ui.RedIconData == nil {
-				log.Printf("UpdateUI: Icons not initialized, skipping icon update")
-				return
-			}
+		// Check that icons are initialized
+		if ui.GreenIconData == nil || ui.GreyIconData == nil || ui.RedIconData == nil {
+			debuglog.WarnLog("UpdateUI: Icons not initialized, skipping icon update")
+			return
+		}
 
 			var iconToSet fyne.Resource
 
@@ -167,7 +167,7 @@ func (ui *UIService) UpdateUI() {
 
 		// Reset API state if VPN is down
 		if !ui.RunningStateIsRunning() && ui.ResetAPIStateFunc != nil {
-			log.Println("UpdateUI: Triggering API state reset because state is 'Down'.")
+			debuglog.DebugLog("UpdateUI: Triggering API state reset because state is 'Down'.")
 			ui.ResetAPIStateFunc()
 		}
 

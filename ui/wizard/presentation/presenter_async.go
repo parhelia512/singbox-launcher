@@ -59,7 +59,7 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 			CoreConfigService: p.controller.ConfigService,
 		}
 		if err := wizardbusiness.ParseAndPreview(p.model, p, configService); err != nil {
-			debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "TriggerParseForPreview: ParseAndPreview failed: %v", err)
+			debuglog.ErrorLog("TriggerParseForPreview: ParseAndPreview failed: %v", err)
 			return
 		}
 		p.RefreshOutboundOptions()
@@ -68,16 +68,16 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 
 // UpdateTemplatePreviewAsync обновляет preview шаблона асинхронно.
 func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
-	startTime := time.Now()
-	debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: START at %s", startTime.Format("15:04:05.000"))
+	timing := debuglog.StartTiming("UpdateTemplatePreviewAsync")
+	defer timing.EndWithDefer()
 
 	if p.model.PreviewGenerationInProgress {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: Preview generation already in progress, skipping")
+		debuglog.DebugLog("UpdateTemplatePreviewAsync: Preview generation already in progress, skipping")
 		return
 	}
 
 	if p.model.TemplateData == nil || p.guiState.TemplatePreviewEntry == nil {
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: TemplateData or TemplatePreviewEntry is nil, returning early")
+		debuglog.DebugLog("UpdateTemplatePreviewAsync: TemplateData or TemplatePreviewEntry is nil, returning early")
 		return
 	}
 
@@ -89,12 +89,9 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 	p.UpdateSaveButtonText("")
 
 	go func() {
-		goroutineStartTime := time.Now()
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: Goroutine START at %s", goroutineStartTime.Format("15:04:05.000"))
-
+		goroutineTiming := debuglog.StartTiming("UpdateTemplatePreviewAsync: Goroutine")
 		defer func() {
-			totalDuration := time.Since(goroutineStartTime)
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: Goroutine END (duration: %v)", totalDuration)
+			goroutineTiming.End()
 			p.model.PreviewGenerationInProgress = false
 			p.UpdateSaveButtonText("Save")
 			if p.guiState.ShowPreviewButton != nil {
@@ -107,11 +104,12 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 		}
 
 		buildStartTime := time.Now()
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: Calling BuildTemplateConfig")
+		debuglog.DebugLog("UpdateTemplatePreviewAsync: Calling BuildTemplateConfig")
 		text, err := wizardbusiness.BuildTemplateConfig(p.model, true)
 		buildDuration := time.Since(buildStartTime)
 		if err != nil {
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: BuildTemplateConfig failed (took %v): %v", buildDuration, err)
+			goroutineTiming.LogTiming("BuildTemplateConfig", buildDuration)
+			debuglog.ErrorLog("UpdateTemplatePreviewAsync: BuildTemplateConfig failed: %v", err)
 			errorText := fmt.Sprintf("Preview error: %v", err)
 			p.SetTemplatePreviewText(errorText)
 			p.model.TemplatePreviewNeedsUpdate = false
@@ -120,8 +118,8 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 			}
 			return
 		}
-		debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: BuildTemplateConfig completed in %v (result size: %d bytes)",
-			buildDuration, len(text))
+		goroutineTiming.LogTiming("BuildTemplateConfig", buildDuration)
+		debuglog.DebugLog("UpdateTemplatePreviewAsync: BuildTemplateConfig completed (result size: %d bytes)", len(text))
 
 		isLargeText := len(text) > 50000
 		p.SetTemplatePreviewText(text)
@@ -133,9 +131,9 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 			if p.guiState.ShowPreviewButton != nil {
 				p.guiState.ShowPreviewButton.Enable()
 			}
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: Preview text inserted")
+			debuglog.DebugLog("UpdateTemplatePreviewAsync: Preview text inserted")
 		} else {
-			debuglog.Log("DEBUG", debuglog.LevelVerbose, debuglog.UseGlobal, "UpdateTemplatePreviewAsync: Large text insertion started (status will update when complete)")
+			debuglog.DebugLog("UpdateTemplatePreviewAsync: Large text insertion started (status will update when complete)")
 		}
 	}()
 }

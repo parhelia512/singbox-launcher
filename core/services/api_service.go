@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -12,6 +11,7 @@ import (
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/debuglog"
 )
 
 // APIService manages Clash API interactions and proxy list management.
@@ -58,7 +58,7 @@ func NewAPIService(configPath string, apiLogFile *os.File,
 
 	// Load Clash API configuration from config.json
 	if base, tok, err := api.LoadClashAPIConfig(configPath); err != nil {
-		log.Printf("NewAPIService: Clash API config error: %v", err)
+		debuglog.WarnLog("NewAPIService: Clash API config error: %v", err)
 		apiSvc.BaseURL = ""
 		apiSvc.Token = ""
 		apiSvc.Enabled = false
@@ -72,11 +72,11 @@ func NewAPIService(configPath string, apiLogFile *os.File,
 	if apiSvc.Enabled {
 		_, defaultSelector, err := config.GetSelectorGroupsFromConfig(configPath)
 		if err != nil {
-			log.Printf("NewAPIService: Failed to get selector groups: %v", err)
+			debuglog.WarnLog("NewAPIService: Failed to get selector groups: %v", err)
 			apiSvc.SelectedClashGroup = "proxy-out" // Default fallback
 		} else {
 			apiSvc.SelectedClashGroup = defaultSelector
-			log.Printf("NewAPIService: Initialized SelectedClashGroup: %s", defaultSelector)
+			debuglog.DebugLog("NewAPIService: Initialized SelectedClashGroup: %s", defaultSelector)
 		}
 	}
 
@@ -181,11 +181,11 @@ func (apiSvc *APIService) ReloadClashAPIConfig() error {
 	apiSvc.StateMutex.Lock()
 	defer apiSvc.StateMutex.Unlock()
 
-	log.Println("ReloadClashAPIConfig: Reloading Clash API configuration from config.json...")
+	debuglog.InfoLog("ReloadClashAPIConfig: Reloading Clash API configuration from config.json...")
 
 	// Load Clash API configuration from config.json
 	if base, tok, err := api.LoadClashAPIConfig(apiSvc.ConfigPath); err != nil {
-		log.Printf("ReloadClashAPIConfig: Clash API config error: %v", err)
+		debuglog.WarnLog("ReloadClashAPIConfig: Clash API config error: %v", err)
 		apiSvc.BaseURL = ""
 		apiSvc.Token = ""
 		apiSvc.Enabled = false
@@ -196,18 +196,18 @@ func (apiSvc *APIService) ReloadClashAPIConfig() error {
 		apiSvc.BaseURL = base
 		apiSvc.Token = tok
 		apiSvc.Enabled = true
-		log.Printf("ReloadClashAPIConfig: Successfully reloaded - BaseURL: %s, Enabled: %v (was %v)", base, true, oldEnabled)
+		debuglog.InfoLog("ReloadClashAPIConfig: Successfully reloaded - BaseURL: %s, Enabled: %v (was %v)", base, true, oldEnabled)
 	}
 
 	// Reload SelectedClashGroup from config if API is enabled
 	if apiSvc.Enabled {
 		_, defaultSelector, err := config.GetSelectorGroupsFromConfig(apiSvc.ConfigPath)
 		if err != nil {
-			log.Printf("ReloadClashAPIConfig: Failed to get selector groups: %v", err)
+			debuglog.WarnLog("ReloadClashAPIConfig: Failed to get selector groups: %v", err)
 			// Keep existing SelectedClashGroup if we can't read new one
 		} else {
 			apiSvc.SelectedClashGroup = defaultSelector
-			log.Printf("ReloadClashAPIConfig: Updated SelectedClashGroup: %s", defaultSelector)
+			debuglog.DebugLog("ReloadClashAPIConfig: Updated SelectedClashGroup: %s", defaultSelector)
 		}
 	}
 
@@ -220,7 +220,7 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 	apiSvc.AutoLoadMutex.Lock()
 	if apiSvc.AutoLoadInProgress {
 		apiSvc.AutoLoadMutex.Unlock()
-		log.Printf("AutoLoadProxies: Already in progress, skipping")
+		debuglog.DebugLog("AutoLoadProxies: Already in progress, skipping")
 		return
 	}
 	apiSvc.AutoLoadInProgress = true
@@ -230,7 +230,7 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 		apiSvc.AutoLoadMutex.Lock()
 		apiSvc.AutoLoadInProgress = false
 		apiSvc.AutoLoadMutex.Unlock()
-		log.Printf("AutoLoadProxies: Clash API is disabled, skipping")
+		debuglog.DebugLog("AutoLoadProxies: Clash API is disabled, skipping")
 		return
 	}
 
@@ -239,7 +239,7 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 		apiSvc.AutoLoadMutex.Lock()
 		apiSvc.AutoLoadInProgress = false
 		apiSvc.AutoLoadMutex.Unlock()
-		log.Printf("AutoLoadProxies: No group selected, skipping")
+		debuglog.DebugLog("AutoLoadProxies: No group selected, skipping")
 		return
 	}
 
@@ -247,39 +247,39 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 
 	go func() {
 		for attempt, interval := range intervals {
-			// Check if context is cancelled
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			debuglog.DebugLog("AutoLoadProxies: Stopped (context cancelled)")
+			apiSvc.AutoLoadMutex.Lock()
+			apiSvc.AutoLoadInProgress = false
+			apiSvc.AutoLoadMutex.Unlock()
+			return
+		default:
+		}
+
+		// Wait for the interval (except first attempt)
+		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				log.Println("AutoLoadProxies: Stopped (context cancelled)")
+				debuglog.DebugLog("AutoLoadProxies: Stopped during wait (context cancelled)")
 				apiSvc.AutoLoadMutex.Lock()
 				apiSvc.AutoLoadInProgress = false
 				apiSvc.AutoLoadMutex.Unlock()
 				return
-			default:
+			case <-time.After(interval * time.Second):
+				// Continue
 			}
+		}
 
-			// Wait for the interval (except first attempt)
-			if attempt > 0 {
-				select {
-				case <-ctx.Done():
-					log.Println("AutoLoadProxies: Stopped during wait (context cancelled)")
-					apiSvc.AutoLoadMutex.Lock()
-					apiSvc.AutoLoadInProgress = false
-					apiSvc.AutoLoadMutex.Unlock()
-					return
-				case <-time.After(interval * time.Second):
-					// Continue
-				}
-			}
+		// Check if sing-box is running before attempting to connect
+		if !apiSvc.RunningStateIsRunning() {
+			debuglog.DebugLog("AutoLoadProxies: Attempt %d/%d skipped - sing-box is not running", attempt+1, len(intervals))
+			// Continue to next attempt
+			continue
+		}
 
-			// Check if sing-box is running before attempting to connect
-			if !apiSvc.RunningStateIsRunning() {
-				log.Printf("AutoLoadProxies: Attempt %d/%d skipped - sing-box is not running", attempt+1, len(intervals))
-				// Continue to next attempt
-				continue
-			}
-
-			log.Printf("AutoLoadProxies: Attempt %d/%d to load proxies for group '%s'", attempt+1, len(intervals), selectedGroup)
+		debuglog.DebugLog("AutoLoadProxies: Attempt %d/%d to load proxies for group '%s'", attempt+1, len(intervals), selectedGroup)
 
 			// Get current group (it might have changed)
 			apiSvc.StateMutex.RLock()
@@ -288,18 +288,18 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 			token := apiSvc.Token
 			apiSvc.StateMutex.RUnlock()
 
-			if currentGroup == "" {
-				log.Printf("AutoLoadProxies: Group cleared, stopping attempts")
-				return
-			}
+		if currentGroup == "" {
+			debuglog.DebugLog("AutoLoadProxies: Group cleared, stopping attempts")
+			return
+		}
 
-			// Try to load proxies
-			proxies, now, err := api.GetProxiesInGroup(baseURL, token, currentGroup, apiSvc.ApiLogFile)
-			if err != nil {
-				log.Printf("AutoLoadProxies: Attempt %d failed: %v", attempt+1, err)
-				// Continue to next attempt
-				continue
-			}
+		// Try to load proxies
+		proxies, now, err := api.GetProxiesInGroup(baseURL, token, currentGroup, apiSvc.ApiLogFile)
+		if err != nil {
+			debuglog.DebugLog("AutoLoadProxies: Attempt %d failed: %v", attempt+1, err)
+			// Continue to next attempt
+			continue
+		}
 
 			// Success - update proxies list
 			fyne.Do(func() {
@@ -325,16 +325,16 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 					}
 				}
 				if proxyExists {
-					log.Printf("AutoLoadProxies: Switching to saved proxy '%s' (current: '%s') for group '%s'", lastSelected, now, currentGroup)
+					debuglog.DebugLog("AutoLoadProxies: Switching to saved proxy '%s' (current: '%s') for group '%s'", lastSelected, now, currentGroup)
 					// Переключаемся на сохраненный прокси (мы уже в goroutine, дополнительная не нужна)
 					if err := apiSvc.SwitchProxy(currentGroup, lastSelected); err != nil {
-						log.Printf("AutoLoadProxies: Failed to switch to saved proxy '%s' for group '%s': %v", lastSelected, currentGroup, err)
+						debuglog.WarnLog("AutoLoadProxies: Failed to switch to saved proxy '%s' for group '%s': %v", lastSelected, currentGroup, err)
 						// Не критично, продолжаем с текущим прокси
 					}
 				}
 			}
 
-			log.Printf("AutoLoadProxies: Successfully loaded %d proxies for group '%s' on attempt %d", len(proxies), currentGroup, attempt+1)
+			debuglog.InfoLog("AutoLoadProxies: Successfully loaded %d proxies for group '%s' on attempt %d", len(proxies), currentGroup, attempt+1)
 
 			apiSvc.AutoLoadMutex.Lock()
 			apiSvc.AutoLoadInProgress = false
@@ -342,7 +342,7 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 			return // Success, stop retrying
 		}
 
-		log.Printf("AutoLoadProxies: All %d attempts failed", len(intervals))
+		debuglog.WarnLog("AutoLoadProxies: All %d attempts failed", len(intervals))
 		apiSvc.AutoLoadMutex.Lock()
 		apiSvc.AutoLoadInProgress = false
 		apiSvc.AutoLoadMutex.Unlock()

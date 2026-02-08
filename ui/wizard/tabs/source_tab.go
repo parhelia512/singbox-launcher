@@ -19,7 +19,6 @@ package tabs
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 
@@ -33,6 +32,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -63,7 +63,7 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 		model.PreviewNeedsParse = true
 		trimmed := strings.TrimSpace(value)
 		if err := wizardbusiness.ApplyURLToParserConfig(model, presenter, trimmed); err != nil {
-			log.Printf("source_tab: error applying URL to ParserConfig: %v", err)
+			debuglog.ErrorLog("source_tab: error applying URL to ParserConfig: %v", err)
 		}
 
 		// Debounce CheckURL: cancel previous timer and set a new one (2s after last change)
@@ -89,7 +89,7 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 				// Run the check in background
 				go func() {
 					if err := wizardbusiness.CheckURL(presenter.Model(), presenter); err != nil {
-						log.Printf("source_tab: CheckURL failed: %v", err)
+						debuglog.ErrorLog("source_tab: CheckURL failed: %v", err)
 					}
 					// Clear in-progress flag
 					fyne.Do(func() { guiState.CheckURLInProgress = false })
@@ -317,7 +317,7 @@ Here is the current configuration to review:
 			})
 			return
 		}
-		log.Printf("source_tab: Parse clicked, parser length=%d", len(strings.TrimSpace(model.ParserConfigJSON)))
+		debuglog.DebugLog("source_tab: Parse clicked, parser length=%d", len(strings.TrimSpace(model.ParserConfigJSON)))
 		if model.AutoParseInProgress {
 			return
 		}
@@ -326,7 +326,7 @@ Here is the current configuration to review:
 		configService := presenter.ConfigServiceAdapter()
 		go func() {
 			if err := wizardbusiness.ParseAndPreview(model, presenter, configService); err != nil {
-				log.Printf("source_tab: ParseAndPreview failed: %v", err)
+				debuglog.ErrorLog("source_tab: ParseAndPreview failed: %v", err)
 				// Show error to user in case of parse failure
 				fyne.Do(func() {
 					if guiState.OutboundsPreview != nil {
