@@ -32,7 +32,9 @@ package wizard
 import (
 	"fmt"
 	"image/color"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -77,7 +79,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	templateData, err := templateLoader.LoadTemplateData(controller.FileService.ExecDir)
 	if err != nil {
 		templateFileName := wizardtemplate.GetTemplateFileName()
-		debuglog.ErrorLog( "ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(controller.FileService.ExecDir, "bin", templateFileName), err)
+		debuglog.ErrorLog("ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(controller.FileService.ExecDir, "bin", templateFileName), err)
 		// Update config status in Core Dashboard
 		if controller.UIService != nil && controller.UIService.UpdateConfigStatusFunc != nil {
 			controller.UIService.UpdateConfigStatusFunc()
@@ -122,11 +124,44 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 		})
 	}
 
-	// Load config from file
-	fileService := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
+	// Check if state.json exists and load it directly
+	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
+	stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
+
+	// If state.json exists, load it directly without dialog
+	if stateStore.StateExists("") {
+		stateFile, err := stateStore.LoadCurrentState()
+		if err != nil {
+			debuglog.WarnLog("ShowConfigWizard: failed to load state.json: %v, falling back to config.json", err)
+			// Fallback to config.json/template
+			loadConfigFromFile(presenter, fileServiceAdapter, templateData, model, wizardWindow)
+		} else {
+			// Load state into model
+			if err := presenter.LoadState(stateFile); err != nil {
+				debuglog.WarnLog("ShowConfigWizard: failed to restore state: %v, falling back to config.json", err)
+				// Fallback to config.json/template
+				loadConfigFromFile(presenter, fileServiceAdapter, templateData, model, wizardWindow)
+			} else {
+				debuglog.InfoLog("ShowConfigWizard: loaded state from state.json")
+			}
+		}
+	} else {
+		// No state.json - load from config.json/template (current behavior)
+		loadConfigFromFile(presenter, fileServiceAdapter, templateData, model, wizardWindow)
+	}
+
+	// Continue with wizard initialization
+	initializeWizardContent(presenter, controller, guiState, wizardWindow, model, templateData)
+
+	// Initialize template state
+	presenter.InitializeTemplateState()
+}
+
+// loadConfigFromFile загружает конфигурацию из config.json или шаблона (текущее поведение).
+func loadConfigFromFile(presenter *wizardpresentation.WizardPresenter, fileService wizardbusiness.FileServiceInterface, templateData *wizardtemplate.TemplateData, model *wizardmodels.WizardModel, wizardWindow fyne.Window) {
 	loadedConfig, parserConfigJSON, sourceURLs, err := wizardbusiness.LoadConfigFromFile(fileService, templateData)
 	if err != nil {
-		debuglog.ErrorLog( "ConfigWizard: Failed to load config: %v", err)
+		debuglog.ErrorLog("loadConfigFromFile: Failed to load config: %v", err)
 		dialog.ShowError(fmt.Errorf("Failed to load existing config: %w", err), wizardWindow)
 	}
 	if loadedConfig {
@@ -141,7 +176,49 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 			return
 		}
 	}
+}
 
+// loadStateFromFile загружает состояние из файла.
+func loadStateFromFile(presenter *wizardpresentation.WizardPresenter, stateStore *wizardbusiness.StateStore, stateID string, templateData *wizardtemplate.TemplateData, model *wizardmodels.WizardModel, wizardWindow fyne.Window) {
+	var stateFile *wizardmodels.WizardStateFile
+	var err error
+
+	if stateID == "" {
+		// Load state.json
+		stateFile, err = stateStore.LoadCurrentState()
+	} else {
+		// Load named state
+		stateFile, err = stateStore.LoadWizardState(stateID)
+		if err == nil {
+			// Copy to state.json
+			if err := stateStore.SaveCurrentState(stateFile); err != nil {
+				debuglog.WarnLog("loadStateFromFile: failed to copy state to state.json: %v", err)
+			}
+		}
+	}
+
+	if err != nil {
+		debuglog.ErrorLog("loadStateFromFile: failed to load state: %v", err)
+		dialog.ShowError(fmt.Errorf("Failed to load state: %w", err), wizardWindow)
+		// Fallback to config.json/template
+		fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: presenter.Controller().FileService}
+		loadConfigFromFile(presenter, fileServiceAdapter, templateData, model, wizardWindow)
+		return
+	}
+
+	// Load state into model
+	if err := presenter.LoadState(stateFile); err != nil {
+		debuglog.ErrorLog("loadStateFromFile: failed to load state into model: %v", err)
+		dialog.ShowError(fmt.Errorf("Failed to restore state: %w", err), wizardWindow)
+		// Fallback to config.json/template
+		fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: presenter.Controller().FileService}
+		loadConfigFromFile(presenter, fileServiceAdapter, templateData, model, wizardWindow)
+		return
+	}
+}
+
+// initializeWizardContent инициализирует содержимое визарда (табы, кнопки и т.д.).
+func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, controller *core.AppController, guiState *wizardpresentation.GUIState, wizardWindow fyne.Window, model *wizardmodels.WizardModel, templateData *wizardtemplate.TemplateData) {
 	// Initialize template state
 	presenter.InitializeTemplateState()
 
@@ -169,22 +246,25 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 		tabs.Append(previewTabItem)
 	}
 
+	// Create state management buttons
+	guiState.ReadButton = widget.NewButton("Read", func() {
+		handleReadButton(presenter, wizardWindow)
+	})
+	guiState.ReadButton.Importance = widget.MediumImportance
+
+	guiState.SaveAsButton = widget.NewButton("Save As", func() {
+		handleSaveAsButton(presenter, wizardWindow)
+	})
+	guiState.SaveAsButton.Importance = widget.MediumImportance
+
 	// Create navigation buttons
 	guiState.CloseButton = widget.NewButton("Close", func() {
-		// Cancel save operation if in progress
-		if guiState.SaveInProgress {
-			presenter.CancelSaveOperation()
-		}
-		wizardWindow.Close()
+		handleCloseButton(presenter, guiState, wizardWindow)
 	})
 
 	// Close window via X
 	wizardWindow.SetCloseIntercept(func() {
-		// Cancel save operation if in progress
-		if guiState.SaveInProgress {
-			presenter.CancelSaveOperation()
-		}
-		wizardWindow.Close()
+		handleCloseButton(presenter, guiState, wizardWindow)
 	})
 	guiState.CloseButton.Importance = widget.HighImportance
 
@@ -205,6 +285,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	guiState.NextButton.Importance = widget.HighImportance
 
 	guiState.SaveButton = widget.NewButton("Save", func() {
+		debuglog.InfoLog("wizard: Save button clicked")
 		presenter.SaveConfig()
 	})
 	guiState.SaveButton.Importance = widget.HighImportance
@@ -235,25 +316,34 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 	updateNavigationButtons := func() {
 		totalTabs := len(tabs.Items)
 
+		// State management buttons (left side, before Close)
+		stateButtons := container.NewHBox(
+			guiState.ReadButton,
+		)
+
 		var buttonsContent fyne.CanvasObject
 		if currentTabIndex == totalTabs-1 {
-			// Last tab (Preview): Close on left, Prev and Save on right
+			// Last tab (Preview): State buttons, Close on left, Prev, Save and Save As on right
 			buttonsContent = container.NewHBox(
+				stateButtons,
 				guiState.CloseButton,
 				layout.NewSpacer(),
 				guiState.PrevButton,
 				saveButtonStack, // Use stack with ProgressBar
+				guiState.SaveAsButton,
 			)
 		} else if currentTabIndex == 0 {
-			// First tab: Close on left, Next on right (Prev hidden)
+			// First tab: State buttons, Close on left, Next on right (Prev hidden)
 			buttonsContent = container.NewHBox(
+				stateButtons,
 				guiState.CloseButton,
 				layout.NewSpacer(),
 				guiState.NextButton,
 			)
 		} else {
-			// Middle tabs: Close on left, Prev and Next on right
+			// Middle tabs: State buttons, Close on left, Prev and Next on right
 			buttonsContent = container.NewHBox(
+				stateButtons,
 				guiState.CloseButton,
 				layout.NewSpacer(),
 				guiState.PrevButton,
@@ -280,6 +370,11 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 				currentTabIndex = i
 				break
 			}
+		}
+		if item == rulesTabItem {
+			// Refresh outbound options when switching to Rules tab
+			// This ensures that newly added outbounds from ParserConfig are available
+			presenter.RefreshOutboundOptions()
 		}
 		if item == previewTabItem {
 			// Trigger async parsing (if needed)
@@ -319,4 +414,254 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 
 	wizardWindow.SetContent(content)
 	wizardWindow.Show()
+}
+
+// handleReadButton обрабатывает нажатие кнопки "Read".
+func handleReadButton(presenter *wizardpresentation.WizardPresenter, wizardWindow fyne.Window) {
+	// Проверяем наличие несохранённых изменений
+	if presenter.HasUnsavedChanges() {
+		// Показываем диалог подтверждения
+		dialog.ShowConfirm("Confirmation", "Current changes will be lost. Save current state?",
+			func(save bool) {
+				if save {
+					// Show "Save As" dialog
+					wizarddialogs.ShowSaveStateDialog(presenter, func(result wizarddialogs.SaveStateResult) {
+						if result.Action == "save" {
+							if err := presenter.SaveStateAs(result.Comment, result.ID); err != nil {
+								dialog.ShowError(fmt.Errorf("Failed to save state: %w", err), wizardWindow)
+								return
+							}
+							// Continue loading after saving
+							loadStateFromRead(presenter, wizardWindow)
+						}
+					})
+				} else {
+					// Continue loading without saving
+					loadStateFromRead(presenter, wizardWindow)
+				}
+			}, wizardWindow)
+	} else {
+		// Нет изменений - сразу загружаем
+		loadStateFromRead(presenter, wizardWindow)
+	}
+}
+
+// loadStateFromRead загружает состояние через кнопку "Read".
+func loadStateFromRead(presenter *wizardpresentation.WizardPresenter, wizardWindow fyne.Window) {
+	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: presenter.Controller().FileService}
+	stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
+
+	// Получаем список файлов из директории состояний
+	statesDir := filepath.Join(presenter.Controller().FileService.ExecDir, "bin", wizardbusiness.WizardStatesDir)
+	entries, err := os.ReadDir(statesDir)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("Failed to read states directory: %w", err), wizardWindow)
+		return
+	}
+
+	// Фильтруем только .json файлы и извлекаем имена
+	var fileNames []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		fileName := entry.Name()
+		if strings.HasSuffix(fileName, ".json") {
+			// Убираем расширение .json для отображения
+			displayName := strings.TrimSuffix(fileName, ".json")
+			if fileName == wizardmodels.StateFileName {
+				displayName = "state.json"
+			}
+			fileNames = append(fileNames, displayName)
+		}
+	}
+
+	if len(fileNames) == 0 {
+		dialog.ShowInformation("No States", "No saved states found.", wizardWindow)
+		return
+	}
+
+	// Создаём список файлов
+	var selectedFileName string
+	list := widget.NewList(
+		func() int {
+			return len(fileNames)
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("")
+		},
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			label := obj.(*widget.Label)
+			label.SetText(fileNames[id])
+		},
+	)
+
+	// Обработчик выбора файла
+	list.OnSelected = func(id widget.ListItemID) {
+		if id >= 0 && id < widget.ListItemID(len(fileNames)) {
+			selectedFileName = fileNames[id]
+		}
+	}
+
+	// Кнопки
+	var dialogWindow dialog.Dialog
+	loadButton := widget.NewButton("Load", func() {
+		if selectedFileName == "" {
+			return
+		}
+
+		// Определяем ID из имени файла
+		var stateID string
+		if selectedFileName == "state.json" {
+			stateID = ""
+		} else {
+			stateID = selectedFileName
+		}
+
+		// Закрываем диалог
+		if dialogWindow != nil {
+			dialogWindow.Hide()
+		}
+
+		// Загружаем состояние
+		var stateFile *wizardmodels.WizardStateFile
+		var loadErr error
+
+		if stateID == "" {
+			stateFile, loadErr = stateStore.LoadCurrentState()
+		} else {
+			stateFile, loadErr = stateStore.LoadWizardState(stateID)
+			if loadErr == nil {
+				// Копируем в state.json
+				if err := stateStore.SaveCurrentState(stateFile); err != nil {
+					debuglog.WarnLog("loadStateFromRead: failed to copy state to state.json: %v", err)
+				}
+			}
+		}
+
+		if loadErr != nil {
+			dialog.ShowError(fmt.Errorf("Failed to load state: %w", loadErr), wizardWindow)
+			return
+		}
+
+		// Загружаем состояние в модель
+		if err := presenter.LoadState(stateFile); err != nil {
+			dialog.ShowError(fmt.Errorf("Failed to restore state: %w", err), wizardWindow)
+			return
+		}
+
+		// Синхронизируем GUI
+		presenter.SyncModelToGUI()
+	})
+	loadButton.Importance = widget.HighImportance
+
+	cancelButton := widget.NewButton("Cancel", func() {
+		if dialogWindow != nil {
+			dialogWindow.Hide()
+		}
+	})
+
+	// Контейнер с кнопками
+	buttonsContainer := container.NewHBox(
+		layout.NewSpacer(),
+		cancelButton,
+		loadButton,
+	)
+
+	// Контент диалога: список на 5 строк с прокруткой
+	listContainer := container.NewScroll(list)
+	listContainer.SetMinSize(fyne.NewSize(300, 150)) // Примерно 5 строк по 30px
+
+	content := container.NewBorder(
+		widget.NewLabel("Select state to load:"),
+		buttonsContainer,
+		nil,
+		nil,
+		listContainer,
+	)
+
+	// Создаём диалог
+	dialogWindow = dialog.NewCustomWithoutButtons("Load State", content, wizardWindow)
+	dialogWindow.Resize(fyne.NewSize(350, 250))
+	dialogWindow.Show()
+}
+
+// handleSaveAsButton обрабатывает нажатие кнопки "Save As".
+func handleSaveAsButton(presenter *wizardpresentation.WizardPresenter, wizardWindow fyne.Window) {
+	wizarddialogs.ShowSaveStateDialog(presenter, func(result wizarddialogs.SaveStateResult) {
+		if result.Action == "save" {
+			if err := presenter.SaveStateAs(result.Comment, result.ID); err != nil {
+				dialog.ShowError(fmt.Errorf("Failed to save state: %w", err), wizardWindow)
+				return
+			}
+			// Закрываем визард после успешного сохранения
+			wizardWindow.Close()
+		}
+	})
+}
+
+// handleCloseButton обрабатывает закрытие визарда с проверкой изменений.
+func handleCloseButton(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState, wizardWindow fyne.Window) {
+	debuglog.InfoLog("handleCloseButton: called")
+
+	// Cancel save operation if in progress
+	if guiState.SaveInProgress {
+		debuglog.InfoLog("handleCloseButton: Save operation in progress, cancelling and closing")
+		presenter.CancelSaveOperation()
+		wizardWindow.Close()
+		return
+	}
+
+	// Проверяем наличие несохранённых изменений
+	hasChanges := presenter.HasUnsavedChanges()
+
+	if hasChanges {
+		// Создаем кастомный диалог с тремя кнопками: Save, Discard, Cancel
+		message := widget.NewLabel("Save changes before closing?")
+
+		var d dialog.Dialog
+
+		saveButton := widget.NewButton("Save", func() {
+			if d != nil {
+				d.Hide()
+			}
+			// Save to state.json
+			if err := presenter.SaveCurrentState(); err != nil {
+				dialog.ShowError(fmt.Errorf("Failed to save state: %w", err), wizardWindow)
+				return
+			}
+			wizardWindow.Close()
+		})
+		saveButton.Importance = widget.HighImportance
+
+		discardButton := widget.NewButton("Discard", func() {
+			if d != nil {
+				d.Hide()
+			}
+			wizardWindow.Close()
+		})
+		discardButton.Importance = widget.MediumImportance
+
+		cancelButton := widget.NewButton("Cancel", func() {
+			if d != nil {
+				d.Hide()
+			}
+		})
+
+		content := container.NewVBox(
+			message,
+			container.NewHBox(
+				layout.NewSpacer(),
+				saveButton,
+				discardButton,
+				cancelButton,
+			),
+		)
+
+		d = dialog.NewCustomWithoutButtons("Confirmation", content, wizardWindow)
+		d.Show()
+	} else {
+		// Нет изменений - закрываем без диалога
+		wizardWindow.Close()
+	}
 }

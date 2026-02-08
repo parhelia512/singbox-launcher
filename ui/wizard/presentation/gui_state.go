@@ -64,6 +64,8 @@ type GUIState struct {
 	RuleOutboundSelects        []*RuleWidget
 
 	// Navigation buttons
+	ReadButton       *widget.Button
+	SaveAsButton     *widget.Button
 	CloseButton      *widget.Button
 	PrevButton       *widget.Button
 	NextButton       *widget.Button
