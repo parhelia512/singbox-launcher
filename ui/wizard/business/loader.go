@@ -50,8 +50,8 @@ func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardte
 	fileInfo, err := os.Stat(configPath)
 	if err == nil {
 		// Validate file size before loading
-		if fileInfo.Size() > parser.MaxConfigFileSize {
-			debuglog.ErrorLog("ConfigWizard: config.json file size (%d bytes) exceeds maximum (%d bytes)", fileInfo.Size(), parser.MaxConfigFileSize)
+		if err := ValidateSize(fileInfo.Size(), parser.MaxConfigFileSize, "config.json file"); err != nil {
+			debuglog.ErrorLog("ConfigWizard: %v", err)
 			return false, "", "", fmt.Errorf("config.json file is too large (%d bytes, maximum %d bytes). Please check the file size and content", fileInfo.Size(), parser.MaxConfigFileSize)
 		}
 

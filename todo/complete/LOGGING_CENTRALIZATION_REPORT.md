@@ -375,8 +375,5 @@ debuglog.InfoLog("Operation completed successfully")
 4. **Интеграция** - возможность отправки логов во внешние системы (Sentry, ELK и т.д.)
 
 ---
-
-**Автор рефакторинга:** AI Assistant  
 **Дата:** 2026-02-08  
-**Версия:** 1.0
 

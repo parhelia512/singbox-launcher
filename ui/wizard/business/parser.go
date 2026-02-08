@@ -53,8 +53,14 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 	inputLines := strings.Split(input, "\n")
 	debuglog.DebugLog("checkURL: Processing %d input lines", len(inputLines))
 	totalValid := 0
-	previewLines := make([]string, 0)
-	errors := make([]string, 0)
+	// Pre-allocate slices with estimated capacity to avoid multiple reallocations
+	estimatedPreview := min(len(inputLines), wizardutils.MaxPreviewLines)
+	estimatedErrors := len(inputLines) / 4
+	if estimatedErrors < 1 {
+		estimatedErrors = 1
+	}
+	previewLines := make([]string, 0, estimatedPreview)
+	errors := make([]string, 0, estimatedErrors)
 
 	for i, line := range inputLines {
 		lineStartTime := time.Now()

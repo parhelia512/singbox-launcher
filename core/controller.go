@@ -133,7 +133,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 		func() bool { return ac.RunningState.IsRunning() },
 		func() {
 			// OnProxiesUpdated callback
-			if ac.UIService != nil {
+			if ac.hasUI() {
 				if ac.UIService.ProxiesListWidget != nil {
 					ac.UIService.ProxiesListWidget.Refresh()
 				}
@@ -152,7 +152,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 		},
 		func() {
 			// OnProxySwitched callback
-			if ac.UIService != nil {
+			if ac.hasUI() {
 				if ac.UIService.UpdateTrayMenuFunc != nil {
 					ac.UIService.UpdateTrayMenuFunc()
 				}
@@ -194,14 +194,14 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 
 // UpdateUI updates all UI elements based on the current application state.
 func (ac *AppController) UpdateUI() {
-	if ac.UIService != nil {
+	if ac.hasUI() {
 		ac.UIService.UpdateUI()
 	}
 }
 
 // GetApplication returns the Fyne application instance.
 func (ac *AppController) GetApplication() fyne.App {
-	if ac.UIService != nil {
+	if ac.hasUI() {
 		return ac.UIService.Application
 	}
 	return nil
@@ -209,10 +209,20 @@ func (ac *AppController) GetApplication() fyne.App {
 
 // GetMainWindow returns the main window instance.
 func (ac *AppController) GetMainWindow() fyne.Window {
-	if ac.UIService != nil {
+	if ac.hasUI() {
 		return ac.UIService.MainWindow
 	}
 	return nil
+}
+
+// hasUI проверяет, доступен ли UI для обновлений (MainWindow)
+func (ac *AppController) hasUI() bool {
+	return ac.UIService != nil && ac.UIService.MainWindow != nil
+}
+
+// hasUIWithApp проверяет, доступен ли UI с Application (для ShowAutoHideInfo)
+func (ac *AppController) hasUIWithApp() bool {
+	return ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil
 }
 
 // GracefulExit performs a graceful shutdown of the application.
@@ -224,7 +234,7 @@ func (ac *AppController) GracefulExit() {
 	}
 
 	// Stop any pending menu update timer
-	if ac.UIService != nil {
+	if ac.hasUI() {
 		ac.UIService.StopTrayMenuUpdateTimer()
 	}
 
@@ -233,6 +243,8 @@ func (ac *AppController) GracefulExit() {
 	debuglog.InfoLog("GracefulExit: Waiting for sing-box to stop...")
 	// Use ProcessService constant for timeout
 	timeout := time.After(2 * time.Second) // gracefulShutdownTimeout from ProcessService
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		if !ac.RunningState.IsRunning() {
 			debuglog.InfoLog("GracefulExit: Sing-box confirmed stopped.")
@@ -247,8 +259,8 @@ func (ac *AppController) GracefulExit() {
 			}
 			ac.CmdMutex.Unlock()
 			goto end_loop
-		default:
-			time.Sleep(100 * time.Millisecond)
+		case <-ticker.C:
+			// Check state on each tick - continue loop to re-check IsRunning()
 		}
 	}
 end_loop:
@@ -257,7 +269,7 @@ end_loop:
 		ac.FileService.CloseLogFiles()
 	}
 
-	if ac.UIService != nil {
+	if ac.hasUI() {
 		ac.UIService.QuitApplication()
 	}
 }
@@ -298,7 +310,7 @@ func CheckLinuxCapabilities(ac *AppController) {
 	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
 		debuglog.InfoLog("CheckLinuxCapabilities: %s", suggestion)
 		// Show info dialog (not error) - capabilities can be set later
-		if ac.UIService != nil && ac.UIService.MainWindow != nil {
+		if ac.hasUI() {
 			dialogs.ShowInfo(ac.UIService.MainWindow, "Linux Capabilities", suggestion)
 		}
 	}
@@ -493,7 +505,7 @@ func CheckConfigFileExists(ac *AppController) {
 			constants.ConfigFileName,
 		)
 
-		if ac.UIService != nil && ac.UIService.MainWindow != nil {
+		if ac.hasUI() {
 			dialogs.ShowInfo(ac.UIService.MainWindow, "Configuration Not Found", message)
 		}
 	}
@@ -519,7 +531,7 @@ func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
 			continue
 		}
 		if strings.EqualFold(p.Name, execName) {
-			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+			if ac.hasUI() {
 				dialogs.ShowInfo(ac.UIService.MainWindow, "Information", "The application is already running. Use the existing instance or close it before starting a new one.")
 			}
 			return
@@ -546,7 +558,7 @@ func CheckFilesUtil(ac *AppController) {
 	} else {
 		msg += "\nSome files missing. ❌"
 	}
-	if ac.UIService != nil && ac.UIService.MainWindow != nil {
+	if ac.hasUI() {
 		dialogs.ShowInfo(ac.UIService.MainWindow, "File Check", msg)
 	}
 }
@@ -570,7 +582,7 @@ func ShowSingBoxAlreadyRunningWarningUtil(ac *AppController) {
 	closeButton := widget.NewButton("Close This Warning", nil)
 	content := container.NewVBox(label, killButton, closeButton)
 	var d dialog.Dialog
-	if ac.UIService != nil && ac.UIService.MainWindow != nil {
+	if ac.hasUI() {
 		d = dialog.NewCustomWithoutButtons("Warning", content, ac.UIService.MainWindow)
 	}
 	killButton.OnTapped = func() {
@@ -687,7 +699,7 @@ func (ac *AppController) addHideDockMenuItem(menuItems []*fyne.MenuItem) []*fyne
 			} else {
 				platform.RestoreDockIcon()
 				// Restore and show the main window when unchecking (or focus wizard if open)
-				if ac.UIService != nil {
+				if ac.hasUI() {
 					ac.UIService.ShowMainWindowOrFocusWizard()
 				}
 				debuglog.InfoLog("Tray: Hide app from Dock disabled — Dock restored and window shown")
@@ -776,7 +788,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 					fyne.Do(func() {
 						if err != nil {
 							debuglog.ErrorLog("CreateTrayMenu: Failed to switch proxy: %v", err)
-							if ac.UIService != nil && ac.UIService.MainWindow != nil {
+							if ac.hasUI() {
 								dialogs.ShowError(ac.UIService.MainWindow, err)
 							}
 						}
@@ -817,7 +829,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	
 	menuItems = append(menuItems,
 		fyne.NewMenuItem("Open", func() {
-			if ac.UIService != nil {
+			if ac.hasUI() {
 				platform.RestoreDockIcon()
 				ac.UIService.ShowMainWindowOrFocusWizard()
 			}
@@ -900,11 +912,8 @@ func (ac *AppController) startAutoUpdateLoop() {
 		debuglog.DebugLog("Auto-update: Calculated interval: %v (min: %v)", checkInterval, autoUpdateMinInterval)
 
 		// Check if update is needed immediately (before waiting)
-		requiredInterval, err := ac.calculateAutoUpdateInterval()
-		if err != nil {
-			debuglog.WarnLog("Auto-update: Failed to calculate required interval: %v, using default", err)
-			requiredInterval = autoUpdateMinInterval
-		}
+		// Use the same calculated interval to avoid duplicate function call
+		requiredInterval := checkInterval
 
 		needsUpdate, err := ac.shouldAutoUpdate(requiredInterval)
 		if err != nil {
@@ -931,7 +940,7 @@ func (ac *AppController) startAutoUpdateLoop() {
 						ac.StateService.SetAutoUpdateEnabled(false)
 						debuglog.WarnLog("Auto-update: Stopped after %d consecutive failed attempts", failedAttempts)
 						fyne.Do(func() {
-							if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
+							if ac.hasUIWithApp() {
 								dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Auto-update", "Automatic configuration update stopped after 10 failed attempts. Use manual update.")
 							}
 						})

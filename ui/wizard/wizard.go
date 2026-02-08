@@ -171,11 +171,19 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 
 	// Create navigation buttons
 	guiState.CloseButton = widget.NewButton("Close", func() {
+		// Cancel save operation if in progress
+		if guiState.SaveInProgress {
+			presenter.CancelSaveOperation()
+		}
 		wizardWindow.Close()
 	})
 
 	// Close window via X
 	wizardWindow.SetCloseIntercept(func() {
+		// Cancel save operation if in progress
+		if guiState.SaveInProgress {
+			presenter.CancelSaveOperation()
+		}
 		wizardWindow.Close()
 	})
 	guiState.CloseButton.Importance = widget.HighImportance

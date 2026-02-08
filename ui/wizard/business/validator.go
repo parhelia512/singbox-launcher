@@ -190,12 +190,19 @@ func ValidateJSON(jsonData []byte) error {
 	return nil
 }
 
-// ValidateHTTPResponseSize validates HTTP response size.
-func ValidateHTTPResponseSize(size int64) error {
-	if size > wizardutils.MaxSubscriptionSize {
-		return fmt.Errorf("HTTP response size (%d bytes) exceeds maximum (%d bytes)", size, wizardutils.MaxSubscriptionSize)
+// ValidateSize validates that size is within the specified maximum limit.
+// This is a generic function for validating sizes of various entities (files, HTTP responses, etc.).
+func ValidateSize(size int64, maxSize int64, entityName string) error {
+	if size > maxSize {
+		return fmt.Errorf("%s size (%d bytes) exceeds maximum (%d bytes)", entityName, size, maxSize)
 	}
 	return nil
+}
+
+// ValidateHTTPResponseSize validates HTTP response size.
+// Uses ValidateSize internally for consistency.
+func ValidateHTTPResponseSize(size int64) error {
+	return ValidateSize(size, wizardutils.MaxSubscriptionSize, "HTTP response")
 }
 
 // ValidateParserConfigJSON validates ParserConfig JSON text.

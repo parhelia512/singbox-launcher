@@ -82,26 +82,41 @@ func (p *WizardPresenter) SaveConfig() {
 			maxWaitTime := 60 * time.Second
 			startTime := time.Now()
 			iterations := 0
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			
 			for p.model.AutoParseInProgress {
+				// Check if save operation was cancelled
+				if !p.guiState.SaveInProgress {
+					debuglog.DebugLog("presenter_save: Save operation cancelled during parsing wait")
+					return
+				}
 				if time.Since(startTime) > maxWaitTime {
 					p.UpdateUI(func() {
 						dialog.ShowError(fmt.Errorf("Parsing timeout: operation took too long"), p.guiState.Window)
 					})
 					return
 				}
-				time.Sleep(100 * time.Millisecond)
-				iterations++
-				progressRange := 0.35
-				baseProgress := 0.05
-				cycleProgress := float64(iterations%40) / 40.0
-				currentProgress := baseProgress + cycleProgress*progressRange
-				p.UpdateSaveProgress(currentProgress)
+				select {
+				case <-ticker.C:
+					iterations++
+					progressRange := 0.35
+					baseProgress := 0.05
+					cycleProgress := float64(iterations%40) / 40.0
+					currentProgress := baseProgress + cycleProgress*progressRange
+					p.UpdateSaveProgress(currentProgress)
+				}
 			}
 			p.UpdateSaveProgress(0.4)
 		}
 
 		// Step 1: Build config (40-80%)
 		p.UpdateSaveProgress(0.4)
+		// Check if save operation was cancelled
+		if !p.guiState.SaveInProgress {
+			debuglog.DebugLog("presenter_save: Save operation cancelled before building config")
+			return
+		}
 		text, err := wizardbusiness.BuildTemplateConfig(p.model, false)
 		if err != nil {
 			p.UpdateUI(func() {
@@ -112,6 +127,11 @@ func (p *WizardPresenter) SaveConfig() {
 		p.UpdateSaveProgress(0.8)
 
 		// Step 2: Save file (80-95%)
+		// Check if save operation was cancelled
+		if !p.guiState.SaveInProgress {
+			debuglog.DebugLog("presenter_save: Save operation cancelled before saving file")
+			return
+		}
 		fileService := &wizardbusiness.FileServiceAdapter{
 			FileService: p.controller.FileService,
 		}
@@ -125,6 +145,11 @@ func (p *WizardPresenter) SaveConfig() {
 		p.UpdateSaveProgress(0.9)
 
 		// Step 3: Validate config with sing-box (90-95%)
+		// Check if save operation was cancelled
+		if !p.guiState.SaveInProgress {
+			debuglog.DebugLog("presenter_save: Save operation cancelled before validation")
+			return
+		}
 		singBoxPath := ""
 		if p.controller.FileService != nil {
 			singBoxPath = p.controller.FileService.SingboxPath
@@ -134,9 +159,9 @@ func (p *WizardPresenter) SaveConfig() {
 		p.UpdateSaveProgress(0.95)
 
 		// Step 4: Completion (95-100%)
-		time.Sleep(100 * time.Millisecond)
+		<-time.After(100 * time.Millisecond)
 		p.UpdateSaveProgress(1.0)
-		time.Sleep(200 * time.Millisecond)
+		<-time.After(200 * time.Millisecond)
 
 		p.UpdateUI(func() {
 			// Show result with validation status

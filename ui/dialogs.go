@@ -59,12 +59,12 @@ func ShowAutoHideInfo(app fyne.App, window fyne.Window, title, message string) {
 	// Re-export from internal/dialogs to avoid import cycles
 	// This allows ui package to use the same function
 	app.SendNotification(&fyne.Notification{Title: title, Content: message})
-	fyne.Do(func() {
-		d := dialog.NewCustomWithoutButtons(title, widget.NewLabel(message), window)
-		d.Show()
-		go func() {
-			time.Sleep(2 * time.Second)
-			fyne.Do(func() { d.Hide() })
-		}()
-	})
+		fyne.Do(func() {
+			d := dialog.NewCustomWithoutButtons(title, widget.NewLabel(message), window)
+			d.Show()
+			go func() {
+				<-time.After(2 * time.Second)
+				fyne.Do(func() { d.Hide() })
+			}()
+		})
 }

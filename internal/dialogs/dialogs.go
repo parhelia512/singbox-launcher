@@ -51,7 +51,7 @@ func ShowAutoHideInfo(app fyne.App, window fyne.Window, title, message string) {
 		d := dialog.NewCustomWithoutButtons(title, widget.NewLabel(message), window)
 		d.Show()
 		go func() {
-			time.Sleep(2 * time.Second)
+			<-time.After(2 * time.Second)
 			fyne.Do(func() { d.Hide() })
 		}()
 	})

@@ -145,7 +145,7 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 					if progress >= 100 {
 						// Completed - hide after a short delay
 						go func() {
-							time.Sleep(1 * time.Second)
+							<-time.After(1 * time.Second)
 							fyne.Do(func() {
 								tab.parserProgressBar.Hide()
 								tab.parserStatusLabel.Hide()
@@ -854,7 +854,7 @@ func (tab *CoreDashboardTab) startAutoUpdate() {
 					// Устанавливаем успех после небольшой задержки
 					// (в реальности нужно отслеживать через канал, но для простоты используем задержку)
 					go func() {
-						time.Sleep(2 * time.Second)
+						<-time.After(2 * time.Second)
 						tab.lastUpdateSuccess = true // Упрощенная логика
 					}()
 				case <-tab.stopAutoUpdate:

@@ -121,6 +121,14 @@ func (p *WizardPresenter) SetSaveState(buttonText string, progress float64) {
 	})
 }
 
+// CancelSaveOperation отменяет текущую операцию сохранения.
+// Устанавливает SaveInProgress в false, что позволяет горутине сохранения завершиться.
+func (p *WizardPresenter) CancelSaveOperation() {
+	p.UpdateUI(func() {
+		p.guiState.SaveInProgress = false
+	})
+}
+
 // RefreshOutboundOptions обновляет опции outbound для всех правил.
 func (p *WizardPresenter) RefreshOutboundOptions() {
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
