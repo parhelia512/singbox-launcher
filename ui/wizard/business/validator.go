@@ -13,10 +13,9 @@
 // и могут быть использованы для тестирования бизнес-логики без Fyne.
 //
 // Валидаторы находятся в wizard/business, а не в core/config:
-// используют константы из wizard/utils (MaxJSONConfigSize, MaxURILength и т.д.)
+// используют константы из wizard/utils (MaxURILength и т.д.) и core/config/parser (MaxConfigFileSize)
 // которые специфичны для визарда (лимиты для UI операций),
 // используются только в контексте визарда (parser.go, loader.go, generator.go).
-// В core/config/parser есть своя валидация с другими лимитами (MaxConfigFileSize).
 //
 // Они используются в:
 //   - parser.go - для валидации URL и ParserConfig перед обработкой
