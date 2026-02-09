@@ -24,7 +24,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
@@ -71,8 +70,7 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 
 	// Функция проверки существования ID
 	checkIDExists := func(id string) bool {
-		fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: presenter.Controller().FileService}
-		stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
+		stateStore := presenter.GetStateStore()
 		return stateStore.StateExists(id)
 	}
 

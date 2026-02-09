@@ -47,15 +47,15 @@ var (
 
 // WizardStateFile представляет сериализуемое состояние визарда.
 type WizardStateFile struct {
-	Version              int                    `json:"version"`
-	ID                   string                 `json:"id,omitempty"` // Опционально для state.json, обязательно для именованных состояний
-	Comment              string                 `json:"comment,omitempty"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
-	ParserConfig         config.ParserConfig    `json:"parser_config"`
-	ConfigParams         []ConfigParam          `json:"config_params"`
-	SelectableRuleStates []PersistedRuleState   `json:"selectable_rule_states"`
-	CustomRules          []PersistedRuleState   `json:"custom_rules"`
+	Version              int                  `json:"version"`
+	ID                   string               `json:"id,omitempty"` // Опционально для state.json, обязательно для именованных состояний
+	Comment              string               `json:"comment,omitempty"`
+	CreatedAt            time.Time            `json:"created_at"`
+	UpdatedAt            time.Time            `json:"updated_at"`
+	ParserConfig         config.ParserConfig  `json:"parser_config"`
+	ConfigParams         []ConfigParam        `json:"config_params"`
+	SelectableRuleStates []PersistedRuleState `json:"selectable_rule_states"`
+	CustomRules          []PersistedRuleState `json:"custom_rules"`
 }
 
 // ConfigParam представляет параметр конфигурации.
@@ -112,13 +112,13 @@ func ValidateStateID(id string) error {
 func ToPersistedRuleState(ruleState *RuleState, ruleType string) PersistedRuleState {
 	// Если тип не задан, определяем его из rule.raw
 	if ruleType == "" {
-		ruleType = determineRuleType(ruleState.Rule.Raw)
+		ruleType = DetermineRuleType(ruleState.Rule.Raw)
 	}
 
 	return PersistedRuleState{
-		Type:    ruleType,
-		Rule:    ToPersistedTemplateSelectableRule(ruleState.Rule),
-		Enabled: ruleState.Enabled,
+		Type:             ruleType,
+		Rule:             ToPersistedTemplateSelectableRule(ruleState.Rule),
+		Enabled:          ruleState.Enabled,
 		SelectedOutbound: ruleState.SelectedOutbound,
 	}
 }
@@ -151,9 +151,10 @@ func (prs *PersistedRuleState) ToRuleState() *RuleState {
 	}
 }
 
-// determineRuleType определяет тип правила на основе rule.raw.
+// DetermineRuleType определяет тип правила на основе rule.raw.
 // Используется для системных правил, если type не задан явно.
-func determineRuleType(raw map[string]interface{}) string {
+// Экспортируется для использования в других пакетах.
+func DetermineRuleType(raw map[string]interface{}) string {
 	if raw == nil {
 		return "Custom JSON"
 	}
@@ -275,4 +276,3 @@ func (wsm *WizardStateMetadata) UnmarshalJSON(data []byte) error {
 
 	return nil
 }
-

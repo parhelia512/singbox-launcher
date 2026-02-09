@@ -52,6 +52,7 @@ func NewStateStore(fileService FileServiceInterface) *StateStore {
 }
 
 // ensureStatesDir создает директорию состояний, если она не существует.
+// Используется перед сохранением и загрузкой состояний.
 func (ss *StateStore) ensureStatesDir() error {
 	if err := os.MkdirAll(ss.statesDir, 0755); err != nil {
 		return fmt.Errorf("failed to create wizard states directory: %w", err)
@@ -60,6 +61,7 @@ func (ss *StateStore) ensureStatesDir() error {
 }
 
 // getStateFilePath возвращает путь к файлу состояния по ID.
+// Для пустого ID возвращает путь к state.json.
 func (ss *StateStore) getStateFilePath(id string) string {
 	if id == "" {
 		return filepath.Join(ss.statesDir, wizardmodels.StateFileName)
@@ -132,33 +134,37 @@ func (ss *StateStore) SaveCurrentState(state *wizardmodels.WizardStateFile) erro
 	return ss.SaveWizardState(state, "")
 }
 
-// LoadWizardState загружает состояние из файла по ID.
-func (ss *StateStore) LoadWizardState(id string) (*wizardmodels.WizardStateFile, error) {
-	if id == "" {
-		return nil, fmt.Errorf("state ID cannot be empty")
-	}
-
-	filePath := ss.getStateFilePath(id)
-
+// loadStateFromFile загружает состояние из файла по пути.
+// Внутренняя функция для устранения дублирования кода.
+func (ss *StateStore) loadStateFromFile(filePath string, expectedID string) (*wizardmodels.WizardStateFile, error) {
 	// Проверяем существование файла
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if expectedID == "" {
+			return nil, fmt.Errorf("state.json not found")
+		}
 		return nil, fmt.Errorf("state file not found: %s", filePath)
 	}
 
 	// Читаем файл
 	data, err := os.ReadFile(filePath)
 	if err != nil {
+		if expectedID == "" {
+			return nil, fmt.Errorf("failed to read state.json: %w", err)
+		}
 		return nil, fmt.Errorf("failed to read state file: %w", err)
 	}
 
 	// Проверка размера файла
 	if len(data) > MaxStateFileSize {
-		debuglog.WarnLog("LoadWizardState: state file size (%d bytes) exceeds recommended maximum (%d bytes)", len(data), MaxStateFileSize)
+		debuglog.WarnLog("loadStateFromFile: state file size (%d bytes) exceeds recommended maximum (%d bytes)", len(data), MaxStateFileSize)
 	}
 
 	// Десериализуем JSON
 	var state wizardmodels.WizardStateFile
 	if err := json.Unmarshal(data, &state); err != nil {
+		if expectedID == "" {
+			return nil, fmt.Errorf("failed to unmarshal state.json: %w", err)
+		}
 		return nil, fmt.Errorf("failed to unmarshal state file: %w", err)
 	}
 
@@ -168,42 +174,86 @@ func (ss *StateStore) LoadWizardState(id string) (*wizardmodels.WizardStateFile,
 	}
 
 	// Валидация ID (если задан, должен совпадать с именем файла)
-	if state.ID != "" && state.ID != id {
-		debuglog.WarnLog("LoadWizardState: state ID mismatch: file has %q, but expected %q", state.ID, id)
+	if expectedID != "" && state.ID != "" && state.ID != expectedID {
+		debuglog.WarnLog("loadStateFromFile: state ID mismatch: file has %q, but expected %q", state.ID, expectedID)
 	}
 
-	debuglog.InfoLog("LoadWizardState: loaded state from %s", filePath)
+	debuglog.InfoLog("loadStateFromFile: loaded state from %s", filePath)
 	return &state, nil
+}
+
+// LoadWizardState загружает состояние из файла по ID.
+func (ss *StateStore) LoadWizardState(id string) (*wizardmodels.WizardStateFile, error) {
+	if id == "" {
+		return nil, fmt.Errorf("state ID cannot be empty")
+	}
+
+	filePath := ss.getStateFilePath(id)
+	return ss.loadStateFromFile(filePath, id)
 }
 
 // LoadCurrentState загружает состояние из state.json.
 func (ss *StateStore) LoadCurrentState() (*wizardmodels.WizardStateFile, error) {
 	filePath := ss.getStateFilePath("")
+	return ss.loadStateFromFile(filePath, "")
+}
 
-	// Проверяем существование файла
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("state.json not found")
+// parseStateMetadata парсит метаданные состояния из JSON данных.
+// Использует время модификации файла как fallback для дат.
+func (ss *StateStore) parseStateMetadata(data []byte, modTime time.Time) (wizardmodels.WizardStateMetadata, error) {
+	var metadata wizardmodels.WizardStateMetadata
+
+	// Парсим только метаданные (не весь файл)
+	var aux struct {
+		ID        string `json:"id,omitempty"`
+		Comment   string `json:"comment,omitempty"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
 	}
 
-	// Читаем файл
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read state.json: %w", err)
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return metadata, fmt.Errorf("failed to parse metadata: %w", err)
 	}
 
-	// Десериализуем JSON
-	var state wizardmodels.WizardStateFile
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal state.json: %w", err)
+	metadata.ID = aux.ID
+	metadata.Comment = aux.Comment
+
+	// Парсим время создания
+	if aux.CreatedAt != "" {
+		createdAt, err := time.Parse(time.RFC3339, aux.CreatedAt)
+		if err != nil {
+			debuglog.WarnLog("parseStateMetadata: invalid created_at: %v, using file mod time", err)
+			metadata.CreatedAt = modTime
+		} else {
+			metadata.CreatedAt = createdAt
+		}
+	} else {
+		metadata.CreatedAt = modTime
 	}
 
-	// Валидация версии
-	if state.Version != wizardmodels.WizardStateVersion {
-		return nil, fmt.Errorf("unsupported state file version: %d (expected %d)", state.Version, wizardmodels.WizardStateVersion)
+	// Парсим время обновления
+	if aux.UpdatedAt != "" {
+		updatedAt, err := time.Parse(time.RFC3339, aux.UpdatedAt)
+		if err != nil {
+			debuglog.WarnLog("parseStateMetadata: invalid updated_at: %v, using file mod time", err)
+			metadata.UpdatedAt = modTime
+		} else {
+			metadata.UpdatedAt = updatedAt
+		}
+	} else {
+		metadata.UpdatedAt = modTime
 	}
 
-	debuglog.InfoLog("LoadCurrentState: loaded state from %s", filePath)
-	return &state, nil
+	return metadata, nil
+}
+
+// extractStateIDFromFileName извлекает ID состояния из имени файла.
+// Возвращает ID и флаг isCurrent (true для state.json).
+func extractStateIDFromFileName(fileName string) (id string, isCurrent bool) {
+	if fileName == wizardmodels.StateFileName {
+		return "", true
+	}
+	return strings.TrimSuffix(fileName, ".json"), false
 }
 
 // ListWizardStates возвращает список всех сохранённых состояний с метаданными.
@@ -232,15 +282,7 @@ func (ss *StateStore) ListWizardStates() ([]wizardmodels.WizardStateMetadata, er
 		}
 
 		// Определяем ID из имени файла
-		var id string
-		var isCurrent bool
-		if fileName == wizardmodels.StateFileName {
-			id = ""
-			isCurrent = true
-		} else {
-			id = strings.TrimSuffix(fileName, ".json")
-			isCurrent = false
-		}
+		id, isCurrent := extractStateIDFromFileName(fileName)
 
 		// Загружаем метаданные из файла
 		filePath := filepath.Join(ss.statesDir, fileName)
@@ -250,73 +292,30 @@ func (ss *StateStore) ListWizardStates() ([]wizardmodels.WizardStateMetadata, er
 			continue
 		}
 
-		// Парсим только метаданные (не весь файл)
-		var state struct {
-			ID        string    `json:"id,omitempty"`
-			Comment   string    `json:"comment,omitempty"`
-			CreatedAt time.Time `json:"created_at"`
-			UpdatedAt time.Time `json:"updated_at"`
+		// Получаем время модификации файла как fallback
+		fileInfo, err := entry.Info()
+		modTime := time.Now()
+		if err == nil {
+			modTime = fileInfo.ModTime()
 		}
 
-		// Используем кастомный UnmarshalJSON для времени
-		var aux struct {
-			ID        string `json:"id,omitempty"`
-			Comment   string `json:"comment,omitempty"`
-			CreatedAt string `json:"created_at"`
-			UpdatedAt string `json:"updated_at"`
-		}
-		if err := json.Unmarshal(data, &aux); err != nil {
+		// Парсим метаданные
+		metadata, err := ss.parseStateMetadata(data, modTime)
+		if err != nil {
 			debuglog.WarnLog("ListWizardStates: failed to parse %s: %v", filePath, err)
 			continue
 		}
 
-		state.ID = aux.ID
-		state.Comment = aux.Comment
-
-		// Получаем время модификации файла как fallback
-		fileInfo, err := entry.Info()
-		var modTime time.Time
-		if err != nil {
-			modTime = time.Now()
-		} else {
-			modTime = fileInfo.ModTime()
-		}
-
-		// Парсим время
-		if aux.CreatedAt != "" {
-			createdAt, err := time.Parse(time.RFC3339, aux.CreatedAt)
-			if err != nil {
-				debuglog.WarnLog("ListWizardStates: invalid created_at in %s: %v", filePath, err)
-				createdAt = modTime
-			}
-			state.CreatedAt = createdAt
-		} else {
-			state.CreatedAt = modTime
-		}
-
-		if aux.UpdatedAt != "" {
-			updatedAt, err := time.Parse(time.RFC3339, aux.UpdatedAt)
-			if err != nil {
-				debuglog.WarnLog("ListWizardStates: invalid updated_at in %s: %v", filePath, err)
-				updatedAt = modTime
-			}
-			state.UpdatedAt = updatedAt
-		} else {
-			state.UpdatedAt = modTime
-		}
-
 		// Если ID не задан в файле, используем имя файла
-		if state.ID == "" && !isCurrent {
-			state.ID = id
+		if metadata.ID == "" && !isCurrent {
+			metadata.ID = id
 		}
 
-		states = append(states, wizardmodels.WizardStateMetadata{
-			ID:        id,
-			Comment:   state.Comment,
-			CreatedAt: state.CreatedAt,
-			UpdatedAt: state.UpdatedAt,
-			IsCurrent: isCurrent,
-		})
+		// Устанавливаем ID и флаг isCurrent
+		metadata.ID = id
+		metadata.IsCurrent = isCurrent
+
+		states = append(states, metadata)
 	}
 
 	debuglog.DebugLog("ListWizardStates: found %d states", len(states))

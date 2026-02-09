@@ -86,7 +86,7 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 	state.CustomRules = make([]wizardmodels.PersistedRuleState, 0, len(p.model.CustomRules))
 	for _, ruleState := range p.model.CustomRules {
 		// Для пользовательских правил тип определяется из rule.raw
-		ruleType := determineRuleType(ruleState.Rule.Raw)
+		ruleType := wizardmodels.DetermineRuleType(ruleState.Rule.Raw)
 		persisted := wizardmodels.ToPersistedRuleState(ruleState, ruleType)
 		state.CustomRules = append(state.CustomRules, persisted)
 	}
@@ -125,8 +125,7 @@ func (p *WizardPresenter) SaveCurrentState() error {
 	p.SyncGUIToModel()
 
 	state := p.CreateStateFromModel("", "")
-	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: p.controller.FileService}
-	stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
+	stateStore := p.getStateStore()
 
 	// Получаем путь к state.json для логирования
 	statesDir := filepath.Join(p.controller.FileService.ExecDir, "bin", wizardbusiness.WizardStatesDir)
@@ -151,8 +150,7 @@ func (p *WizardPresenter) SaveStateAs(comment, id string) error {
 	}
 
 	state := p.CreateStateFromModel(comment, id)
-	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: p.controller.FileService}
-	stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
+	stateStore := p.getStateStore()
 
 	if err := stateStore.SaveWizardState(state, id); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
@@ -164,6 +162,7 @@ func (p *WizardPresenter) SaveStateAs(comment, id string) error {
 }
 
 // LoadState загружает состояние в модель согласно детальной последовательности восстановления.
+// Выполняет 9-шаговую последовательность восстановления WizardModel согласно спецификации.
 func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) error {
 	if stateFile == nil {
 		return fmt.Errorf("state file cannot be nil")
@@ -172,12 +171,45 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	timing := debuglog.StartTiming("loadState")
 	defer timing.EndWithDefer()
 
-	// 1. Загрузить шаблон (TemplateData) - уже загружен при инициализации визарда
+	// Валидация шаблона (шаг 1)
 	if p.model.TemplateData == nil {
 		return fmt.Errorf("template data not available")
 	}
 
-	// 2. Восстановить parser_config
+	// Восстановление parser_config (шаг 2)
+	if err := p.restoreParserConfig(stateFile); err != nil {
+		return err
+	}
+
+	// Извлечение SourceURLs (шаг 3)
+	p.model.SourceURLs = p.extractSourceURLsFromParserConfig(&stateFile.ParserConfig)
+
+	// Восстановление config_params (шаг 4)
+	p.restoreConfigParams(stateFile.ConfigParams)
+
+	// Инициализация TemplateSectionSelections (шаг 5)
+	p.initializeTemplateSectionSelections()
+
+	// Восстановление SelectableRuleStates (шаг 6)
+	p.restoreSelectableRuleStates(stateFile.SelectableRuleStates)
+
+	// Восстановление CustomRules (шаг 7)
+	p.restoreCustomRules(stateFile.CustomRules)
+
+	// Установка флага для парсинга (шаг 8)
+	p.model.PreviewNeedsParse = true
+
+	// Синхронизация GUI (шаг 9)
+	p.SyncModelToGUI()
+
+	// Сбрасываем флаг изменений
+	p.MarkAsSaved()
+
+	return nil
+}
+
+// restoreParserConfig восстанавливает parser_config из состояния (шаг 2).
+func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStateFile) error {
 	if stateFile.ParserConfig.ParserConfig.Proxies == nil {
 		return fmt.Errorf("invalid parser_config: Proxies is nil")
 	}
@@ -191,46 +223,38 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	}
 	p.model.ParserConfigJSON = parserConfigJSON
 
-	// 3. Извлечь SourceURLs из parser_config
-	p.model.SourceURLs = p.extractSourceURLsFromParserConfig(&stateFile.ParserConfig)
+	return nil
+}
 
-	// 4. Восстановить config_params и маппинг в модель
-	p.restoreConfigParams(stateFile.ConfigParams)
-
-	// 5. Инициализировать TemplateSectionSelections (все секции = true)
+// initializeTemplateSectionSelections инициализирует TemplateSectionSelections (шаг 5).
+// Все секции устанавливаются в true.
+func (p *WizardPresenter) initializeTemplateSectionSelections() {
 	p.model.TemplateSectionSelections = make(map[string]bool)
 	for _, sectionKey := range p.model.TemplateData.SectionOrder {
 		p.model.TemplateSectionSelections[sectionKey] = true
 	}
+}
 
-	// 6. Обновить SelectableRuleStates
-	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(stateFile.SelectableRuleStates))
-	for _, persistedRule := range stateFile.SelectableRuleStates {
+// restoreSelectableRuleStates восстанавливает SelectableRuleStates из состояния (шаг 6).
+func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmodels.PersistedRuleState) {
+	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(persistedRules))
+	for _, persistedRule := range persistedRules {
 		ruleState := persistedRule.ToRuleState()
 		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, ruleState)
 	}
+}
 
-	// 7. Обновить CustomRules
-	p.model.CustomRules = make([]*wizardmodels.RuleState, 0, len(stateFile.CustomRules))
-	for _, persistedRule := range stateFile.CustomRules {
+// restoreCustomRules восстанавливает CustomRules из состояния (шаг 7).
+func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.PersistedRuleState) {
+	p.model.CustomRules = make([]*wizardmodels.RuleState, 0, len(persistedRules))
+	for _, persistedRule := range persistedRules {
 		ruleState := persistedRule.ToRuleState()
 		p.model.CustomRules = append(p.model.CustomRules, ruleState)
 	}
-
-	// 8. Запустить парсинг для генерации GeneratedOutbounds
-	// Это будет сделано автоматически при следующем обновлении preview
-	p.model.PreviewNeedsParse = true
-
-	// 9. Синхронизировать GUI с моделью
-	p.SyncModelToGUI()
-
-	// Сбрасываем флаг изменений
-	p.MarkAsSaved()
-
-	return nil
 }
 
 // extractSourceURLsFromParserConfig извлекает SourceURLs из ParserConfig.
+// Объединяет Source и Connections из всех ProxySource в одну строку, разделенную переносами строк.
 func (p *WizardPresenter) extractSourceURLsFromParserConfig(parserConfig *config.ParserConfig) string {
 	if parserConfig == nil || len(parserConfig.ParserConfig.Proxies) == 0 {
 		return ""
@@ -249,56 +273,52 @@ func (p *WizardPresenter) extractSourceURLsFromParserConfig(parserConfig *config
 
 // restoreConfigParams восстанавливает config_params и маппинг в модель.
 func (p *WizardPresenter) restoreConfigParams(configParams []wizardmodels.ConfigParam) {
-	// Ищем route.final
-	routeFinalFound := false
-	for _, param := range configParams {
-		if param.Name == "route.final" {
-			if param.Value != "" {
-				p.model.SelectedFinalOutbound = param.Value
-			} else if p.model.TemplateData != nil && p.model.TemplateData.DefaultFinal != "" {
-				// Fallback на значение из шаблона
-				p.model.SelectedFinalOutbound = p.model.TemplateData.DefaultFinal
-			}
-			routeFinalFound = true
-			break
-		}
-	}
+	// Ищем route.final в параметрах
+	finalOutbound := p.findConfigParamValue(configParams, "route.final")
 
-	// Если route.final не найден, используем значение по умолчанию из шаблона
-	if !routeFinalFound && p.model.TemplateData != nil && p.model.TemplateData.DefaultFinal != "" {
-		p.model.SelectedFinalOutbound = p.model.TemplateData.DefaultFinal
+	// Используем значение из параметров, если задано, иначе fallback на шаблон
+	if finalOutbound != "" {
+		p.model.SelectedFinalOutbound = finalOutbound
+	} else {
+		p.model.SelectedFinalOutbound = p.getDefaultFinalOutbound()
 	}
 
 	// TODO: Сохранить остальные параметры для применения при генерации конфига
 	// (например, experimental.clash_api.secret)
 }
 
-// determineRuleType определяет тип правила на основе rule.raw.
-// Используется для пользовательских правил.
-func determineRuleType(raw map[string]interface{}) string {
-	if raw == nil {
-		return "Custom JSON"
+// findConfigParamValue ищет значение параметра по имени.
+// Возвращает пустую строку, если параметр не найден.
+func (p *WizardPresenter) findConfigParamValue(configParams []wizardmodels.ConfigParam, name string) string {
+	for _, param := range configParams {
+		if param.Name == name {
+			return param.Value
+		}
 	}
+	return ""
+}
 
-	// Проверяем наличие полей для определения типа
-	if _, ok := raw["ip_cidr"]; ok {
-		return "IP Addresses (CIDR)"
+// getDefaultFinalOutbound возвращает значение по умолчанию для final outbound из шаблона.
+func (p *WizardPresenter) getDefaultFinalOutbound() string {
+	if p.model.TemplateData != nil && p.model.TemplateData.DefaultFinal != "" {
+		return p.model.TemplateData.DefaultFinal
 	}
-	if _, ok := raw["domain_regex"]; ok {
-		return "Domains/URLs"
-	}
-	if _, ok := raw["domain"]; ok {
-		return "Domains/URLs"
-	}
-	if _, ok := raw["domain_suffix"]; ok {
-		return "Domains/URLs"
-	}
-	if _, ok := raw["domain_keyword"]; ok {
-		return "Domains/URLs"
-	}
-	if _, ok := raw["process_name"]; ok {
-		return "Processes"
-	}
+	return ""
+}
 
-	return "Custom JSON"
+// GetStateStore создает новый StateStore для работы с состояниями.
+// Публичный метод для использования в диалогах и других компонентах.
+//
+// Примечание: FileServiceAdapter находится в файле с build tag cgo (saver.go),
+// но это не проблема, так как весь визард компилируется с cgo.
+func (p *WizardPresenter) GetStateStore() *wizardbusiness.StateStore {
+	// FileServiceAdapter определен в business/saver.go с build tag cgo
+	// При компиляции с cgo (как в проекте) всё работает корректно
+	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: p.controller.FileService}
+	return wizardbusiness.NewStateStore(fileServiceAdapter)
+}
+
+// getStateStore - приватный алиас для внутреннего использования в презентере.
+func (p *WizardPresenter) getStateStore() *wizardbusiness.StateStore {
+	return p.GetStateStore()
 }
