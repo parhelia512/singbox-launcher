@@ -39,14 +39,34 @@ func (p *WizardPresenter) SyncModelToGUI() {
 }
 
 // SyncGUIToModel синхронизирует данные из GUI в модель.
+// Устанавливает флаг изменений, если данные реально изменились.
 func (p *WizardPresenter) SyncGUIToModel() {
+	changed := false
+
 	if p.guiState.SourceURLEntry != nil {
-		p.model.SourceURLs = p.guiState.SourceURLEntry.Text
+		newValue := p.guiState.SourceURLEntry.Text
+		if p.model.SourceURLs != newValue {
+			p.model.SourceURLs = newValue
+			changed = true
+		}
 	}
 	if p.guiState.ParserConfigEntry != nil {
-		p.model.ParserConfigJSON = p.guiState.ParserConfigEntry.Text
+		newValue := p.guiState.ParserConfigEntry.Text
+		if p.model.ParserConfigJSON != newValue {
+			p.model.ParserConfigJSON = newValue
+			changed = true
+		}
 	}
 	if p.guiState.FinalOutboundSelect != nil {
-		p.model.SelectedFinalOutbound = p.guiState.FinalOutboundSelect.Selected
+		newValue := p.guiState.FinalOutboundSelect.Selected
+		if p.model.SelectedFinalOutbound != newValue {
+			p.model.SelectedFinalOutbound = newValue
+			changed = true
+		}
+	}
+
+	// Устанавливаем флаг изменений, если данные изменились
+	if changed {
+		p.MarkAsChanged()
 	}
 }

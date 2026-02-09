@@ -45,15 +45,14 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 		return fmt.Errorf("empty input")
 	}
 
-	updater.UpdateURLStatus("⏳ Checking...")
-	updater.UpdateCheckURLButtonText("")
-	updater.UpdateCheckURLProgress(0.0)
+	// Initialize UI state
+	initializeCheckURLUI(updater)
 
-	// Split input into lines for processing
+	// Process all input lines
 	inputLines := strings.Split(input, "\n")
 	debuglog.DebugLog("checkURL: Processing %d input lines", len(inputLines))
-	totalValid := 0
-	// Pre-allocate slices with estimated capacity to avoid multiple reallocations
+
+	// Pre-allocate slices with estimated capacity
 	estimatedPreview := min(len(inputLines), wizardutils.MaxPreviewLines)
 	estimatedErrors := len(inputLines) / 4
 	if estimatedErrors < 1 {
@@ -62,126 +61,228 @@ func CheckURL(model *wizardmodels.WizardModel, updater UIUpdater) error {
 	previewLines := make([]string, 0, estimatedPreview)
 	errors := make([]string, 0, estimatedErrors)
 
+	// Process each line
+	totalValid := processAllInputLines(inputLines, updater, &previewLines, &errors)
+
+	// Build and display result
+	buildAndDisplayCheckResult(totalValid, previewLines, errors, updater)
+
+	return nil
+}
+
+// initializeCheckURLUI инициализирует UI для проверки URL.
+func initializeCheckURLUI(updater UIUpdater) {
+	updater.UpdateURLStatus("⏳ Checking...")
+	updater.UpdateCheckURLButtonText("")
+	updater.UpdateCheckURLProgress(0.0)
+}
+
+// processAllInputLines обрабатывает все входные строки.
+// Возвращает общее количество валидных ссылок.
+func processAllInputLines(inputLines []string, updater UIUpdater, previewLines *[]string, errors *[]string) int {
+	totalValid := 0
+
 	for i, line := range inputLines {
-		lineStartTime := time.Now()
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
-		linePreview := line
-		if len(line) > 50 {
-			linePreview = line[:50] + "..."
-		}
-		debuglog.DebugLog("checkURL: Processing line %d/%d: %s", i+1, len(inputLines), linePreview)
+		// Update progress
+		updateCheckProgress(updater, i+1, len(inputLines))
 
-		progress := float64(i+1) / float64(len(inputLines))
-		updater.UpdateURLStatus(fmt.Sprintf("⏳ Checking... (%d/%d)", i+1, len(inputLines)))
-		updater.UpdateCheckURLProgress(progress)
-
-		if subscription.IsSubscriptionURL(line) {
-			// Validate URL before fetching
-			if err := ValidateURL(line); err != nil {
-				debuglog.DebugLog("checkURL: Invalid subscription URL %d/%d: %v", i+1, len(inputLines), err)
-				errors = append(errors, fmt.Sprintf("Invalid subscription URL: %v", err))
-				continue
-			}
-
-			// This is a subscription URL - check availability
-			fetchStartTime := time.Now()
-			debuglog.DebugLog("checkURL: Fetching subscription %d/%d: %s", i+1, len(inputLines), line)
-			content, err := subscription.FetchSubscription(line)
-			fetchDuration := time.Since(fetchStartTime)
-			if err != nil {
-				debuglog.DebugLog("checkURL: Failed to fetch subscription %d/%d (took %v): %v", i+1, len(inputLines), fetchDuration, err)
-				errors = append(errors, fmt.Sprintf("Failed to fetch %s: %v", line, err))
-				continue
-			}
-
-			// Validate response size
-			if err := ValidateHTTPResponseSize(int64(len(content))); err != nil {
-				debuglog.DebugLog("checkURL: Subscription response too large %d/%d: %v", i+1, len(inputLines), err)
-				errors = append(errors, fmt.Sprintf("Subscription response too large: %v", err))
-				continue
-			}
-
-			debuglog.DebugLog("checkURL: Fetched subscription %d/%d: %d bytes in %v", i+1, len(inputLines), len(content), fetchDuration)
-
-			// Check subscription content
-			parseStartTime := time.Now()
-			subLines := strings.Split(string(content), "\n")
-			debuglog.DebugLog("checkURL: Parsing subscription %d/%d: %d lines", i+1, len(inputLines), len(subLines))
-			validInSub := 0
-			for _, subLine := range subLines {
-				subLine = strings.TrimSpace(subLine)
-				if subLine != "" && subscription.IsDirectLink(subLine) {
-					validInSub++
-					totalValid++
-					if len(previewLines) < wizardutils.MaxPreviewLines {
-						previewLines = append(previewLines, fmt.Sprintf("%d. %s", totalValid, subLine))
-					}
-				}
-			}
-			parseDuration := time.Since(parseStartTime)
-			debuglog.DebugLog("checkURL: Parsed subscription %d/%d: %d valid links in %v (line processing took %v total)",
-				i+1, len(inputLines), validInSub, parseDuration, time.Since(lineStartTime))
-			if validInSub == 0 {
-				errors = append(errors, fmt.Sprintf("Subscription %s contains no valid proxy links", line))
-			}
-		} else if subscription.IsDirectLink(line) {
-			// Validate URI before parsing
-			if err := ValidateURI(line); err != nil {
-				debuglog.DebugLog("checkURL: Invalid URI format %d/%d: %v", i+1, len(inputLines), err)
-				errors = append(errors, fmt.Sprintf("Invalid URI format: %v", err))
-				continue
-			}
-
-			// This is a direct link - validate parsing
-			parseStartTime := time.Now()
-			debuglog.DebugLog("checkURL: Parsing direct link %d/%d", i+1, len(inputLines))
-			_, err := subscription.ParseNode(line, nil)
-			parseDuration := time.Since(parseStartTime)
-			if err != nil {
-				debuglog.DebugLog("checkURL: Invalid direct link %d/%d (took %v): %v", i+1, len(inputLines), parseDuration, err)
-				errors = append(errors, fmt.Sprintf("Invalid direct link: %v", err))
-			} else {
-				totalValid++
-				debuglog.DebugLog("checkURL: Valid direct link %d/%d (took %v)", i+1, len(inputLines), parseDuration)
-				if len(previewLines) < wizardutils.MaxPreviewLines {
-					previewLines = append(previewLines, fmt.Sprintf("%d. %s", totalValid, line))
-				}
-			}
-		} else {
-			debuglog.DebugLog("checkURL: Unknown format for line %d/%d: %s", i+1, len(inputLines), line)
-			errors = append(errors, fmt.Sprintf("Unknown format: %s", line))
-		}
+		// Process line based on type
+		validCount := processInputLine(line, i+1, len(inputLines), previewLines, errors, totalValid)
+		totalValid += validCount
 	}
 
-	debuglog.DebugLog("checkURL: Processed all lines (total valid: %d, errors: %d)", totalValid, len(errors))
+	debuglog.DebugLog("checkURL: Processed all lines (total valid: %d, errors: %d)", totalValid, len(*errors))
+	return totalValid
+}
 
-	if totalValid == 0 {
-		errorMsg := "❌ No valid proxy links found"
-		if len(errors) > 0 {
-			errorMsg += "\n" + strings.Join(errors[:min(3, len(errors))], "\n")
-		}
-		updater.UpdateURLStatus(errorMsg)
+// updateCheckProgress обновляет прогресс проверки.
+func updateCheckProgress(updater UIUpdater, current, total int) {
+	progress := float64(current) / float64(total)
+	updater.UpdateURLStatus(fmt.Sprintf("⏳ Checking... (%d/%d)", current, total))
+	updater.UpdateCheckURLProgress(progress)
+}
+
+// processInputLine обрабатывает одну входную строку.
+// Возвращает количество валидных ссылок, найденных в этой строке.
+// currentValidCount используется для правильной нумерации в previewLines.
+func processInputLine(line string, lineNum, totalLines int, previewLines *[]string, errors *[]string, currentValidCount int) int {
+	lineStartTime := time.Now()
+	linePreview := line
+	if len(line) > 50 {
+		linePreview = line[:50] + "..."
+	}
+	debuglog.DebugLog("checkURL: Processing line %d/%d: %s", lineNum, totalLines, linePreview)
+
+	if subscription.IsSubscriptionURL(line) {
+		return processSubscriptionURL(line, lineNum, totalLines, previewLines, errors, lineStartTime, currentValidCount)
+	} else if subscription.IsDirectLink(line) {
+		return processDirectLink(line, lineNum, totalLines, previewLines, errors, lineStartTime, currentValidCount)
 	} else {
-		statusMsg := fmt.Sprintf("✅ Working! Found %d valid proxy link(s)", totalValid)
-		if len(errors) > 0 {
-			statusMsg += fmt.Sprintf("\n⚠️ %d error(s)", len(errors))
-		}
-		updater.UpdateURLStatus(statusMsg)
-		if len(previewLines) > 0 {
-			previewText := strings.Join(previewLines, "\n")
-			if totalValid > len(previewLines) {
-				previewText += fmt.Sprintf("\n... and %d more", totalValid-len(previewLines))
+		debuglog.DebugLog("checkURL: Unknown format for line %d/%d: %s", lineNum, totalLines, line)
+		*errors = append(*errors, fmt.Sprintf("Unknown format: %s", line))
+		return 0
+	}
+}
+
+// processSubscriptionURL обрабатывает subscription URL.
+// Возвращает количество валидных ссылок, найденных в подписке.
+func processSubscriptionURL(
+	line string,
+	lineNum, totalLines int,
+	previewLines *[]string,
+	errors *[]string,
+	lineStartTime time.Time,
+	currentValidCount int,
+) int {
+	// Validate URL before fetching
+	if err := ValidateURL(line); err != nil {
+		debuglog.DebugLog("checkURL: Invalid subscription URL %d/%d: %v", lineNum, totalLines, err)
+		*errors = append(*errors, fmt.Sprintf("Invalid subscription URL: %v", err))
+		return 0
+	}
+
+	// Fetch subscription
+	fetchStartTime := time.Now()
+	debuglog.DebugLog("checkURL: Fetching subscription %d/%d: %s", lineNum, totalLines, line)
+	content, err := subscription.FetchSubscription(line)
+	fetchDuration := time.Since(fetchStartTime)
+	if err != nil {
+		debuglog.DebugLog("checkURL: Failed to fetch subscription %d/%d (took %v): %v", lineNum, totalLines, fetchDuration, err)
+		*errors = append(*errors, fmt.Sprintf("Failed to fetch %s: %v", line, err))
+		return 0
+	}
+
+	// Validate response size
+	if err := ValidateHTTPResponseSize(int64(len(content))); err != nil {
+		debuglog.DebugLog("checkURL: Subscription response too large %d/%d: %v", lineNum, totalLines, err)
+		*errors = append(*errors, fmt.Sprintf("Subscription response too large: %v", err))
+		return 0
+	}
+
+	debuglog.DebugLog("checkURL: Fetched subscription %d/%d: %d bytes in %v", lineNum, totalLines, len(content), fetchDuration)
+
+	// Parse subscription content and count valid links
+	validCount := parseSubscriptionContent(content, lineNum, totalLines, previewLines, errors, lineStartTime, currentValidCount)
+	if validCount == 0 {
+		*errors = append(*errors, fmt.Sprintf("Subscription %s contains no valid proxy links", line))
+	}
+
+	return validCount
+}
+
+// parseSubscriptionContent парсит содержимое подписки и подсчитывает валидные ссылки.
+func parseSubscriptionContent(
+	content []byte,
+	lineNum, totalLines int,
+	previewLines *[]string,
+	errors *[]string,
+	lineStartTime time.Time,
+	currentValidCount int,
+) int {
+	parseStartTime := time.Now()
+	subLines := strings.Split(string(content), "\n")
+	debuglog.DebugLog("checkURL: Parsing subscription %d/%d: %d lines", lineNum, totalLines, len(subLines))
+
+	validInSub := 0
+	validCount := currentValidCount
+
+	for _, subLine := range subLines {
+		subLine = strings.TrimSpace(subLine)
+		if subLine != "" && subscription.IsDirectLink(subLine) {
+			validInSub++
+			validCount++
+			if len(*previewLines) < wizardutils.MaxPreviewLines {
+				*previewLines = append(*previewLines, fmt.Sprintf("%d. %s", validCount, subLine))
 			}
-			updater.UpdateOutboundsPreview(previewText)
 		}
 	}
+
+	parseDuration := time.Since(parseStartTime)
+	debuglog.DebugLog("checkURL: Parsed subscription %d/%d: %d valid links in %v (line processing took %v total)",
+		lineNum, totalLines, validInSub, parseDuration, time.Since(lineStartTime))
+
+	return validInSub
+}
+
+// processDirectLink обрабатывает прямую ссылку.
+// Возвращает 1, если ссылка валидна, иначе 0.
+func processDirectLink(
+	line string,
+	lineNum, totalLines int,
+	previewLines *[]string,
+	errors *[]string,
+	lineStartTime time.Time,
+	currentValidCount int,
+) int {
+	// Validate URI before parsing
+	if err := ValidateURI(line); err != nil {
+		debuglog.DebugLog("checkURL: Invalid URI format %d/%d: %v", lineNum, totalLines, err)
+		*errors = append(*errors, fmt.Sprintf("Invalid URI format: %v", err))
+		return 0
+	}
+
+	// Validate parsing
+	parseStartTime := time.Now()
+	debuglog.DebugLog("checkURL: Parsing direct link %d/%d", lineNum, totalLines)
+	_, err := subscription.ParseNode(line, nil)
+	parseDuration := time.Since(parseStartTime)
+
+	if err != nil {
+		debuglog.DebugLog("checkURL: Invalid direct link %d/%d (took %v): %v", lineNum, totalLines, parseDuration, err)
+		*errors = append(*errors, fmt.Sprintf("Invalid direct link: %v", err))
+		return 0
+	}
+
+	debuglog.DebugLog("checkURL: Valid direct link %d/%d (took %v)", lineNum, totalLines, parseDuration)
+	if len(*previewLines) < wizardutils.MaxPreviewLines {
+		validCount := currentValidCount + 1
+		*previewLines = append(*previewLines, fmt.Sprintf("%d. %s", validCount, line))
+	}
+	return 1
+}
+
+// buildAndDisplayCheckResult строит и отображает результат проверки.
+func buildAndDisplayCheckResult(totalValid int, previewLines []string, errors []string, updater UIUpdater) {
+	if totalValid == 0 {
+		buildErrorResult(errors, updater)
+	} else {
+		buildSuccessResult(totalValid, previewLines, errors, updater)
+	}
+
+	// Restore UI state
 	updater.UpdateCheckURLButtonText("Check")
 	updater.UpdateCheckURLProgress(-1)
-	return nil
+}
+
+// buildErrorResult строит сообщение об ошибке.
+func buildErrorResult(errors []string, updater UIUpdater) {
+	errorMsg := "❌ No valid proxy links found"
+	if len(errors) > 0 {
+		errorMsg += "\n" + strings.Join(errors[:min(3, len(errors))], "\n")
+	}
+	updater.UpdateURLStatus(errorMsg)
+}
+
+// buildSuccessResult строит сообщение об успешной проверке.
+func buildSuccessResult(totalValid int, previewLines []string, errors []string, updater UIUpdater) {
+	statusMsg := fmt.Sprintf("✅ Working! Found %d valid proxy link(s)", totalValid)
+	if len(errors) > 0 {
+		statusMsg += fmt.Sprintf("\n⚠️ %d error(s)", len(errors))
+	}
+	updater.UpdateURLStatus(statusMsg)
+
+	if len(previewLines) > 0 {
+		previewText := strings.Join(previewLines, "\n")
+		if totalValid > len(previewLines) {
+			previewText += fmt.Sprintf("\n... and %d more", totalValid-len(previewLines))
+		}
+		updater.UpdateOutboundsPreview(previewText)
+	}
 }
 
 // min helper function
@@ -363,33 +464,76 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 	defer timing.EndWithDefer()
 	debuglog.DebugLog("applyURLToParserConfig: input length: %d bytes", len(input))
 
+	// Validate input
+	if err := validateApplyURLInput(input, model.ParserConfigJSON); err != nil {
+		return err
+	}
+
+	// Parse ParserConfig
+	parserConfig, err := parseParserConfigForApply(model.ParserConfigJSON, timing)
+	if err != nil {
+		return err
+	}
+
+	// Classify input lines into subscriptions and connections
+	subscriptions, connections := classifyInputLines(input, timing)
+
+	// Preserve existing properties from current ParserConfig
+	existingProps := preserveExistingProperties(parserConfig)
+
+	// Create new ProxySource array
+	newProxies := createSubscriptionProxies(subscriptions, existingProps)
+
+	// Match or create connection proxy
+	newProxies = matchOrCreateConnectionProxy(connections, existingProps, newProxies)
+
+	// Ensure at least one empty proxy if no subscriptions or connections
+	if len(newProxies) == 0 {
+		newProxies = []config.ProxySource{{}}
+	}
+
+	// Update and serialize
+	return updateAndSerializeParserConfig(parserConfig, newProxies, subscriptions, connections, model, updater, timing)
+}
+
+// validateApplyURLInput проверяет входные данные перед применением URL.
+func validateApplyURLInput(input, parserConfigJSON string) error {
 	if input == "" {
 		debuglog.DebugLog("applyURLToParserConfig: input is empty, returning early")
 		return fmt.Errorf("input is empty")
 	}
-	text := strings.TrimSpace(model.ParserConfigJSON)
+	text := strings.TrimSpace(parserConfigJSON)
 	if text == "" {
 		debuglog.DebugLog("applyURLToParserConfig: ParserConfigJSON text is empty, returning early")
 		return fmt.Errorf("parserConfigJSON is empty")
 	}
+	return nil
+}
 
+// parseParserConfigForApply парсит ParserConfig из JSON строки.
+func parseParserConfigForApply(parserConfigJSON string, timing interface{ LogTiming(string, time.Duration) }) (*config.ParserConfig, error) {
 	parseStartTime := time.Now()
 	var parserConfig config.ParserConfig
+	text := strings.TrimSpace(parserConfigJSON)
 	if err := json.Unmarshal([]byte(text), &parserConfig); err != nil {
 		timing.LogTiming("parse ParserConfig", time.Since(parseStartTime))
 		debuglog.DebugLog("applyURLToParserConfig: Failed to parse ParserConfig: %v", err)
-		return fmt.Errorf("failed to parse ParserConfig: %w", err)
+		return nil, fmt.Errorf("failed to parse ParserConfig: %w", err)
 	}
 	timing.LogTiming("parse ParserConfig", time.Since(parseStartTime))
 	debuglog.DebugLog("applyURLToParserConfig: Parsed ParserConfig (outbounds: %d)",
 		len(parserConfig.ParserConfig.Outbounds))
+	return &parserConfig, nil
+}
 
-	// Separate subscriptions and direct links
+// classifyInputLines классифицирует входные строки на подписки и прямые ссылки.
+func classifyInputLines(input string, timing interface{ LogTiming(string, time.Duration) }) (subscriptions []string, connections []string) {
 	splitStartTime := time.Now()
 	lines := strings.Split(input, "\n")
 	debuglog.DebugLog("applyURLToParserConfig: Split input into %d lines", len(lines))
-	subscriptions := make([]string, 0)
-	connections := make([]string, 0)
+
+	subscriptions = make([]string, 0)
+	connections = make([]string, 0)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -402,143 +546,178 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 			connections = append(connections, line)
 		}
 	}
+
 	timing.LogTiming("classify lines", time.Since(splitStartTime))
 	debuglog.DebugLog("applyURLToParserConfig: Classified lines: %d subscriptions, %d connections",
 		len(subscriptions), len(connections))
+	return subscriptions, connections
+}
 
-	// Preserve existing local outbounds, tag_prefix, and tag_postfix for each source
-	// Use source URL as key for matching
-	existingOutboundsMap := make(map[string][]config.OutboundConfig)
-	existingTagPrefixMap := make(map[string]string)
-	existingTagPostfixMap := make(map[string]string)
-	// Preserve all ProxySource entries without source (with connections)
-	existingConnectionsProxies := make([]config.ProxySource, 0)
+// existingProperties содержит сохраненные свойства существующих ProxySource.
+type existingProperties struct {
+	OutboundsMap         map[string][]config.OutboundConfig
+	TagPrefixMap         map[string]string
+	TagPostfixMap        map[string]string
+	ConnectionsProxies   []config.ProxySource
+}
+
+// preserveExistingProperties сохраняет существующие свойства из текущего ParserConfig.
+func preserveExistingProperties(parserConfig *config.ParserConfig) *existingProperties {
+	props := &existingProperties{
+		OutboundsMap:       make(map[string][]config.OutboundConfig),
+		TagPrefixMap:       make(map[string]string),
+		TagPostfixMap:      make(map[string]string),
+		ConnectionsProxies: make([]config.ProxySource, 0),
+	}
+
 	for _, existingProxy := range parserConfig.ParserConfig.Proxies {
 		if existingProxy.Source != "" {
-			existingOutboundsMap[existingProxy.Source] = existingProxy.Outbounds
+			props.OutboundsMap[existingProxy.Source] = existingProxy.Outbounds
 			if existingProxy.TagPrefix != "" {
-				existingTagPrefixMap[existingProxy.Source] = existingProxy.TagPrefix
+				props.TagPrefixMap[existingProxy.Source] = existingProxy.TagPrefix
 			}
 			if existingProxy.TagPostfix != "" {
-				existingTagPostfixMap[existingProxy.Source] = existingProxy.TagPostfix
+				props.TagPostfixMap[existingProxy.Source] = existingProxy.TagPostfix
 			}
 		} else if len(existingProxy.Connections) > 0 {
 			// Preserve all ProxySource entries with connections but no source
-			existingConnectionsProxies = append(existingConnectionsProxies, existingProxy)
+			props.ConnectionsProxies = append(props.ConnectionsProxies, existingProxy)
 		}
 	}
 
-	// Create new ProxySource array
-	newProxies := make([]config.ProxySource, 0)
+	return props
+}
+
+// createSubscriptionProxies создает ProxySource для каждой подписки.
+func createSubscriptionProxies(subscriptions []string, existingProps *existingProperties) []config.ProxySource {
+	newProxies := make([]config.ProxySource, 0, len(subscriptions))
 
 	// Automatically add tag_prefix with sequential number only if there are multiple subscriptions
 	autoAddPrefix := len(subscriptions) > 1
 
-	// Helper function to restore tag_prefix and tag_postfix
-	restoreTagPrefixAndPostfix := func(proxySource *config.ProxySource, lookupKey string, logContext string) {
-		if existingTagPrefix, ok := existingTagPrefixMap[lookupKey]; ok {
-			proxySource.TagPrefix = existingTagPrefix
-			debuglog.DebugLog("applyURLToParserConfig: Restored tag_prefix '%s' for %s", existingTagPrefix, logContext)
-		}
-		if existingTagPostfix, ok := existingTagPostfixMap[lookupKey]; ok {
-			proxySource.TagPostfix = existingTagPostfix
-			debuglog.DebugLog("applyURLToParserConfig: Restored tag_postfix '%s' for %s", existingTagPostfix, logContext)
-		}
-	}
-
-	// Create separate ProxySource for each subscription
 	for idx, sub := range subscriptions {
 		proxySource := config.ProxySource{
 			Source: sub,
 		}
+
 		// Restore local outbounds if they existed for this source
-		if existingOutbounds, ok := existingOutboundsMap[sub]; ok {
+		if existingOutbounds, ok := existingProps.OutboundsMap[sub]; ok {
 			proxySource.Outbounds = existingOutbounds
 			debuglog.DebugLog("applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), sub)
 		}
+
 		// Restore tag_prefix and tag_postfix
-		restoreTagPrefixAndPostfix(&proxySource, sub, fmt.Sprintf("subscription: %s", sub))
+		restoreTagPrefixAndPostfix(&proxySource, sub, existingProps, fmt.Sprintf("subscription: %s", sub))
+
 		// Automatically add tag_prefix if not restored and auto-add is enabled
 		if proxySource.TagPrefix == "" && autoAddPrefix {
 			proxySource.TagPrefix = GenerateTagPrefix(idx + 1)
 			debuglog.DebugLog("applyURLToParserConfig: Added automatic tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
 		}
+
 		newProxies = append(newProxies, proxySource)
 	}
 
-	// Helper function to check if two connection arrays match (order-independent)
-	connectionsMatch := func(conn1, conn2 []string) bool {
-		if len(conn1) != len(conn2) {
+	return newProxies
+}
+
+// restoreTagPrefixAndPostfix восстанавливает tag_prefix и tag_postfix из сохраненных свойств.
+func restoreTagPrefixAndPostfix(proxySource *config.ProxySource, lookupKey string, existingProps *existingProperties, logContext string) {
+	if existingTagPrefix, ok := existingProps.TagPrefixMap[lookupKey]; ok {
+		proxySource.TagPrefix = existingTagPrefix
+		debuglog.DebugLog("applyURLToParserConfig: Restored tag_prefix '%s' for %s", existingTagPrefix, logContext)
+	}
+	if existingTagPostfix, ok := existingProps.TagPostfixMap[lookupKey]; ok {
+		proxySource.TagPostfix = existingTagPostfix
+		debuglog.DebugLog("applyURLToParserConfig: Restored tag_postfix '%s' for %s", existingTagPostfix, logContext)
+	}
+}
+
+// connectionsMatch проверяет, совпадают ли два массива connections (порядок не важен).
+func connectionsMatch(conn1, conn2 []string) bool {
+	if len(conn1) != len(conn2) {
+		return false
+	}
+	// Create maps for comparison
+	map1 := make(map[string]int)
+	map2 := make(map[string]int)
+	for _, c := range conn1 {
+		map1[strings.TrimSpace(c)]++
+	}
+	for _, c := range conn2 {
+		map2[strings.TrimSpace(c)]++
+	}
+	if len(map1) != len(map2) {
+		return false
+	}
+	for k, v := range map1 {
+		if map2[k] != v {
 			return false
 		}
-		// Create maps for comparison
-		map1 := make(map[string]int)
-		map2 := make(map[string]int)
-		for _, c := range conn1 {
-			map1[strings.TrimSpace(c)]++
-		}
-		for _, c := range conn2 {
-			map2[strings.TrimSpace(c)]++
-		}
-		if len(map1) != len(map2) {
-			return false
-		}
-		for k, v := range map1 {
-			if map2[k] != v {
-				return false
-			}
-		}
-		return true
+	}
+	return true
+}
+
+// matchOrCreateConnectionProxy сопоставляет connections с существующим ProxySource или создает новый.
+func matchOrCreateConnectionProxy(connections []string, existingProps *existingProperties, newProxies []config.ProxySource) []config.ProxySource {
+	if len(connections) == 0 {
+		// If user removed all connections, don't add any connection ProxySources
+		// This allows user to clear connections by deleting them from GUI
+		return newProxies
 	}
 
-	// If there are new direct links from input, try to match with existing or create new
-	if len(connections) > 0 {
-		// Try to match with existing connections proxy by comparing connections
-		matched := false
-		for _, existingConnectionsProxy := range existingConnectionsProxies {
-			if connectionsMatch(existingConnectionsProxy.Connections, connections) {
-				// Matched existing proxy - update connections but preserve all other properties
-				matchedProxy := config.ProxySource{
-					Connections: connections, // Update with potentially reordered connections
-					Outbounds:   existingConnectionsProxy.Outbounds,
-					TagPrefix:   existingConnectionsProxy.TagPrefix,
-					TagPostfix:  existingConnectionsProxy.TagPostfix,
-					TagMask:     existingConnectionsProxy.TagMask,
-					Skip:        existingConnectionsProxy.Skip,
-				}
-				newProxies = append(newProxies, matchedProxy)
-				matched = true
-				debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
-					matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
-				break
+	// Try to match with existing connections proxy by comparing connections
+	for _, existingConnectionsProxy := range existingProps.ConnectionsProxies {
+		if connectionsMatch(existingConnectionsProxy.Connections, connections) {
+			// Matched existing proxy - update connections but preserve all other properties
+			matchedProxy := config.ProxySource{
+				Connections: connections, // Update with potentially reordered connections
+				Outbounds:   existingConnectionsProxy.Outbounds,
+				TagPrefix:   existingConnectionsProxy.TagPrefix,
+				TagPostfix:  existingConnectionsProxy.TagPostfix,
+				TagMask:     existingConnectionsProxy.TagMask,
+				Skip:        existingConnectionsProxy.Skip,
 			}
+			newProxies = append(newProxies, matchedProxy)
+			debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
+				matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
+			return newProxies
 		}
-		if !matched {
-			// New connections - add as new ProxySource
-			proxySource := config.ProxySource{
-				Connections: connections,
-			}
-			debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
-			newProxies = append(newProxies, proxySource)
-		}
-		// Don't preserve other existing ProxySource entries with connections - user removed them
-		debuglog.DebugLog("applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingConnectionsProxies)-1)
-	}
-	// If user removed all connections (len(connections) == 0), don't add any connection ProxySources
-	// This allows user to clear connections by deleting them from GUI
-
-	// If there are no subscriptions or connections, create empty array
-	if len(newProxies) == 0 {
-		newProxies = []config.ProxySource{{}}
 	}
 
+	// New connections - add as new ProxySource
+	proxySource := config.ProxySource{
+		Connections: connections,
+	}
+	debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
+	newProxies = append(newProxies, proxySource)
+
+	// Don't preserve other existing ProxySource entries with connections - user removed them
+	if len(existingProps.ConnectionsProxies) > 0 {
+		debuglog.DebugLog("applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingProps.ConnectionsProxies)-1)
+	}
+
+	return newProxies
+}
+
+// updateAndSerializeParserConfig обновляет ParserConfig и сериализует его.
+func updateAndSerializeParserConfig(
+	parserConfig *config.ParserConfig,
+	newProxies []config.ProxySource,
+	subscriptions []string,
+	connections []string,
+	model *wizardmodels.WizardModel,
+	updater UIUpdater,
+	timing interface{ LogTiming(string, time.Duration) },
+) error {
 	// Update proxies array
 	parserConfig.ParserConfig.Proxies = newProxies
 	debuglog.DebugLog("applyURLToParserConfig: Created %d proxy sources (%d subscriptions, %d with connections)",
 		len(newProxies), len(subscriptions), len(connections))
 
+	// Serialize
 	serializeStartTime := time.Now()
-	serialized, err := SerializeParserConfig(&parserConfig)
+	serialized, err := SerializeParserConfig(parserConfig)
 	if err != nil {
 		timing.LogTiming("serialize ParserConfig", time.Since(serializeStartTime))
 		debuglog.DebugLog("applyURLToParserConfig: Failed to serialize ParserConfig: %v", err)
@@ -548,8 +727,9 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 	debuglog.DebugLog("applyURLToParserConfig: Serialized ParserConfig (result length: %d bytes, outbounds before: %d)",
 		len(serialized), len(parserConfig.ParserConfig.Outbounds))
 
+	// Update model and UI
 	updater.UpdateParserConfig(serialized)
-	model.ParserConfig = &parserConfig
+	model.ParserConfig = parserConfig
 	model.PreviewNeedsParse = true
 	return nil
 }
@@ -580,3 +760,4 @@ func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 func GenerateTagPrefix(index int) string {
 	return fmt.Sprintf("%d:", index)
 }
+

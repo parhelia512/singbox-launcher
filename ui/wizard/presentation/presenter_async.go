@@ -94,14 +94,18 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 			goroutineTiming.End()
 			p.model.PreviewGenerationInProgress = false
 			p.UpdateSaveButtonText("Save")
-			if p.guiState.ShowPreviewButton != nil {
-				p.guiState.ShowPreviewButton.Enable()
-			}
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.ShowPreviewButton != nil {
+					p.guiState.ShowPreviewButton.Enable()
+				}
+			})
 		}()
 
-		if p.guiState.TemplatePreviewStatusLabel != nil {
-			p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
-		}
+		SafeFyneDo(p.guiState.Window, func() {
+			if p.guiState.TemplatePreviewStatusLabel != nil {
+				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
+			}
+		})
 
 		buildStartTime := time.Now()
 		debuglog.DebugLog("UpdateTemplatePreviewAsync: Calling BuildTemplateConfig")
@@ -113,9 +117,11 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 			errorText := fmt.Sprintf("Preview error: %v", err)
 			p.SetTemplatePreviewText(errorText)
 			p.model.TemplatePreviewNeedsUpdate = false
-			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
-			}
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.TemplatePreviewStatusLabel != nil {
+					p.guiState.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
+				}
+			})
 			return
 		}
 		goroutineTiming.LogTiming("BuildTemplateConfig", buildDuration)
@@ -125,12 +131,14 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 		p.SetTemplatePreviewText(text)
 
 		if !isLargeText {
-			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
-			}
-			if p.guiState.ShowPreviewButton != nil {
-				p.guiState.ShowPreviewButton.Enable()
-			}
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.TemplatePreviewStatusLabel != nil {
+					p.guiState.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
+				}
+				if p.guiState.ShowPreviewButton != nil {
+					p.guiState.ShowPreviewButton.Enable()
+				}
+			})
 			debuglog.DebugLog("UpdateTemplatePreviewAsync: Preview text inserted")
 		} else {
 			debuglog.DebugLog("UpdateTemplatePreviewAsync: Large text insertion started (status will update when complete)")

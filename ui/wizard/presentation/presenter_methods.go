@@ -19,6 +19,7 @@
 package presentation
 
 import (
+	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -154,9 +155,7 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 	wizardbusiness.EnsureFinalSelected(p.model, options)
 
 	p.guiState.UpdatingOutboundOptions = true
-	defer func() {
-		p.guiState.UpdatingOutboundOptions = false
-	}()
+	debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions set to true")
 
 	p.UpdateUI(func() {
 		for _, ruleWidget := range p.guiState.RuleOutboundSelects {
@@ -178,6 +177,16 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 			p.guiState.FinalOutboundSelect.SetSelected(p.model.SelectedFinalOutbound)
 			p.guiState.FinalOutboundSelect.Refresh()
 		}
+
+		// Reset flag AFTER all SetSelected() calls to prevent callbacks from firing
+		// This must be done inside UpdateUI() because UpdateUI() executes asynchronously via fyne.Do
+		p.guiState.UpdatingOutboundOptions = false
+		debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions reset to false")
+
+		// Reset hasChanges flag after all SetSelected() callbacks have completed
+		// This ensures that any callbacks that fired during initialization don't set the flag
+		p.hasChanges = false
+		debuglog.DebugLog("RefreshOutboundOptions: hasChanges reset to false")
 	})
 }
 

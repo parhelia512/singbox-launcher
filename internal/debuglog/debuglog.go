@@ -87,7 +87,7 @@ func parseEnvLevel(raw string) Level {
 	default:
 		// Default level: warn (LevelWarn)
 		// Shows only warnings and errors by default
-		return LevelWarn
+		return LevelTrace
 	}
 }
 
