@@ -9,7 +9,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/pion/stun"
 	"github.com/txthinking/socks5"
@@ -18,6 +17,7 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
+	"singbox-launcher/ui/components"
 )
 
 // checkSTUN performs a STUN request to determine the external IP address.
@@ -116,7 +116,7 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 	// Кнопка для проверки STUN (Google STUN [UDP])
 	stunButton := widget.NewButton("Google STUN [UDP]", func() {
 		// Показываем диалог ожидания
-		waitDialog := dialog.NewCustomWithoutButtons("STUN Check", widget.NewLabel("Checking, please wait..."), ac.UIService.MainWindow)
+		waitDialog := components.NewCustom("STUN Check", widget.NewLabel("Checking, please wait..."), nil, "", ac.UIService.MainWindow)
 		waitDialog.Show()
 
 		go func() {

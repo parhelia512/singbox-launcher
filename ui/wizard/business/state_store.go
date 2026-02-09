@@ -257,6 +257,7 @@ func extractStateIDFromFileName(fileName string) (id string, isCurrent bool) {
 }
 
 // ListWizardStates возвращает список всех сохранённых состояний с метаданными.
+// Для простого списка имён файлов используйте ListWizardStateNames().
 func (ss *StateStore) ListWizardStates() ([]wizardmodels.WizardStateMetadata, error) {
 	// Создаём директорию, если не существует (на случай, если состояний ещё нет)
 	if err := ss.ensureStatesDir(); err != nil {
@@ -319,6 +320,57 @@ func (ss *StateStore) ListWizardStates() ([]wizardmodels.WizardStateMetadata, er
 	}
 
 	debuglog.DebugLog("ListWizardStates: found %d states", len(states))
+	return states, nil
+}
+
+// ListWizardStateNames возвращает только имена файлов состояний без чтения содержимого.
+// Используется для простого списка имён файлов в диалоге.
+func (ss *StateStore) ListWizardStateNames() ([]wizardmodels.WizardStateMetadata, error) {
+	// Создаём директорию, если не существует
+	if err := ss.ensureStatesDir(); err != nil {
+		return nil, err
+	}
+
+	// Читаем только имена файлов из директории
+	entries, err := os.ReadDir(ss.statesDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read wizard states directory: %w", err)
+	}
+
+	var states []wizardmodels.WizardStateMetadata
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		fileName := entry.Name()
+		if !strings.HasSuffix(fileName, ".json") {
+			continue
+		}
+
+		// Определяем ID из имени файла
+		id, isCurrent := extractStateIDFromFileName(fileName)
+
+		// Получаем время модификации файла
+		fileInfo, err := entry.Info()
+		modTime := time.Now()
+		if err == nil {
+			modTime = fileInfo.ModTime()
+		}
+
+		// Создаём метаданные только из имени файла, без чтения содержимого
+		metadata := wizardmodels.WizardStateMetadata{
+			ID:        id,
+			IsCurrent: isCurrent,
+			CreatedAt: modTime,
+			UpdatedAt: modTime,
+		}
+
+		states = append(states, metadata)
+	}
+
+	debuglog.DebugLog("ListWizardStateNames: found %d states", len(states))
 	return states, nil
 }
 

@@ -24,6 +24,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/ui/components"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
@@ -110,13 +111,6 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	})
 	saveButton.Importance = widget.HighImportance
 
-	cancelButton := widget.NewButton("Cancel", func() {
-		if dialogWindow != nil {
-			dialogWindow.Hide()
-		}
-		onResult(SaveStateResult{Action: "cancel"})
-	})
-
 	// Fields container
 	fieldsContainer := container.NewVBox(
 		widget.NewLabel("State ID:"),
@@ -126,24 +120,32 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 		warningLabel,
 	)
 
-	// Buttons container
+	// Buttons container (без cancelButton - он будет через dismissText)
 	buttonsContainer := container.NewHBox(
 		layout.NewSpacer(),
-		cancelButton,
 		saveButton,
 	)
 
-	// Main content
-	content := container.NewBorder(
-		nil,
-		buttonsContainer,
-		nil,
-		nil,
-		fieldsContainer,
-	)
+	// Сохраняем оригинальный обработчик клавиатуры до создания диалога
+	originalOnTypedKey := guiState.Window.Canvas().OnTypedKey()
 
-	// Create dialog without close button
-	dialogWindow = dialog.NewCustomWithoutButtons("Save State", content, guiState.Window)
+	// Create dialog with simplified API (cancelButton через dismissText, ESC обрабатывается автоматически)
+	dialogWindow = components.NewCustom("Save State", fieldsContainer, buttonsContainer, "Cancel", guiState.Window)
+	dialogWindow.Resize(fyne.NewSize(400, 300))
+
+	// Обработчик для cancelButton через dismissText и ESC
+	// components.NewCustom уже устанавливает обработчик для восстановления клавиатуры,
+	// поэтому мы перезаписываем его, но сохраняем логику восстановления
+	dialogWindow.SetOnClosed(func() {
+		// Восстанавливаем оригинальный обработчик клавиатуры
+		if originalOnTypedKey != nil {
+			guiState.Window.Canvas().SetOnTypedKey(originalOnTypedKey)
+		} else {
+			guiState.Window.Canvas().SetOnTypedKey(nil)
+		}
+		// Вызываем callback для cancel (если диалог закрыт через Cancel или ESC)
+		onResult(SaveStateResult{Action: "cancel"})
+	})
 	dialogWindow.Resize(fyne.NewSize(400, 300))
 	dialogWindow.Show()
 

@@ -34,6 +34,7 @@ import (
 
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
+	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
@@ -133,13 +134,13 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 		})
 		spacer := canvas.NewRectangle(color.Transparent)
 		spacer.SetMinSize(fyne.NewSize(0, addButton.MinSize().Height))
-		content := container.NewVBox(
+		mainContent := container.NewVBox(
 			thanks,
 			link,
 			spacer,
 			addButton,
 		)
-		freeVPNDialog = dialog.NewCustom("Get free VPN", "Close", content, guiState.Window)
+		freeVPNDialog = components.NewCustom("Get free VPN", mainContent, nil, "Close", guiState.Window)
 		freeVPNDialog.SetOnClosed(func() { freeVPNDialogOpen = false })
 		freeVPNDialogOpen = true
 		freeVPNDialog.Show()

@@ -112,13 +112,13 @@ func updateCheckProgress(updater UIUpdater, current, total int) {
 // currentValidCount используется для правильной нумерации в previewLines.
 func processInputLine(line string, lineNum, totalLines int, previewLines *[]string, errors *[]string, currentValidCount int) int {
 	lineStartTime := time.Now()
-	linePreview := line
-	if len(line) > 50 {
-		linePreview = line[:50] + "..."
-	}
+		linePreview := line
+		if len(line) > 50 {
+			linePreview = line[:50] + "..."
+		}
 	debuglog.DebugLog("checkURL: Processing line %d/%d: %s", lineNum, totalLines, linePreview)
 
-	if subscription.IsSubscriptionURL(line) {
+		if subscription.IsSubscriptionURL(line) {
 		return processSubscriptionURL(line, lineNum, totalLines, previewLines, errors, lineStartTime, currentValidCount)
 	} else if subscription.IsDirectLink(line) {
 		return processDirectLink(line, lineNum, totalLines, previewLines, errors, lineStartTime, currentValidCount)
@@ -139,30 +139,30 @@ func processSubscriptionURL(
 	lineStartTime time.Time,
 	currentValidCount int,
 ) int {
-	// Validate URL before fetching
-	if err := ValidateURL(line); err != nil {
+			// Validate URL before fetching
+			if err := ValidateURL(line); err != nil {
 		debuglog.DebugLog("checkURL: Invalid subscription URL %d/%d: %v", lineNum, totalLines, err)
 		*errors = append(*errors, fmt.Sprintf("Invalid subscription URL: %v", err))
 		return 0
-	}
+			}
 
 	// Fetch subscription
-	fetchStartTime := time.Now()
+			fetchStartTime := time.Now()
 	debuglog.DebugLog("checkURL: Fetching subscription %d/%d: %s", lineNum, totalLines, line)
-	content, err := subscription.FetchSubscription(line)
-	fetchDuration := time.Since(fetchStartTime)
-	if err != nil {
+			content, err := subscription.FetchSubscription(line)
+			fetchDuration := time.Since(fetchStartTime)
+			if err != nil {
 		debuglog.DebugLog("checkURL: Failed to fetch subscription %d/%d (took %v): %v", lineNum, totalLines, fetchDuration, err)
 		*errors = append(*errors, fmt.Sprintf("Failed to fetch %s: %v", line, err))
 		return 0
-	}
+			}
 
-	// Validate response size
-	if err := ValidateHTTPResponseSize(int64(len(content))); err != nil {
+			// Validate response size
+			if err := ValidateHTTPResponseSize(int64(len(content))); err != nil {
 		debuglog.DebugLog("checkURL: Subscription response too large %d/%d: %v", lineNum, totalLines, err)
 		*errors = append(*errors, fmt.Sprintf("Subscription response too large: %v", err))
 		return 0
-	}
+			}
 
 	debuglog.DebugLog("checkURL: Fetched subscription %d/%d: %d bytes in %v", lineNum, totalLines, len(content), fetchDuration)
 
@@ -184,26 +184,26 @@ func parseSubscriptionContent(
 	lineStartTime time.Time,
 	currentValidCount int,
 ) int {
-	parseStartTime := time.Now()
-	subLines := strings.Split(string(content), "\n")
+			parseStartTime := time.Now()
+			subLines := strings.Split(string(content), "\n")
 	debuglog.DebugLog("checkURL: Parsing subscription %d/%d: %d lines", lineNum, totalLines, len(subLines))
 
-	validInSub := 0
+			validInSub := 0
 	validCount := currentValidCount
 
-	for _, subLine := range subLines {
-		subLine = strings.TrimSpace(subLine)
-		if subLine != "" && subscription.IsDirectLink(subLine) {
-			validInSub++
+			for _, subLine := range subLines {
+				subLine = strings.TrimSpace(subLine)
+				if subLine != "" && subscription.IsDirectLink(subLine) {
+					validInSub++
 			validCount++
 			if len(*previewLines) < wizardutils.MaxPreviewLines {
 				*previewLines = append(*previewLines, fmt.Sprintf("%d. %s", validCount, subLine))
+					}
+				}
 			}
-		}
-	}
 
-	parseDuration := time.Since(parseStartTime)
-	debuglog.DebugLog("checkURL: Parsed subscription %d/%d: %d valid links in %v (line processing took %v total)",
+			parseDuration := time.Since(parseStartTime)
+			debuglog.DebugLog("checkURL: Parsed subscription %d/%d: %d valid links in %v (line processing took %v total)",
 		lineNum, totalLines, validInSub, parseDuration, time.Since(lineStartTime))
 
 	return validInSub
@@ -219,20 +219,20 @@ func processDirectLink(
 	lineStartTime time.Time,
 	currentValidCount int,
 ) int {
-	// Validate URI before parsing
-	if err := ValidateURI(line); err != nil {
+			// Validate URI before parsing
+			if err := ValidateURI(line); err != nil {
 		debuglog.DebugLog("checkURL: Invalid URI format %d/%d: %v", lineNum, totalLines, err)
 		*errors = append(*errors, fmt.Sprintf("Invalid URI format: %v", err))
 		return 0
-	}
+			}
 
 	// Validate parsing
-	parseStartTime := time.Now()
+			parseStartTime := time.Now()
 	debuglog.DebugLog("checkURL: Parsing direct link %d/%d", lineNum, totalLines)
-	_, err := subscription.ParseNode(line, nil)
-	parseDuration := time.Since(parseStartTime)
+			_, err := subscription.ParseNode(line, nil)
+			parseDuration := time.Since(parseStartTime)
 
-	if err != nil {
+			if err != nil {
 		debuglog.DebugLog("checkURL: Invalid direct link %d/%d (took %v): %v", lineNum, totalLines, parseDuration, err)
 		*errors = append(*errors, fmt.Sprintf("Invalid direct link: %v", err))
 		return 0
@@ -242,7 +242,7 @@ func processDirectLink(
 	if len(*previewLines) < wizardutils.MaxPreviewLines {
 		validCount := currentValidCount + 1
 		*previewLines = append(*previewLines, fmt.Sprintf("%d. %s", validCount, line))
-	}
+				}
 	return 1
 }
 
@@ -261,28 +261,28 @@ func buildAndDisplayCheckResult(totalValid int, previewLines []string, errors []
 
 // buildErrorResult строит сообщение об ошибке.
 func buildErrorResult(errors []string, updater UIUpdater) {
-	errorMsg := "❌ No valid proxy links found"
-	if len(errors) > 0 {
-		errorMsg += "\n" + strings.Join(errors[:min(3, len(errors))], "\n")
-	}
-	updater.UpdateURLStatus(errorMsg)
+		errorMsg := "❌ No valid proxy links found"
+		if len(errors) > 0 {
+			errorMsg += "\n" + strings.Join(errors[:min(3, len(errors))], "\n")
+		}
+		updater.UpdateURLStatus(errorMsg)
 }
 
 // buildSuccessResult строит сообщение об успешной проверке.
 func buildSuccessResult(totalValid int, previewLines []string, errors []string, updater UIUpdater) {
-	statusMsg := fmt.Sprintf("✅ Working! Found %d valid proxy link(s)", totalValid)
-	if len(errors) > 0 {
-		statusMsg += fmt.Sprintf("\n⚠️ %d error(s)", len(errors))
-	}
-	updater.UpdateURLStatus(statusMsg)
-
-	if len(previewLines) > 0 {
-		previewText := strings.Join(previewLines, "\n")
-		if totalValid > len(previewLines) {
-			previewText += fmt.Sprintf("\n... and %d more", totalValid-len(previewLines))
+		statusMsg := fmt.Sprintf("✅ Working! Found %d valid proxy link(s)", totalValid)
+		if len(errors) > 0 {
+			statusMsg += fmt.Sprintf("\n⚠️ %d error(s)", len(errors))
 		}
-		updater.UpdateOutboundsPreview(previewText)
-	}
+		updater.UpdateURLStatus(statusMsg)
+
+		if len(previewLines) > 0 {
+			previewText := strings.Join(previewLines, "\n")
+			if totalValid > len(previewLines) {
+				previewText += fmt.Sprintf("\n... and %d more", totalValid-len(previewLines))
+			}
+			updater.UpdateOutboundsPreview(previewText)
+		}
 }
 
 // min helper function
@@ -508,7 +508,7 @@ func validateApplyURLInput(input, parserConfigJSON string) error {
 		return fmt.Errorf("parserConfigJSON is empty")
 	}
 	return nil
-}
+	}
 
 // parseParserConfigForApply парсит ParserConfig из JSON строки.
 func parseParserConfigForApply(parserConfigJSON string, timing interface{ LogTiming(string, time.Duration) }) (*config.ParserConfig, error) {
@@ -586,7 +586,7 @@ func preserveExistingProperties(parserConfig *config.ParserConfig) *existingProp
 	}
 
 	return props
-}
+	}
 
 // createSubscriptionProxies создает ProxySource для каждой подписки.
 func createSubscriptionProxies(subscriptions []string, existingProps *existingProperties) []config.ProxySource {
@@ -635,28 +635,28 @@ func restoreTagPrefixAndPostfix(proxySource *config.ProxySource, lookupKey strin
 
 // connectionsMatch проверяет, совпадают ли два массива connections (порядок не важен).
 func connectionsMatch(conn1, conn2 []string) bool {
-	if len(conn1) != len(conn2) {
-		return false
-	}
-	// Create maps for comparison
-	map1 := make(map[string]int)
-	map2 := make(map[string]int)
-	for _, c := range conn1 {
-		map1[strings.TrimSpace(c)]++
-	}
-	for _, c := range conn2 {
-		map2[strings.TrimSpace(c)]++
-	}
-	if len(map1) != len(map2) {
-		return false
-	}
-	for k, v := range map1 {
-		if map2[k] != v {
+		if len(conn1) != len(conn2) {
 			return false
 		}
+		// Create maps for comparison
+		map1 := make(map[string]int)
+		map2 := make(map[string]int)
+		for _, c := range conn1 {
+			map1[strings.TrimSpace(c)]++
+		}
+		for _, c := range conn2 {
+			map2[strings.TrimSpace(c)]++
+		}
+		if len(map1) != len(map2) {
+			return false
+		}
+		for k, v := range map1 {
+			if map2[k] != v {
+				return false
+			}
+		}
+		return true
 	}
-	return true
-}
 
 // matchOrCreateConnectionProxy сопоставляет connections с существующим ProxySource или создает новый.
 func matchOrCreateConnectionProxy(connections []string, existingProps *existingProperties, newProxies []config.ProxySource) []config.ProxySource {
@@ -666,33 +666,33 @@ func matchOrCreateConnectionProxy(connections []string, existingProps *existingP
 		return newProxies
 	}
 
-	// Try to match with existing connections proxy by comparing connections
+		// Try to match with existing connections proxy by comparing connections
 	for _, existingConnectionsProxy := range existingProps.ConnectionsProxies {
-		if connectionsMatch(existingConnectionsProxy.Connections, connections) {
-			// Matched existing proxy - update connections but preserve all other properties
-			matchedProxy := config.ProxySource{
-				Connections: connections, // Update with potentially reordered connections
-				Outbounds:   existingConnectionsProxy.Outbounds,
-				TagPrefix:   existingConnectionsProxy.TagPrefix,
-				TagPostfix:  existingConnectionsProxy.TagPostfix,
-				TagMask:     existingConnectionsProxy.TagMask,
-				Skip:        existingConnectionsProxy.Skip,
-			}
-			newProxies = append(newProxies, matchedProxy)
-			debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
-				matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
+			if connectionsMatch(existingConnectionsProxy.Connections, connections) {
+				// Matched existing proxy - update connections but preserve all other properties
+				matchedProxy := config.ProxySource{
+					Connections: connections, // Update with potentially reordered connections
+					Outbounds:   existingConnectionsProxy.Outbounds,
+					TagPrefix:   existingConnectionsProxy.TagPrefix,
+					TagPostfix:  existingConnectionsProxy.TagPostfix,
+					TagMask:     existingConnectionsProxy.TagMask,
+					Skip:        existingConnectionsProxy.Skip,
+				}
+				newProxies = append(newProxies, matchedProxy)
+				debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
+					matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
 			return newProxies
+			}
 		}
-	}
 
-	// New connections - add as new ProxySource
-	proxySource := config.ProxySource{
-		Connections: connections,
-	}
-	debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
-	newProxies = append(newProxies, proxySource)
+			// New connections - add as new ProxySource
+			proxySource := config.ProxySource{
+				Connections: connections,
+			}
+			debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
+			newProxies = append(newProxies, proxySource)
 
-	// Don't preserve other existing ProxySource entries with connections - user removed them
+		// Don't preserve other existing ProxySource entries with connections - user removed them
 	if len(existingProps.ConnectionsProxies) > 0 {
 		debuglog.DebugLog("applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingProps.ConnectionsProxies)-1)
 	}

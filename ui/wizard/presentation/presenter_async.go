@@ -95,16 +95,16 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 			p.model.PreviewGenerationInProgress = false
 			p.UpdateSaveButtonText("Save")
 			SafeFyneDo(p.guiState.Window, func() {
-				if p.guiState.ShowPreviewButton != nil {
-					p.guiState.ShowPreviewButton.Enable()
-				}
+			if p.guiState.ShowPreviewButton != nil {
+				p.guiState.ShowPreviewButton.Enable()
+			}
 			})
 		}()
 
 		SafeFyneDo(p.guiState.Window, func() {
-			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
-			}
+		if p.guiState.TemplatePreviewStatusLabel != nil {
+			p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
+		}
 		})
 
 		buildStartTime := time.Now()
@@ -118,9 +118,9 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 			p.SetTemplatePreviewText(errorText)
 			p.model.TemplatePreviewNeedsUpdate = false
 			SafeFyneDo(p.guiState.Window, func() {
-				if p.guiState.TemplatePreviewStatusLabel != nil {
-					p.guiState.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
-				}
+			if p.guiState.TemplatePreviewStatusLabel != nil {
+				p.guiState.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
+			}
 			})
 			return
 		}
@@ -132,12 +132,12 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 
 		if !isLargeText {
 			SafeFyneDo(p.guiState.Window, func() {
-				if p.guiState.TemplatePreviewStatusLabel != nil {
-					p.guiState.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
-				}
-				if p.guiState.ShowPreviewButton != nil {
-					p.guiState.ShowPreviewButton.Enable()
-				}
+			if p.guiState.TemplatePreviewStatusLabel != nil {
+				p.guiState.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
+			}
+			if p.guiState.ShowPreviewButton != nil {
+				p.guiState.ShowPreviewButton.Enable()
+			}
 			})
 			debuglog.DebugLog("UpdateTemplatePreviewAsync: Preview text inserted")
 		} else {
