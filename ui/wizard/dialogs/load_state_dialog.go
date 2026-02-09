@@ -2,9 +2,9 @@
 //
 // Файл load_state_dialog.go содержит функцию ShowLoadStateDialog, которая создает диалоговое окно
 // для выбора сохранённого состояния визарда:
-//   - Отображение списка всех сохранённых состояний с метаданными
+//   - Простой список имён файлов (высота ~5 строк с прокруткой)
 //   - Выделение state.json как "текущее"
-//   - Buttons: "Load", "Configure Anew", "Cancel"
+//   - Кнопки: "Load", "New", "Cancel"
 //
 // Диалог используется в двух сценариях:
 //   - При открытии визарда, если существует state.json или есть другие сохранённые состояния
@@ -18,7 +18,6 @@ package dialogs
 import (
 	"fmt"
 	"sort"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -27,13 +26,14 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/ui/components"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
 
 // LoadStateResult представляет результат выбора в диалоге загрузки состояния.
 type LoadStateResult struct {
-	Action      string // "load", "new", "cancel"
-	SelectedID  string // ID выбранного состояния (пусто для state.json)
+	Action     string // "load", "new", "cancel"
+	SelectedID string // ID выбранного состояния (пусто для state.json)
 }
 
 // ShowLoadStateDialog показывает диалог выбора состояния.
@@ -45,9 +45,9 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 		return
 	}
 
-	// Загружаем список состояний
+	// Загружаем только имена файлов (без чтения содержимого)
 	stateStore := presenter.GetStateStore()
-	states, err := stateStore.ListWizardStates()
+	states, err := stateStore.ListWizardStateNames()
 	if err != nil {
 		debuglog.ErrorLog("ShowLoadStateDialog: failed to list states: %v", err)
 		dialog.ShowError(fmt.Errorf("Failed to load states list: %w", err), guiState.Window)
@@ -72,58 +72,38 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 		return states[i].UpdatedAt.After(states[j].UpdatedAt)
 	})
 
-	// Создаём список состояний
+	// Создаём простой список имён файлов
 	var selectedIndex widget.ListItemID = -1
 	if len(states) > 0 && states[0].IsCurrent {
 		selectedIndex = 0
 	}
 
+	// Подготавливаем список имён файлов
+	fileNames := make([]string, len(states))
+	for i, state := range states {
+		if state.ID == "" {
+			fileNames[i] = "state.json"
+		} else {
+			fileNames[i] = state.ID + ".json"
+		}
+		if state.IsCurrent {
+			fileNames[i] += " (Current)"
+		}
+	}
+
 	list := widget.NewList(
 		func() int {
-			return len(states)
+			return len(fileNames)
 		},
 		func() fyne.CanvasObject {
-			return container.NewVBox(
-				widget.NewLabel("ID"),
-				widget.NewLabel("Comment"),
-				widget.NewLabel("Dates"),
-			)
+			return widget.NewLabel("")
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			state := states[id]
-			cont := obj.(*fyne.Container)
-			labels := cont.Objects
-
-			// Format ID with "Current" label
-			idText := state.ID
-			if state.ID == "" {
-				idText = "state.json"
+			if id >= 0 && id < widget.ListItemID(len(fileNames)) {
+				obj.(*widget.Label).SetText(fileNames[id])
 			}
-			if state.IsCurrent {
-				idText += " (Current)"
-			}
-
-			// Comment
-			commentText := state.Comment
-			if commentText == "" {
-				commentText = "(no comment)"
-			}
-
-			// Dates
-			datesText := fmt.Sprintf("Created: %s\nUpdated: %s",
-				formatDate(state.CreatedAt),
-				formatDate(state.UpdatedAt))
-
-			labels[0].(*widget.Label).SetText(idText)
-			labels[1].(*widget.Label).SetText(commentText)
-			labels[2].(*widget.Label).SetText(datesText)
 		},
 	)
-
-	// Отслеживаем выбранный элемент
-	list.OnSelected = func(id widget.ListItemID) {
-		selectedIndex = id
-	}
 
 	// Выделяем state.json по умолчанию
 	if selectedIndex >= 0 && selectedIndex < widget.ListItemID(len(states)) {
@@ -132,6 +112,67 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 
 	// Declare dialog variable first so it can be used in button callbacks
 	var dialogWindow dialog.Dialog
+
+	// Функция для обновления списка состояний
+	refreshStatesList := func() {
+		stateStore := presenter.GetStateStore()
+		newStates, err := stateStore.ListWizardStateNames()
+		if err != nil {
+			debuglog.ErrorLog("ShowLoadStateDialog: failed to refresh states list: %v", err)
+			return
+		}
+
+		// Если состояний не осталось, закрываем диалог с действием "new"
+		if len(newStates) == 0 {
+			if dialogWindow != nil {
+				dialogWindow.Hide()
+			}
+			onResult(LoadStateResult{Action: "new"})
+			return
+		}
+
+		// Обновляем список
+		states = newStates
+		sort.Slice(states, func(i, j int) bool {
+			if states[i].IsCurrent && !states[j].IsCurrent {
+				return true
+			}
+			if !states[i].IsCurrent && states[j].IsCurrent {
+				return false
+			}
+			return states[i].UpdatedAt.After(states[j].UpdatedAt)
+		})
+
+		// Обновляем имена файлов
+		fileNames = make([]string, len(states))
+		for i, state := range states {
+			if state.ID == "" {
+				fileNames[i] = "state.json"
+			} else {
+				fileNames[i] = state.ID + ".json"
+			}
+			if state.IsCurrent {
+				fileNames[i] += " (Current)"
+			}
+		}
+
+		// Сбрасываем выбор
+		selectedIndex = -1
+		if len(states) > 0 && states[0].IsCurrent {
+			selectedIndex = 0
+		}
+
+		// Обновляем список
+		list.Refresh()
+		if selectedIndex >= 0 && selectedIndex < widget.ListItemID(len(states)) {
+			list.Select(selectedIndex)
+		}
+	}
+
+	// Отслеживаем выбранный элемент
+	list.OnSelected = func(id widget.ListItemID) {
+		selectedIndex = id
+	}
 
 	// Buttons
 	loadButton := widget.NewButton("Load", func() {
@@ -149,48 +190,78 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	})
 	loadButton.Importance = widget.HighImportance
 
-	newButton := widget.NewButton("Configure Anew", func() {
+	newButton := widget.NewButton("New", func() {
 		if dialogWindow != nil {
 			dialogWindow.Hide()
 		}
 		onResult(LoadStateResult{Action: "new"})
 	})
 
-	cancelButton := widget.NewButton("Cancel", func() {
-		if dialogWindow != nil {
-			dialogWindow.Hide()
+	// Кнопка удаления
+	deleteButton := widget.NewButton("Delete", func() {
+		if selectedIndex < 0 || selectedIndex >= widget.ListItemID(len(states)) {
+			return
 		}
-		onResult(LoadStateResult{Action: "cancel"})
-	})
 
-	// Контейнер с кнопками
+		selectedState := states[selectedIndex]
+
+		// Нельзя удалять state.json (текущее состояние)
+		if selectedState.IsCurrent {
+			dialog.ShowError(fmt.Errorf("Cannot delete current state (state.json)"), guiState.Window)
+			return
+		}
+
+		// Подтверждение удаления
+		dialog.ShowConfirm("Delete State", fmt.Sprintf("Delete state '%s'?", selectedState.ID+".json"), func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+
+			// Удаляем состояние
+			stateStore := presenter.GetStateStore()
+			if err := stateStore.DeleteWizardState(selectedState.ID); err != nil {
+				dialog.ShowError(fmt.Errorf("Failed to delete state: %w", err), guiState.Window)
+				return
+			}
+
+			// Обновляем список состояний
+			refreshStatesList()
+		}, guiState.Window)
+	})
+	deleteButton.Importance = widget.MediumImportance
+
+	// Контейнер с кнопками (без cancelButton - он будет через dismissText)
 	buttonsContainer := container.NewHBox(
 		layout.NewSpacer(),
-		cancelButton,
+		deleteButton,
 		newButton,
 		loadButton,
 	)
 
-	// Main content
-	content := container.NewBorder(
-		widget.NewLabel("Select state to load:"),
-		buttonsContainer,
-		nil,
-		nil,
-		container.NewScroll(list),
-	)
+	// Создаём прокручиваемый список с фиксированной высотой (примерно 5 строк)
+	scrollList := container.NewScroll(list)
+	scrollList.SetMinSize(fyne.NewSize(300, 150)) // Примерно 5 строк по 30px
 
-	// Create dialog without close button (empty dismiss text)
-	dialogWindow = dialog.NewCustom("Load State", "", content, guiState.Window)
-	dialogWindow.Resize(fyne.NewSize(500, 400))
+	// Сохраняем оригинальный обработчик клавиатуры до создания диалога
+	originalOnTypedKey := guiState.Window.Canvas().OnTypedKey()
+
+	// Create dialog with simplified API (cancelButton через dismissText, ESC обрабатывается автоматически)
+	dialogWindow = components.NewCustom("Load State", scrollList, buttonsContainer, "Cancel", guiState.Window)
+	dialogWindow.Resize(fyne.NewSize(300, 220))
+
+	// Обработчик для cancelButton через dismissText и ESC
+	// components.NewCustom уже устанавливает обработчик для восстановления клавиатуры,
+	// поэтому мы перезаписываем его, но сохраняем логику восстановления
+	dialogWindow.SetOnClosed(func() {
+		// Восстанавливаем оригинальный обработчик клавиатуры
+		if originalOnTypedKey != nil {
+			guiState.Window.Canvas().SetOnTypedKey(originalOnTypedKey)
+		} else {
+			guiState.Window.Canvas().SetOnTypedKey(nil)
+		}
+		// Вызываем callback для cancel (если диалог закрыт через Cancel или ESC)
+		onResult(LoadStateResult{Action: "cancel"})
+	})
+
 	dialogWindow.Show()
 }
-
-// formatDate formats date for display.
-func formatDate(t time.Time) string {
-	if t.IsZero() {
-		return "unknown"
-	}
-	return t.Format("02.01.2006 15:04")
-}
-

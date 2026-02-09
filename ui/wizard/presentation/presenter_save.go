@@ -37,6 +37,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -330,15 +331,14 @@ func (p *WizardPresenter) showSaveSuccessDialog(configPath string, validationErr
 	})
 	okButton.Importance = widget.HighImportance
 
-	content := container.NewVBox(
-		widget.NewLabel(message),
-		container.NewHBox(
-			layout.NewSpacer(),
-			okButton,
-		),
+	buttonsRow := container.NewHBox(
+		layout.NewSpacer(),
+		okButton,
 	)
 
-	d = dialog.NewCustomWithoutButtons(title, content, p.guiState.Window)
+	messageLabel := widget.NewLabel(message)
+
+	d = components.NewCustom(title, messageLabel, buttonsRow, "", p.guiState.Window)
 	d.Show()
 }
 

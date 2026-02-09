@@ -350,11 +350,6 @@ func createSaveButtonWithProgress(presenter *wizardpresentation.WizardPresenter,
 func updateNavigationButtons(guiState *wizardpresentation.GUIState, tabs *container.AppTabs, currentTabIndex int) {
 	totalTabs := len(tabs.Items)
 
-	// State management buttons (left side, before Close)
-	stateButtons := container.NewHBox(
-		guiState.ReadButton,
-	)
-
 	// Create save button stack
 	saveButtonStack := container.NewStack(
 		guiState.SavePlaceholder,
@@ -364,27 +359,25 @@ func updateNavigationButtons(guiState *wizardpresentation.GUIState, tabs *contai
 
 	var buttonsContent fyne.CanvasObject
 	if currentTabIndex == totalTabs-1 {
-		// Last tab (Preview): State buttons, Close on left, Prev, Save and Save As on right
+		// Last tab (Preview): Close, Save As on left, Prev, Save on right
 		buttonsContent = container.NewHBox(
-			stateButtons,
 			guiState.CloseButton,
+			guiState.SaveAsButton,
 			layout.NewSpacer(),
 			guiState.PrevButton,
 			saveButtonStack,
-			guiState.SaveAsButton,
 		)
 	} else if currentTabIndex == 0 {
-		// First tab: State buttons, Close on left, Next on right (Prev hidden)
+		// First tab: Close, Read on left, Next on right (Prev hidden)
 		buttonsContent = container.NewHBox(
-			stateButtons,
 			guiState.CloseButton,
+			guiState.ReadButton,
 			layout.NewSpacer(),
 			guiState.NextButton,
 		)
 	} else {
-		// Middle tabs: State buttons, Close on left, Prev and Next on right
+		// Middle tabs: Close on left, Prev and Next on right
 		buttonsContent = container.NewHBox(
-			stateButtons,
 			guiState.CloseButton,
 			layout.NewSpacer(),
 			guiState.PrevButton,
@@ -483,7 +476,36 @@ func handleReadButton(presenter *wizardpresentation.WizardPresenter, wizardWindo
 // Использует ShowLoadStateDialog для выбора состояния.
 func loadStateFromRead(presenter *wizardpresentation.WizardPresenter, wizardWindow fyne.Window) {
 	wizarddialogs.ShowLoadStateDialog(presenter, func(result wizarddialogs.LoadStateResult) {
-		if result.Action == "cancel" || result.Action == "new" {
+		if result.Action == "cancel" {
+			return
+		}
+
+		if result.Action == "new" {
+			// "New" - инициализировать новое состояние из шаблона/config.json
+			// Игнорируем все сохранённые состояния
+			controller := presenter.Controller()
+			fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
+			model := presenter.Model()
+			
+			// Если TemplateData ещё не загружен, загружаем его
+			if model.TemplateData == nil {
+				templateLoader := &wizardbusiness.DefaultTemplateLoader{}
+				templateData, err := templateLoader.LoadTemplateData(controller.FileService.ExecDir)
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("Failed to load template: %w", err), wizardWindow)
+					return
+				}
+				model.TemplateData = templateData
+			}
+			
+			// Загружаем конфигурацию из config.json или шаблона
+			loadConfigFromFile(presenter, fileServiceAdapter, model.TemplateData, model, wizardWindow)
+			
+			// Сбрасываем флаг изменений, так как это новая конфигурация
+			presenter.MarkAsSaved()
+			
+			// Синхронизируем GUI
+			presenter.SyncModelToGUI()
 			return
 		}
 
@@ -553,7 +575,7 @@ func handleCloseButton(presenter *wizardpresentation.WizardPresenter, guiState *
 
 	if hasChanges {
 		// Создаем кастомный диалог с тремя кнопками: Save, Discard, Cancel
-		message := widget.NewLabel("Save changes before closing?")
+		messageLabel := widget.NewLabel("Save changes before closing?")
 
 		var d dialog.Dialog
 
@@ -578,23 +600,14 @@ func handleCloseButton(presenter *wizardpresentation.WizardPresenter, guiState *
 		})
 		discardButton.Importance = widget.MediumImportance
 
-		cancelButton := widget.NewButton("Cancel", func() {
-			if d != nil {
-				d.Hide()
-			}
-		})
-
-		content := container.NewVBox(
-			message,
-			container.NewHBox(
-				layout.NewSpacer(),
-				saveButton,
-				discardButton,
-				cancelButton,
-			),
+		// Buttons container (без cancelButton - он будет через dismissText)
+		buttonsRow := container.NewHBox(
+			layout.NewSpacer(),
+			saveButton,
+			discardButton,
 		)
 
-		d = dialog.NewCustomWithoutButtons("Confirmation", content, wizardWindow)
+		d = components.NewCustom("Confirmation", messageLabel, buttonsRow, "Cancel", wizardWindow)
 		d.Show()
 	} else {
 		// Нет изменений - закрываем без диалога

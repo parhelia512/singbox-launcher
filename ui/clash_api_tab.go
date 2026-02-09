@@ -9,7 +9,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
@@ -17,6 +16,7 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/ui/components"
 )
 
 // CreateClashAPITab creates and returns the content for the "Clash API" tab.
@@ -560,7 +560,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 				scroll := container.NewVScroll(content)
 				scroll.SetMinSize(fyne.NewSize(480, 260))
-				dlg := dialog.NewCustom("Selector → Active Outbound", "Close", scroll, ac.UIService.MainWindow)
+				dlg := components.NewCustom("Selector → Active Outbound", scroll, nil, "Close", ac.UIService.MainWindow)
 				dlg.Show()
 			})
 		}()

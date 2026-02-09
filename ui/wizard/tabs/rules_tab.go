@@ -74,12 +74,12 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 
 // createTemplateNotFoundMessage создает сообщение об отсутствии шаблона.
 func createTemplateNotFoundMessage() fyne.CanvasObject {
-	templateFileName := wizardtemplate.GetTemplateFileName()
-	return container.NewVBox(
-		widget.NewLabel(fmt.Sprintf("Template file bin/%s not found.", templateFileName)),
-		widget.NewLabel("Create the template file to enable this tab."),
-	)
-}
+		templateFileName := wizardtemplate.GetTemplateFileName()
+		return container.NewVBox(
+			widget.NewLabel(fmt.Sprintf("Template file bin/%s not found.", templateFileName)),
+			widget.NewLabel("Create the template file to enable this tab."),
+		)
+	}
 
 // initializeRulesTabState инициализирует состояние таба правил.
 func initializeRulesTabState(presenter *wizardpresentation.WizardPresenter, model *wizardmodels.WizardModel, guiState *wizardpresentation.GUIState) {
@@ -93,7 +93,7 @@ func initializeRulesTabState(presenter *wizardpresentation.WizardPresenter, mode
 	if model.CustomRules == nil {
 		model.CustomRules = make([]*wizardmodels.RuleState, 0)
 	}
-}
+	}
 
 // createSelectableRulesUI создает UI для selectable rules из шаблона.
 // Возвращает VBox контейнер для добавления элементов.
@@ -105,9 +105,9 @@ func createSelectableRulesUI(presenter *wizardpresentation.WizardPresenter, mode
 		return rulesBox
 	}
 
-	for i := range model.SelectableRuleStates {
-		ruleState := model.SelectableRuleStates[i]
-		idx := i
+		for i := range model.SelectableRuleStates {
+			ruleState := model.SelectableRuleStates[i]
+			idx := i
 
 		// Create outbound selector if rule has outbound field
 		outboundSelect, outboundRow := createOutboundSelectorForSelectableRule(
@@ -145,28 +145,28 @@ func createOutboundSelectorForSelectableRule(
 		return nil, nil
 	}
 
-	wizardmodels.EnsureDefaultOutbound(ruleState, availableOutbounds)
+				wizardmodels.EnsureDefaultOutbound(ruleState, availableOutbounds)
 	outboundSelect := widget.NewSelect(availableOutbounds, func(value string) {
-		// Ignore callback during programmatic update
-		if guiState.UpdatingOutboundOptions {
-			return
-		}
-		model.SelectableRuleStates[idx].SelectedOutbound = value
-		model.TemplatePreviewNeedsUpdate = true
+					// Ignore callback during programmatic update
+					if guiState.UpdatingOutboundOptions {
+						return
+					}
+					model.SelectableRuleStates[idx].SelectedOutbound = value
+					model.TemplatePreviewNeedsUpdate = true
 		presenter.MarkAsChanged()
-	})
-	outboundSelect.SetSelected(ruleState.SelectedOutbound)
-	if !ruleState.Enabled {
-		outboundSelect.Disable()
-	}
+				})
+				outboundSelect.SetSelected(ruleState.SelectedOutbound)
+				if !ruleState.Enabled {
+					outboundSelect.Disable()
+				}
 
 	outboundRow := container.NewHBox(
-		widget.NewLabel("Outbound:"),
-		outboundSelect,
-	)
+					widget.NewLabel("Outbound:"),
+					outboundSelect,
+				)
 
 	return outboundSelect, outboundRow
-}
+			}
 
 // createSelectableRuleCheckbox создает checkbox для selectable rule.
 func createSelectableRuleCheckbox(
@@ -177,25 +177,25 @@ func createSelectableRuleCheckbox(
 	idx int,
 	outboundSelect *widget.Select,
 ) *widget.Check {
-	checkbox := widget.NewCheck(ruleState.Rule.Label, func(val bool) {
+			checkbox := widget.NewCheck(ruleState.Rule.Label, func(val bool) {
 		// Always update model and UI state to keep them in sync
-		model.SelectableRuleStates[idx].Enabled = val
-		model.TemplatePreviewNeedsUpdate = true
+				model.SelectableRuleStates[idx].Enabled = val
+				model.TemplatePreviewNeedsUpdate = true
 
-		if outboundSelect != nil {
-			if val {
-				outboundSelect.Enable()
-			} else {
-				outboundSelect.Disable()
-			}
-		}
+				if outboundSelect != nil {
+					if val {
+						outboundSelect.Enable()
+					} else {
+						outboundSelect.Disable()
+					}
+				}
 
 		// Only mark as changed if not during programmatic update
 		if !guiState.UpdatingOutboundOptions {
 			presenter.MarkAsChanged()
 		}
-	})
-	checkbox.SetChecked(ruleState.Enabled)
+			})
+			checkbox.SetChecked(ruleState.Enabled)
 	return checkbox
 }
 
@@ -206,20 +206,20 @@ func createSelectableRuleRowContent(
 	checkbox *widget.Check,
 	outboundRow fyne.CanvasObject,
 ) []fyne.CanvasObject {
-	// Create checkbox container with optional info button for description
-	checkboxContainer := container.NewHBox(checkbox)
-	if ruleState.Rule.Description != "" {
-		infoButton := widget.NewButton("?", func() {
-			dialog.ShowInformation(ruleState.Rule.Label, ruleState.Rule.Description, guiState.Window)
-		})
-		infoButton.Importance = widget.LowImportance
-		checkboxContainer.Add(infoButton)
-	}
+			// Create checkbox container with optional info button for description
+			checkboxContainer := container.NewHBox(checkbox)
+			if ruleState.Rule.Description != "" {
+				infoButton := widget.NewButton("?", func() {
+					dialog.ShowInformation(ruleState.Rule.Label, ruleState.Rule.Description, guiState.Window)
+				})
+				infoButton.Importance = widget.LowImportance
+				checkboxContainer.Add(infoButton)
+			}
 
-	rowContent := []fyne.CanvasObject{checkboxContainer, layout.NewSpacer()}
-	if outboundRow != nil {
-		rowContent = append(rowContent, outboundRow)
-	}
+			rowContent := []fyne.CanvasObject{checkboxContainer, layout.NewSpacer()}
+			if outboundRow != nil {
+				rowContent = append(rowContent, outboundRow)
+			}
 
 	return rowContent
 }
@@ -227,7 +227,7 @@ func createSelectableRuleRowContent(
 // rulesBoxAdder интерфейс для добавления элементов в контейнер.
 type rulesBoxAdder interface {
 	Add(...fyne.CanvasObject)
-}
+	}
 
 // createCustomRulesUI создает UI для пользовательских правил.
 func createCustomRulesUI(
@@ -277,20 +277,20 @@ func createOutboundSelectorForCustomRule(
 	idx int,
 	availableOutbounds []string,
 ) *widget.Select {
-	wizardmodels.EnsureDefaultOutbound(customRule, availableOutbounds)
+		wizardmodels.EnsureDefaultOutbound(customRule, availableOutbounds)
 
-	outboundSelect := widget.NewSelect(availableOutbounds, func(value string) {
-		if guiState.UpdatingOutboundOptions {
-			return
-		}
-		model.CustomRules[idx].SelectedOutbound = value
-		model.TemplatePreviewNeedsUpdate = true
+		outboundSelect := widget.NewSelect(availableOutbounds, func(value string) {
+			if guiState.UpdatingOutboundOptions {
+				return
+			}
+			model.CustomRules[idx].SelectedOutbound = value
+			model.TemplatePreviewNeedsUpdate = true
 		presenter.MarkAsChanged()
-	})
-	outboundSelect.SetSelected(customRule.SelectedOutbound)
-	if !customRule.Enabled {
-		outboundSelect.Disable()
-	}
+		})
+		outboundSelect.SetSelected(customRule.SelectedOutbound)
+		if !customRule.Enabled {
+			outboundSelect.Disable()
+		}
 
 	return outboundSelect
 }
@@ -304,14 +304,14 @@ func createCustomRuleActionButtons(
 	idx int,
 	showAddRuleDialog ShowAddRuleDialogFunc,
 ) (*widget.Button, *widget.Button) {
-	// Edit button
-	editButton := widget.NewButton("✏️", func() {
-		showAddRuleDialog(presenter, customRule, idx)
-	})
-	editButton.Importance = widget.LowImportance
+		// Edit button
+		editButton := widget.NewButton("✏️", func() {
+			showAddRuleDialog(presenter, customRule, idx)
+		})
+		editButton.Importance = widget.LowImportance
 
-	// Delete button
-	deleteButton := widget.NewButton("❌", func() {
+		// Delete button
+		deleteButton := widget.NewButton("❌", func() {
 		deleteCustomRule(presenter, model, guiState, customRule, showAddRuleDialog)
 	})
 	deleteButton.Importance = widget.LowImportance
@@ -335,23 +335,23 @@ func deleteCustomRule(
 		}
 	}
 
-	// Remove from GUIState
-	newRuleWidgets := make([]*wizardpresentation.RuleWidget, 0, len(guiState.RuleOutboundSelects)-1)
-	for _, rw := range guiState.RuleOutboundSelects {
-		if r, ok := rw.RuleState.(*wizardmodels.RuleState); ok && r != customRule {
-			newRuleWidgets = append(newRuleWidgets, rw)
-		}
-	}
-	guiState.RuleOutboundSelects = newRuleWidgets
+			// Remove from GUIState
+			newRuleWidgets := make([]*wizardpresentation.RuleWidget, 0, len(guiState.RuleOutboundSelects)-1)
+			for _, rw := range guiState.RuleOutboundSelects {
+				if r, ok := rw.RuleState.(*wizardmodels.RuleState); ok && r != customRule {
+					newRuleWidgets = append(newRuleWidgets, rw)
+				}
+			}
+			guiState.RuleOutboundSelects = newRuleWidgets
 
-	model.TemplatePreviewNeedsUpdate = true
+			model.TemplatePreviewNeedsUpdate = true
 	presenter.MarkAsChanged()
 
-	// Recreate tab content
-	refreshWrapper := func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
-		return CreateRulesTab(p, showAddRuleDialog)
-	}
-	presenter.RefreshRulesTab(refreshWrapper)
+			// Recreate tab content
+			refreshWrapper := func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
+				return CreateRulesTab(p, showAddRuleDialog)
+			}
+			presenter.RefreshRulesTab(refreshWrapper)
 }
 
 // createCustomRuleCheckbox создает checkbox для custom rule.
@@ -363,23 +363,23 @@ func createCustomRuleCheckbox(
 	idx int,
 	outboundSelect *widget.Select,
 ) *widget.Check {
-	checkbox := widget.NewCheck(customRule.Rule.Label, func(val bool) {
+		checkbox := widget.NewCheck(customRule.Rule.Label, func(val bool) {
 		// Always update model and UI state to keep them in sync
-		model.CustomRules[idx].Enabled = val
-		model.TemplatePreviewNeedsUpdate = true
+			model.CustomRules[idx].Enabled = val
+			model.TemplatePreviewNeedsUpdate = true
 
-		if val {
-			outboundSelect.Enable()
-		} else {
-			outboundSelect.Disable()
-		}
+			if val {
+				outboundSelect.Enable()
+			} else {
+				outboundSelect.Disable()
+			}
 
 		// Only mark as changed if not during programmatic update
 		if !guiState.UpdatingOutboundOptions {
 			presenter.MarkAsChanged()
 		}
-	})
-	checkbox.SetChecked(customRule.Enabled)
+		})
+		checkbox.SetChecked(customRule.Enabled)
 	return checkbox
 }
 
@@ -391,15 +391,15 @@ func createCustomRuleRowContent(
 	outboundSelect *widget.Select,
 ) []fyne.CanvasObject {
 	return []fyne.CanvasObject{
-		checkbox,
-		editButton,
-		deleteButton,
-		layout.NewSpacer(),
-		container.NewHBox(
-			widget.NewLabel("Outbound:"),
-			outboundSelect,
-		),
-	}
+			checkbox,
+			editButton,
+			deleteButton,
+			layout.NewSpacer(),
+			container.NewHBox(
+				widget.NewLabel("Outbound:"),
+				outboundSelect,
+			),
+		}
 }
 
 // createAddRuleButton создает кнопку добавления правила.
@@ -413,7 +413,7 @@ func createAddRuleButton(
 	})
 	addRuleButton.Importance = widget.LowImportance
 	rulesBox.Add(addRuleButton)
-}
+	}
 
 // createFinalOutboundSelect создает селектор финального outbound.
 func createFinalOutboundSelect(
