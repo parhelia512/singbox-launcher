@@ -27,7 +27,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/debuglog"
-	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
 
@@ -47,8 +46,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	}
 
 	// Загружаем список состояний
-	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: presenter.Controller().FileService}
-	stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
+	stateStore := presenter.GetStateStore()
 	states, err := stateStore.ListWizardStates()
 	if err != nil {
 		debuglog.ErrorLog("ShowLoadStateDialog: failed to list states: %v", err)
