@@ -194,6 +194,8 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 		}
 		model := presenter.Model()
 		model.PreviewNeedsParse = true
+		// Sync GUI to model to update ParserConfigJSON before refreshing outbound options
+		presenter.SyncGUIToModel()
 		presenter.RefreshOutboundOptions()
 
 		// Preview status will be updated when switching to Preview tab

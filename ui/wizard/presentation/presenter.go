@@ -41,17 +41,20 @@ type WizardPresenter struct {
 	controller      *core.AppController
 	templateLoader  wizardbusiness.TemplateLoader
 	openRuleDialogs map[int]fyne.Window
+	hasChanges      bool // Отслеживает наличие несохранённых изменений
 }
 
 // NewWizardPresenter создает новый презентер визарда.
 func NewWizardPresenter(model *wizardmodels.WizardModel, guiState *GUIState, controller *core.AppController, templateLoader wizardbusiness.TemplateLoader) *WizardPresenter {
-	return &WizardPresenter{
+	presenter := &WizardPresenter{
 		model:           model,
 		guiState:        guiState,
 		controller:      controller,
 		templateLoader:  templateLoader,
 		openRuleDialogs: make(map[int]fyne.Window),
+		hasChanges:      false,
 	}
+	return presenter
 }
 
 // Model возвращает модель визарда.

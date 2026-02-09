@@ -37,6 +37,8 @@ func GetAvailableOutbounds(model *wizardmodels.WizardModel) []string {
 		if err := json.Unmarshal([]byte(model.ParserConfigJSON), &parsed); err == nil {
 			parserCfg = &parsed
 		}
+		// Note: silently ignore parse errors - ParserConfigJSON might be invalid or incomplete
+		// This is expected behavior when user is typing ParserConfig
 	}
 
 	if parserCfg != nil {
