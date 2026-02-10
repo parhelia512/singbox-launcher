@@ -301,11 +301,10 @@ func (svc *ProcessService) CheckIfRunningAtStart() {
 // checkAndShowSingBoxRunningWarning checks if sing-box is running and shows warning dialog if found.
 // Returns true if process was found and warning was shown, false otherwise.
 func (svc *ProcessService) checkAndShowSingBoxRunningWarning(context string) bool {
-	ac := svc.ac
 	found, foundPID := svc.isSingBoxProcessRunning()
 	if found {
 		debuglog.DebugLog("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", context, foundPID)
-		ShowSingBoxAlreadyRunningWarningUtil(ac)
+		ShowSingBoxAlreadyRunningWarningUtil()
 		return true
 	}
 	debuglog.DebugLog("%s: No sing-box process found", context)
@@ -316,9 +315,8 @@ func (svc *ProcessService) checkAndShowSingBoxRunningWarning(context string) boo
 // Returns (isRunning, pid) tuple.
 // Uses getOurPID for thread-safe PID retrieval (with mutex protection).
 func (svc *ProcessService) isSingBoxProcessRunning() (bool, int) {
-	ac := svc.ac
 	// Use getOurPID for thread-safe access (same as original implementation)
-	ourPID := getOurPID(ac)
+	ourPID := getOurPID()
 
 	if runtime.GOOS == "windows" {
 		// Use tasklist on Windows for better reliability

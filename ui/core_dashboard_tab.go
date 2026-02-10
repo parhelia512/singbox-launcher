@@ -187,12 +187,12 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 	tab.statusLabel.Importance = widget.MediumImportance
 
 	startButton := widget.NewButton("Start", func() {
-		core.StartSingBoxProcess(tab.controller)
+		core.StartSingBoxProcess()
 		// Status will be updated automatically via UpdateCoreStatusFunc
 	})
 
 	stopButton := widget.NewButton("Stop", func() {
-		core.StopSingBoxProcess(tab.controller)
+		core.StopSingBoxProcess()
 		// Status will be updated automatically via UpdateCoreStatusFunc
 	})
 
@@ -255,14 +255,15 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		tab.parserStatusLabel.SetText("Starting...")
 
 		// Запускаем парсер в отдельной горутине
-		go core.RunParserProcess(tab.controller)
+		go core.RunParserProcess()
 	})
 	tab.updateConfigButton.Importance = widget.MediumImportance
 
 	tab.wizardButton = widget.NewButton("⚙️ Wizard", func() {
 		// Get parent window from AppController
-		parentWindow := tab.controller.GetMainWindow()
-		wizard.ShowConfigWizard(parentWindow, tab.controller)
+		ac := core.GetController()
+		parentWindow := ac.GetMainWindow()
+		wizard.ShowConfigWizard(parentWindow)
 	})
 	tab.wizardButton.Importance = widget.MediumImportance
 

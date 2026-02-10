@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"singbox-launcher/core"
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -127,8 +128,9 @@ func (p *WizardPresenter) SaveCurrentState() error {
 	state := p.CreateStateFromModel("", "")
 	stateStore := p.getStateStore()
 
+	ac := core.GetController()
 	// Получаем путь к state.json для логирования
-	statesDir := filepath.Join(p.controller.FileService.ExecDir, "bin", wizardbusiness.WizardStatesDir)
+	statesDir := filepath.Join(ac.FileService.ExecDir, "bin", wizardbusiness.WizardStatesDir)
 	statePath := filepath.Join(statesDir, wizardmodels.StateFileName)
 
 	debuglog.InfoLog("SaveCurrentState: saving to state.json at %s", statePath)
@@ -314,7 +316,8 @@ func (p *WizardPresenter) getDefaultFinalOutbound() string {
 func (p *WizardPresenter) GetStateStore() *wizardbusiness.StateStore {
 	// FileServiceAdapter определен в business/saver.go с build tag cgo
 	// При компиляции с cgo (как в проекте) всё работает корректно
-	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: p.controller.FileService}
+	ac := core.GetController()
+	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
 	return wizardbusiness.NewStateStore(fileServiceAdapter)
 }
 

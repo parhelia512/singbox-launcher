@@ -59,12 +59,16 @@ import (
 // only focus the existing window instead of creating a second instance.
 // This prevents multiple parallel instances of the wizard from being
 // opened and simplifies lifecycle management.
-func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
+func ShowConfigWizard(parent fyne.Window) {
+	ac := core.GetController()
+	if ac == nil {
+		return
+	}
 	// If wizard is already open - just focus it and return.
 	// Using RequestFocus() ensures the already-open window is brought
 	// to the foreground without creating a duplicate.
-	if controller.UIService != nil && controller.UIService.WizardWindow != nil {
-		controller.UIService.WizardWindow.RequestFocus()
+	if ac.UIService != nil && ac.UIService.WizardWindow != nil {
+		ac.UIService.WizardWindow.RequestFocus()
 		return
 	}
 
@@ -74,37 +78,37 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 
 	// Load template data
 	templateLoader := &wizardbusiness.DefaultTemplateLoader{}
-	templateData, err := templateLoader.LoadTemplateData(controller.FileService.ExecDir)
+	templateData, err := templateLoader.LoadTemplateData(ac.FileService.ExecDir)
 	if err != nil {
 		templateFileName := wizardtemplate.GetTemplateFileName()
-		debuglog.ErrorLog("ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(controller.FileService.ExecDir, "bin", templateFileName), err)
+		debuglog.ErrorLog("ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(ac.FileService.ExecDir, "bin", templateFileName), err)
 		// Update config status in Core Dashboard
-		if controller.UIService != nil && controller.UIService.UpdateConfigStatusFunc != nil {
-			controller.UIService.UpdateConfigStatusFunc()
+		if ac.UIService != nil && ac.UIService.UpdateConfigStatusFunc != nil {
+			ac.UIService.UpdateConfigStatusFunc()
 		}
 		return
 	}
 	model.TemplateData = templateData
 
 	// Create new window for wizard
-	wizardWindow := controller.UIService.Application.NewWindow("Config Wizard")
+	wizardWindow := ac.UIService.Application.NewWindow("Config Wizard")
 	wizardWindow.Resize(fyne.NewSize(620, 660))
 	wizardWindow.CenterOnScreen()
 	guiState.Window = wizardWindow
 
 	// Store wizard window in UIService
-	if controller.UIService != nil {
-		controller.UIService.WizardWindow = wizardWindow
+	if ac.UIService != nil {
+		ac.UIService.WizardWindow = wizardWindow
 		// Notify UIService consumers that wizard state changed
-		if controller.UIService.OnStateChange != nil {
-			controller.UIService.OnStateChange()
+		if ac.UIService.OnStateChange != nil {
+			ac.UIService.OnStateChange()
 		}
 	}
 
 	// Create presenter
-	presenter := wizardpresentation.NewWizardPresenter(model, guiState, controller, templateLoader)
-	if controller.UIService != nil {
-		controller.UIService.FocusOpenRuleDialogs = func() {
+	presenter := wizardpresentation.NewWizardPresenter(model, guiState, templateLoader)
+	if ac.UIService != nil {
+		ac.UIService.FocusOpenRuleDialogs = func() {
 			openDialogs := presenter.OpenRuleDialogs()
 			for _, dlg := range openDialogs {
 				if dlg != nil {
@@ -114,16 +118,16 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 			}
 		}
 		wizardWindow.SetOnClosed(func() {
-			controller.UIService.WizardWindow = nil
-			controller.UIService.FocusOpenRuleDialogs = nil
-			if controller.UIService.OnStateChange != nil {
-				controller.UIService.OnStateChange()
+			ac.UIService.WizardWindow = nil
+			ac.UIService.FocusOpenRuleDialogs = nil
+			if ac.UIService.OnStateChange != nil {
+				ac.UIService.OnStateChange()
 			}
 		})
 	}
 
 	// Check if state.json exists and load it directly
-	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
+	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
 	stateStore := wizardbusiness.NewStateStore(fileServiceAdapter)
 
 	// If state.json exists, load it directly without dialog
@@ -150,7 +154,7 @@ func ShowConfigWizard(parent fyne.Window, controller *core.AppController) {
 
 	// Continue with wizard initialization
 	// InitializeTemplateState вызывается внутри initializeWizardContent
-	initializeWizardContent(presenter, controller, guiState, wizardWindow, model, templateData)
+	initializeWizardContent(presenter, guiState, wizardWindow, model, templateData)
 }
 
 // loadConfigFromFile загружает конфигурацию из config.json или шаблона (текущее поведение).
@@ -214,12 +218,12 @@ func loadStateFromFile(presenter *wizardpresentation.WizardPresenter, stateStore
 }
 
 // initializeWizardContent инициализирует содержимое визарда (табы, кнопки и т.д.).
-func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, controller *core.AppController, guiState *wizardpresentation.GUIState, wizardWindow fyne.Window, model *wizardmodels.WizardModel, templateData *wizardtemplate.TemplateData) {
+func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState, wizardWindow fyne.Window, model *wizardmodels.WizardModel, templateData *wizardtemplate.TemplateData) {
 	// Initialize template state
 	presenter.InitializeTemplateState()
 
 	// Create tabs
-	tabs, rulesTabItem, previewTabItem := createWizardTabs(presenter, guiState, controller)
+	tabs, rulesTabItem, previewTabItem := createWizardTabs(presenter, guiState)
 
 	// Create buttons
 	var currentTabIndex int = 0
@@ -244,7 +248,7 @@ func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, cont
 
 // createWizardTabs создает табы визарда.
 // Возвращает контейнер табов и ссылки на Rules и Preview табы.
-func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState, controller *core.AppController) (*container.AppTabs, *container.TabItem, *container.TabItem) {
+func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState) (*container.AppTabs, *container.TabItem, *container.TabItem) {
 	// Create first tab
 	tab1 := wizardtabs.CreateSourceTab(presenter)
 	tab1Item := container.NewTabItem("Sources & ParserConfig", tab1)
@@ -252,7 +256,8 @@ func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *w
 	guiState.Tabs = tabs
 
 	// Overlay that redirects clicks to open rule dialog when present
-	guiState.RuleDialogOverlay = components.NewClickRedirect(controller)
+	ac := core.GetController()
+	guiState.RuleDialogOverlay = components.NewClickRedirect(ac)
 	guiState.RuleDialogOverlay.Hide()
 
 	var rulesTabItem *container.TabItem
@@ -483,14 +488,14 @@ func loadStateFromRead(presenter *wizardpresentation.WizardPresenter, wizardWind
 		if result.Action == "new" {
 			// "New" - инициализировать новое состояние из шаблона/config.json
 			// Игнорируем все сохранённые состояния
-			controller := presenter.Controller()
-			fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: controller.FileService}
+			ac := core.GetController()
+			fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
 			model := presenter.Model()
 			
 			// Если TemplateData ещё не загружен, загружаем его
 			if model.TemplateData == nil {
 				templateLoader := &wizardbusiness.DefaultTemplateLoader{}
-				templateData, err := templateLoader.LoadTemplateData(controller.FileService.ExecDir)
+				templateData, err := templateLoader.LoadTemplateData(ac.FileService.ExecDir)
 				if err != nil {
 					dialog.ShowError(fmt.Errorf("Failed to load template: %w", err), wizardWindow)
 					return

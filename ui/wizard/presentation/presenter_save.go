@@ -36,6 +36,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/core"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -149,8 +150,9 @@ func (p *WizardPresenter) waitForParsingIfNeeded() bool {
 	// Start parsing if not already in progress
 	if !p.model.AutoParseInProgress {
 		p.model.AutoParseInProgress = true
+		ac := core.GetController()
 		configService := &wizardbusiness.ConfigServiceAdapter{
-			CoreConfigService: p.controller.ConfigService,
+			CoreConfigService: ac.ConfigService,
 		}
 		go func() {
 			if err := wizardbusiness.ParseAndPreview(p.model, p, configService); err != nil {
@@ -227,8 +229,9 @@ func (p *WizardPresenter) saveConfigFile(configText string) (string, error) {
 		return "", fmt.Errorf("save operation cancelled")
 	}
 
+	ac := core.GetController()
 	fileService := &wizardbusiness.FileServiceAdapter{
-		FileService: p.controller.FileService,
+		FileService: ac.FileService,
 	}
 	debuglog.InfoLog("SaveConfig: saving config file")
 	path, err := wizardbusiness.SaveConfigWithBackup(fileService, configText)
@@ -254,9 +257,10 @@ func (p *WizardPresenter) validateConfigFile(configPath string) error {
 		return fmt.Errorf("save operation cancelled")
 	}
 
+	ac := core.GetController()
 	singBoxPath := ""
-	if p.controller.FileService != nil {
-		singBoxPath = p.controller.FileService.SingboxPath
+	if ac != nil && ac.FileService != nil {
+		singBoxPath = ac.FileService.SingboxPath
 	}
 
 	validationErr := wizardbusiness.ValidateConfigWithSingBox(configPath, singBoxPath)
@@ -273,14 +277,15 @@ func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string, valid
 	}
 	p.UpdateSaveProgress(0.7)
 
+	ac := core.GetController()
 	// Получаем путь к state.json для логирования
-	statesDir := filepath.Join(p.controller.FileService.ExecDir, "bin", wizardbusiness.WizardStatesDir)
+	statesDir := filepath.Join(ac.FileService.ExecDir, "bin", wizardbusiness.WizardStatesDir)
 	statePath := filepath.Join(statesDir, wizardmodels.StateFileName)
 
 	p.UpdateUI(func() {
 		// Update config status in Core Dashboard
-		if p.controller.UIService != nil && p.controller.UIService.UpdateConfigStatusFunc != nil {
-			p.controller.UIService.UpdateConfigStatusFunc()
+		if ac.UIService != nil && ac.UIService.UpdateConfigStatusFunc != nil {
+			ac.UIService.UpdateConfigStatusFunc()
 		}
 
 		// Сохраняем текущее состояние в state.json после успешного сохранения конфигурации
@@ -294,6 +299,36 @@ func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string, valid
 
 		// Логируем итоговую информацию о сохранении
 		debuglog.InfoLog("SaveConfig: completed - config.json=%s, state.json=%s", configPath, statePath)
+
+		// Перезапускаем сервер, если он запущен
+		ac := core.GetController()
+		if ac != nil && ac.RunningState != nil && ac.RunningState.IsRunning() {
+			debuglog.InfoLog("SaveConfig: restarting sing-box server after config save")
+			// Останавливаем сервер
+			core.StopSingBoxProcess()
+			// Ждем немного, чтобы процесс корректно остановился
+			go func() {
+				<-time.After(500 * time.Millisecond)
+				// Проверяем, что сервер остановился
+				ticker := time.NewTicker(100 * time.Millisecond)
+				defer ticker.Stop()
+				timeout := time.After(2 * time.Second)
+				for {
+					select {
+					case <-timeout:
+						debuglog.WarnLog("SaveConfig: timeout waiting for sing-box to stop")
+						return
+					case <-ticker.C:
+						if !ac.RunningState.IsRunning() {
+							// Сервер остановлен, запускаем заново
+							debuglog.InfoLog("SaveConfig: sing-box stopped, starting again")
+							core.StartSingBoxProcess(true) // skipRunningCheck = true
+							return
+						}
+					}
+				}
+			}()
+		}
 
 		// Show success dialog
 		p.showSaveSuccessDialog(configPath, validationErr)

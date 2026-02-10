@@ -154,7 +154,7 @@ func main() {
 					// Wait a bit for everything to initialize
 					<-time.After(autoStartDelay)
 					debuglog.InfoLog("Auto-start: Starting VPN due to -start parameter")
-					core.StartSingBoxProcess(controller)
+					core.StartSingBoxProcess()
 				}()
 			}
 
@@ -183,7 +183,7 @@ func main() {
 	controller.UIService.MainWindow.Resize(fyne.NewSize(350, 450)) // initial window size
 	controller.UIService.MainWindow.CenterOnScreen()               // Center the window on the screen
 
-	core.CheckIfLauncherAlreadyRunningUtil(controller)
+	core.CheckIfLauncherAlreadyRunningUtil()
 
 	// Intercept the window close event (clicking "X") to hide it instead of exiting completely.
 	if controller.UIService.MainWindow != nil {
@@ -218,13 +218,13 @@ func main() {
 	controller.UpdateUI()
 
 	// Check if config.json exists and show a warning if it doesn't
-	core.CheckConfigFileExists(controller)
+	core.CheckConfigFileExists()
 
 	// Check Linux capabilities and suggest setup if needed
-	core.CheckLinuxCapabilities(controller)
+	core.CheckLinuxCapabilities()
 
 	// Check if sing-box is running on startup and show a warning if it is.
-	core.CheckIfSingBoxRunningAtStartUtil(controller)
+	core.CheckIfSingBoxRunningAtStartUtil()
 
 	// Use app.Run() instead of ShowAndRun() for windowless support
 	// This allows the app to keep running even when window is closed/hidden
