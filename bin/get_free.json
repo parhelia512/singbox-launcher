@@ -17,7 +17,7 @@
       ],
       "outbounds": [
         {
-          "tag": "auto-proxy-out",
+          "tag": "auto-proxy-out 🔄",
           "type": "urltest",
           "options": {
             "interrupt_exist_connections": true,
@@ -34,7 +34,7 @@
           }
         },
         {
-          "tag": "proxy-out",
+          "tag": "proxy-out 🛡️",
           "type": "selector",
           "options": {
             "default": "auto-proxy-out",
@@ -68,7 +68,7 @@
           "comment": "Proxy group for russian VPN"
         },
         {
-          "tag": "vpn 1️⃣",
+          "tag": "vpn ①",
           "type": "selector",
           "options": {
             "default": "proxy-out",
@@ -81,7 +81,7 @@
           "comment": "Proxy group 1"
         },
         {
-          "tag": "vpn 2️⃣",
+          "tag": "vpn ②",
           "type": "selector",
           "options": {
             "default": "proxy-out",
