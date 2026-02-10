@@ -89,7 +89,43 @@ type RunningState struct {
 	controller *AppController
 }
 
+var (
+	instance     *AppController
+	instanceOnce sync.Once
+)
+
+// GetController returns the global AppController instance (singleton).
+// Returns nil if NewAppController has not been called yet.
+// In normal operation, NewAppController should be called in main.go before any calls to GetController().
+func GetController() *AppController {
+	if instance == nil {
+		debuglog.WarnLog("GetController: instance is nil, this should not happen. NewAppController should be called first.")
+		// Try to create a minimal instance (this is a fallback, not recommended)
+		// In practice, this should never happen in normal operation
+		instanceOnce.Do(func() {
+			// Create minimal instance without UI dependencies
+			// This is a fallback and may not work correctly for all use cases
+			fileService, err := services.NewFileService()
+			if err != nil {
+				debuglog.ErrorLog("GetController: failed to create fallback FileService: %v", err)
+				return
+			}
+			instance = &AppController{
+				FileService: fileService,
+			}
+			instance.RunningState = &RunningState{controller: instance}
+			instance.ProcessService = NewProcessService(instance)
+			instance.ConfigService = NewConfigService(instance)
+			instance.ctx, instance.cancelFunc = context.WithCancel(context.Background())
+			instance.StateService = services.NewStateService()
+		})
+	}
+	return instance
+}
+
 // NewAppController creates and initializes a new AppController instance.
+// This function should be called only once at application startup (typically in main.go).
+// It sets the global singleton instance that can be accessed via GetController().
 func NewAppController(appIconData, greyIconData, greenIconData, redIconData []byte) (*AppController, error) {
 	ac := &AppController{}
 
@@ -189,6 +225,12 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 		ac.StateService.SetAutoUpdateEnabled(false)
 	}
 	go ac.startAutoUpdateLoop()
+
+	// Set global singleton instance
+	instanceOnce.Do(func() {
+		instance = ac
+	})
+
 	return ac, nil
 }
 
@@ -238,7 +280,7 @@ func (ac *AppController) GracefulExit() {
 		ac.UIService.StopTrayMenuUpdateTimer()
 	}
 
-	StopSingBoxProcess(ac)
+	StopSingBoxProcess()
 
 	debuglog.InfoLog("GracefulExit: Waiting for sing-box to stop...")
 	// Use ProcessService constant for timeout
@@ -306,7 +348,11 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 }
 
 // CheckLinuxCapabilities checks Linux capabilities and shows a suggestion if needed
-func CheckLinuxCapabilities(ac *AppController) {
+func CheckLinuxCapabilities() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
 		debuglog.InfoLog("CheckLinuxCapabilities: %s", suggestion)
 		// Show info dialog (not error) - capabilities can be set later
@@ -401,7 +447,11 @@ func (ac *AppController) GetSelectedIndex() int {
 }
 
 // getOurPID safely gets the PID of the tracked sing-box process
-func getOurPID(ac *AppController) int {
+func getOurPID() int {
+	ac := GetController()
+	if ac == nil {
+		return -1
+	}
 	ac.CmdMutex.Lock()
 	defer ac.CmdMutex.Unlock()
 	if ac.SingboxCmd != nil && ac.SingboxCmd.Process != nil {
@@ -442,7 +492,11 @@ func parseCSVLine(line string) []string {
 // StartSingBoxProcess launches the sing-box process.
 // skipRunningCheck: если true, пропускает проверку на уже запущенный процесс (для автоперезапуска)
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
-func StartSingBoxProcess(ac *AppController, skipRunningCheck ...bool) {
+func StartSingBoxProcess(skipRunningCheck ...bool) {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if ac.ProcessService == nil {
 		debuglog.WarnLog("StartSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
@@ -452,7 +506,11 @@ func StartSingBoxProcess(ac *AppController, skipRunningCheck ...bool) {
 
 // MonitorSingBoxProcess monitors the sing-box process.
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
-func MonitorSingBoxProcess(ac *AppController, cmdToMonitor *exec.Cmd) {
+func MonitorSingBoxProcess(cmdToMonitor *exec.Cmd) {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if ac.ProcessService == nil {
 		debuglog.WarnLog("MonitorSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
@@ -462,7 +520,11 @@ func MonitorSingBoxProcess(ac *AppController, cmdToMonitor *exec.Cmd) {
 
 // StopSingBoxProcess is the unified function to stop the sing-box process.
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
-func StopSingBoxProcess(ac *AppController) {
+func StopSingBoxProcess() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if ac.ProcessService == nil {
 		debuglog.WarnLog("StopSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
@@ -472,7 +534,11 @@ func StopSingBoxProcess(ac *AppController) {
 
 // RunParserProcess starts the internal configuration update process.
 // Note: ConfigService must be initialized in NewAppController. This is a wrapper for backward compatibility.
-func RunParserProcess(ac *AppController) {
+func RunParserProcess() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if ac.ConfigService == nil {
 		debuglog.WarnLog("RunParserProcess: ConfigService is nil, this should not happen. Initializing...")
 		ac.ConfigService = NewConfigService(ac)
@@ -482,7 +548,11 @@ func RunParserProcess(ac *AppController) {
 
 // CheckIfSingBoxRunningAtStartUtil checks if sing-box is already running at application start.
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
-func CheckIfSingBoxRunningAtStartUtil(ac *AppController) {
+func CheckIfSingBoxRunningAtStartUtil() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if ac.ProcessService == nil {
 		debuglog.WarnLog("CheckIfSingBoxRunningAtStartUtil: ProcessService is nil, this should not happen. Initializing...")
 		ac.ProcessService = NewProcessService(ac)
@@ -491,7 +561,11 @@ func CheckIfSingBoxRunningAtStartUtil(ac *AppController) {
 }
 
 // CheckConfigFileExists checks if config.json exists and shows a warning if it doesn't
-func CheckConfigFileExists(ac *AppController) {
+func CheckConfigFileExists() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
 		debuglog.WarnLog("CheckConfigFileExists: config.json not found at %s", ac.FileService.ConfigPath)
 
@@ -511,7 +585,11 @@ func CheckConfigFileExists(ac *AppController) {
 	}
 }
 
-func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
+func CheckIfLauncherAlreadyRunningUtil() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	execPath, err := os.Executable()
 	if err != nil {
 		debuglog.ErrorLog("CheckIfLauncherAlreadyRunning: cannot detect executable path: %v", err)
@@ -539,7 +617,11 @@ func CheckIfLauncherAlreadyRunningUtil(ac *AppController) {
 	}
 }
 
-func CheckFilesUtil(ac *AppController) {
+func CheckFilesUtil() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	files := platform.GetRequiredFiles(ac.FileService.ExecDir)
 	msg := "File check:\n\n"
 	allOk := true
@@ -576,7 +658,11 @@ func FormatBytesUtil(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-func ShowSingBoxAlreadyRunningWarningUtil(ac *AppController) {
+func ShowSingBoxAlreadyRunningWarningUtil() {
+	ac := GetController()
+	if ac == nil {
+		return
+	}
 	label := widget.NewLabel("Sing-Box appears to be already running.\nWould you like to kill the existing process?")
 	killButton := widget.NewButton("Kill Process", nil)
 	closeButton := widget.NewButton("Close This Warning", nil)
@@ -723,14 +809,14 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	if ac.APIService == nil {
 		// Return minimal menu if APIService is not initialized
 		menuItems := []*fyne.MenuItem{}
-		
+
 		// On macOS, add a separator at the beginning to fix menu positioning
 		// This prevents the first item from being hidden behind the scroll arrow
 		// by increasing the menu height and ensuring proper positioning
 		if runtime.GOOS == "darwin" {
 			menuItems = append(menuItems, fyne.NewMenuItemSeparator())
 		}
-		
+
 		menuItems = append(menuItems,
 			fyne.NewMenuItem("Open", func() {
 				if ac.UIService != nil {
@@ -819,14 +905,14 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 
 	// Create main menu items
 	menuItems := []*fyne.MenuItem{}
-	
+
 	// On macOS, add a separator at the beginning to fix menu positioning
 	// This prevents the first item from being hidden behind the scroll arrow
 	// by increasing the menu height and ensuring proper positioning
 	if runtime.GOOS == "darwin" {
 		menuItems = append(menuItems, fyne.NewMenuItemSeparator())
 	}
-	
+
 	menuItems = append(menuItems,
 		fyne.NewMenuItem("Open", func() {
 			if ac.hasUI() {
@@ -839,7 +925,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 
 	// Add Start/Stop VPN buttons based on centralized state
 	if buttonState.StartEnabled {
-		menuItems = append(menuItems, fyne.NewMenuItem("Start VPN", func() { StartSingBoxProcess(ac) }))
+		menuItems = append(menuItems, fyne.NewMenuItem("Start VPN", func() { StartSingBoxProcess() }))
 	} else {
 		startItem := fyne.NewMenuItem("Start VPN", nil)
 		startItem.Disabled = true
@@ -847,7 +933,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	}
 
 	if buttonState.StopEnabled {
-		menuItems = append(menuItems, fyne.NewMenuItem("Stop VPN", func() { StopSingBoxProcess(ac) }))
+		menuItems = append(menuItems, fyne.NewMenuItem("Stop VPN", func() { StopSingBoxProcess() }))
 	} else {
 		stopItem := fyne.NewMenuItem("Stop VPN", nil)
 		stopItem.Disabled = true

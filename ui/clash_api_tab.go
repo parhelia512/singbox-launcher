@@ -119,6 +119,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	updateSelectorList := func() {
 		updatedSelectorOptions, updatedDefaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
 		if err == nil && len(updatedSelectorOptions) > 0 && groupSelect != nil {
+			// Обновляем и переменную selectorOptions, и виджет groupSelect
+			selectorOptions = updatedSelectorOptions
 			groupSelect.SetOptions(updatedSelectorOptions)
 
 			// Обновить selectedGroup если текущий выбор больше не доступен
@@ -537,8 +539,26 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		// Run queries in background to avoid blocking UI
 		go func() {
-			results := make([]string, 0, len(selectorOptions))
-			for _, sel := range selectorOptions {
+			// Используем актуальный список селекторов из groupSelect или перечитываем из конфига
+			var currentSelectorOptions []string
+			if groupSelect != nil && len(groupSelect.Options) > 0 {
+				// Используем актуальный список из виджета (обновляется через updateSelectorList)
+				currentSelectorOptions = groupSelect.Options
+			} else {
+				// Fallback: перечитываем из конфига, если groupSelect еще не инициализирован
+				updatedOptions, _, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
+				if err != nil {
+					debuglog.ErrorLog("clash_api_tab: failed to get selector groups for popup: %v", err)
+					currentSelectorOptions = selectorOptions // Используем старый список как fallback
+				} else if len(updatedOptions) > 0 {
+					currentSelectorOptions = updatedOptions
+				} else {
+					currentSelectorOptions = selectorOptions // Fallback на старый список
+				}
+			}
+
+			results := make([]string, 0, len(currentSelectorOptions))
+			for _, sel := range currentSelectorOptions {
 				_, now, err := api.GetProxiesInGroup(baseURL, token, sel, ac.FileService.ApiLogFile)
 				if err != nil {
 					results = append(results, fmt.Sprintf("%s → error: %v", sel, err))

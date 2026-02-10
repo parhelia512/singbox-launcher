@@ -38,18 +38,16 @@ import (
 type WizardPresenter struct {
 	model           *wizardmodels.WizardModel
 	guiState        *GUIState
-	controller      *core.AppController
 	templateLoader  wizardbusiness.TemplateLoader
 	openRuleDialogs map[int]fyne.Window
 	hasChanges      bool // Отслеживает наличие несохранённых изменений
 }
 
 // NewWizardPresenter создает новый презентер визарда.
-func NewWizardPresenter(model *wizardmodels.WizardModel, guiState *GUIState, controller *core.AppController, templateLoader wizardbusiness.TemplateLoader) *WizardPresenter {
+func NewWizardPresenter(model *wizardmodels.WizardModel, guiState *GUIState, templateLoader wizardbusiness.TemplateLoader) *WizardPresenter {
 	presenter := &WizardPresenter{
 		model:           model,
 		guiState:        guiState,
-		controller:      controller,
 		templateLoader:  templateLoader,
 		openRuleDialogs: make(map[int]fyne.Window),
 		hasChanges:      false,
@@ -69,12 +67,16 @@ func (p *WizardPresenter) GUIState() *GUIState {
 
 // ConfigServiceAdapter возвращает адаптер ConfigService.
 func (p *WizardPresenter) ConfigServiceAdapter() wizardbusiness.ConfigService {
-	return &wizardbusiness.ConfigServiceAdapter{CoreConfigService: p.controller.ConfigService}
+	ac := core.GetController()
+	if ac == nil {
+		return nil
+	}
+	return &wizardbusiness.ConfigServiceAdapter{CoreConfigService: ac.ConfigService}
 }
 
 // Controller возвращает AppController.
 func (p *WizardPresenter) Controller() *core.AppController {
-	return p.controller
+	return core.GetController()
 }
 
 // SafeFyneDo безопасно выполняет функцию в UI потоке Fyne.

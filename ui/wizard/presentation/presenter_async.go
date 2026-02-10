@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"singbox-launcher/core"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
@@ -55,8 +56,9 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 		defer func() {
 			p.model.AutoParseInProgress = false
 		}()
+		ac := core.GetController()
 		configService := &wizardbusiness.ConfigServiceAdapter{
-			CoreConfigService: p.controller.ConfigService,
+			CoreConfigService: ac.ConfigService,
 		}
 		if err := wizardbusiness.ParseAndPreview(p.model, p, configService); err != nil {
 			debuglog.ErrorLog("TriggerParseForPreview: ParseAndPreview failed: %v", err)
