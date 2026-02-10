@@ -412,6 +412,8 @@ func setupTabChangeHandler(presenter *wizardpresentation.WizardPresenter, guiSta
 
 		// Handle tab-specific actions
 		if item == rulesTabItem {
+			// Trigger async parsing to ensure outbounds are up-to-date
+			presenter.TriggerParseForPreview()
 			// Refresh outbound options when switching to Rules tab
 			presenter.RefreshOutboundOptions()
 		}
