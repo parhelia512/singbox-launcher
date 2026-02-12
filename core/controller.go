@@ -28,11 +28,9 @@ import (
 
 // Constants for log file names
 const (
-	logFileName       = "logs/" + constants.MainLogFileName
-	childLogFileName  = "logs/" + constants.ChildLogFileName
-	parserLogFileName = "logs/" + constants.ParserLogFileName
-	apiLogFileName    = "logs/" + constants.APILogFileName
-	restartDelay      = 2 * time.Second
+	logFileName      = "logs/" + constants.MainLogFileName
+	childLogFileName = "logs/" + constants.ChildLogFileName
+	apiLogFileName   = "logs/" + constants.APILogFileName
 )
 
 // Constants for auto-update configuration
@@ -412,13 +410,6 @@ func (ac *AppController) GetActiveProxyName() string {
 		return ac.APIService.GetActiveProxyName()
 	}
 	return ""
-}
-
-// SetLastSelectedProxyForGroup sets the last selected proxy name for a specific selector group.
-func (ac *AppController) SetLastSelectedProxyForGroup(group, name string) {
-	if ac.APIService != nil {
-		ac.APIService.SetLastSelectedProxyForGroup(group, name)
-	}
 }
 
 // GetLastSelectedProxyForGroup gets the last selected proxy name for a specific selector group.
