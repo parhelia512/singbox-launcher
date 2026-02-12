@@ -17,7 +17,7 @@
       ],
       "outbounds": [
         {
-          "tag": "auto-proxy-out 🔄",
+          "tag": "auto-proxy-out",
           "type": "urltest",
           "options": {
             "interrupt_exist_connections": true,
@@ -34,7 +34,7 @@
           }
         },
         {
-          "tag": "proxy-out 🛡️",
+          "tag": "proxy-out",
           "type": "selector",
           "options": {
             "default": "auto-proxy-out",
