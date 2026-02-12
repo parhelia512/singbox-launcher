@@ -10,6 +10,14 @@ import (
 	"singbox-launcher/internal/dialogs"
 )
 
+// Constants for auto-update configuration
+const (
+	autoUpdateMinInterval   = 10 * time.Minute // Minimum check interval
+	autoUpdateRetryInterval = 10 * time.Second // Interval between retry attempts
+	autoUpdateMaxRetries    = 10               // Maximum consecutive failed attempts
+	autoUpdateDefaultReload = "4h"             // Default reload interval if not specified
+)
+
 // startAutoUpdateLoop runs a background goroutine that periodically checks and updates configuration
 // Uses dynamic interval: max(10 minutes, parser.reload from config)
 // Handles errors with retries (10 attempts, 10 seconds between retries)
