@@ -66,21 +66,6 @@ func PrepareCommand(cmd *exec.Cmd) {
 	}
 }
 
-// GetRequiredFiles returns platform-specific required files
-func GetRequiredFiles(execDir string) []struct {
-	Name string
-	Path string
-} {
-	return []struct {
-		Name string
-		Path string
-	}{
-		{"Sing-Box", filepath.Join(execDir, "bin", "sing-box.exe")},
-		{"Config.json", filepath.Join(execDir, "bin", "config.json")},
-		{"WinTun.dll", filepath.Join(execDir, "bin", "wintun.dll")},
-	}
-}
-
 // GetProcessNameForCheck returns the process name to check for running instances
 func GetProcessNameForCheck() string {
 	return "sing-box.exe"

@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -55,20 +53,6 @@ func SendCtrlBreak(pid int) error {
 func PrepareCommand(cmd *exec.Cmd) {
 	// No special attributes needed for Linux
 	// Capabilities should be set on the sing-box binary itself
-}
-
-// GetRequiredFiles returns platform-specific required files
-func GetRequiredFiles(execDir string) []struct {
-	Name string
-	Path string
-} {
-	return []struct {
-		Name string
-		Path string
-	}{
-		{"Sing-Box", filepath.Join(execDir, constants.BinDirName, constants.SingBoxExecName)},
-		{"Config.json", filepath.Join(execDir, constants.BinDirName, constants.ConfigFileName)},
-	}
 }
 
 // GetProcessNameForCheck returns the process name to check for running instances

@@ -6,11 +6,8 @@ package platform
 import (
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
-
-	"singbox-launcher/internal/constants"
 )
 
 // GetExecutableNames returns platform-specific executable names
@@ -52,20 +49,6 @@ func SendCtrlBreak(pid int) error {
 // PrepareCommand prepares a command with platform-specific attributes
 func PrepareCommand(cmd *exec.Cmd) {
 	// No special attributes needed for macOS
-}
-
-// GetRequiredFiles returns platform-specific required files
-func GetRequiredFiles(execDir string) []struct {
-	Name string
-	Path string
-} {
-	return []struct {
-		Name string
-		Path string
-	}{
-		{"Sing-Box", filepath.Join(execDir, constants.BinDirName, constants.SingBoxExecName)},
-		{"Config.json", filepath.Join(execDir, constants.BinDirName, constants.ConfigFileName)},
-	}
 }
 
 // GetProcessNameForCheck returns the process name to check for running instances
