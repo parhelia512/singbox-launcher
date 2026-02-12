@@ -196,50 +196,55 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 
 		// Load IP, domain (list/regex), process, or custom JSON
+		ruleData := editRule.Rule.Rule
 		hasIP := false
 		hasDomain := false
 		hasDomainRegex := false
 		hasProc := false
-		if ipVal, ok := editRule.Rule.Raw["ip_cidr"]; ok {
-			hasIP = true
-			ruleType = RuleTypeIP
-			if ips := ExtractStringArray(ipVal); len(ips) > 0 {
-				ipEntry.SetText(strings.Join(ips, "\n"))
-			}
-		} else if drVal, ok := editRule.Rule.Raw["domain_regex"]; ok {
-			hasDomainRegex = true
-			ruleType = RuleTypeDomain
-			if s, ok := drVal.(string); ok {
-				domainRegexInitial = s
-				domainRegexInitialSet = true
-			}
-		} else if domainVal, ok := editRule.Rule.Raw["domain"]; ok {
-			hasDomain = true
-			ruleType = RuleTypeDomain
-			if domains := ExtractStringArray(domainVal); len(domains) > 0 {
-				urlEntry.SetText(strings.Join(domains, "\n"))
-			}
-		} else if procVal, ok := editRule.Rule.Raw[ProcessKey]; ok {
-			hasProc = true
-			ruleType = RuleTypeProcess
-			if procs := ExtractStringArray(procVal); len(procs) > 0 {
-				processesSelected = dedupeProcessStrings(procs)
-				sortProcessStrings(processesSelected)
+		if ruleData != nil {
+			if ipVal, ok := ruleData["ip_cidr"]; ok {
+				hasIP = true
+				ruleType = RuleTypeIP
+				if ips := ExtractStringArray(ipVal); len(ips) > 0 {
+					ipEntry.SetText(strings.Join(ips, "\n"))
+				}
+			} else if drVal, ok := ruleData["domain_regex"]; ok {
+				hasDomainRegex = true
+				ruleType = RuleTypeDomain
+				if s, ok := drVal.(string); ok {
+					domainRegexInitial = s
+					domainRegexInitialSet = true
+				}
+			} else if domainVal, ok := ruleData["domain"]; ok {
+				hasDomain = true
+				ruleType = RuleTypeDomain
+				if domains := ExtractStringArray(domainVal); len(domains) > 0 {
+					urlEntry.SetText(strings.Join(domains, "\n"))
+				}
+			} else if procVal, ok := ruleData[ProcessKey]; ok {
+				hasProc = true
+				ruleType = RuleTypeProcess
+				if procs := ExtractStringArray(procVal); len(procs) > 0 {
+					processesSelected = dedupeProcessStrings(procs)
+					sortProcessStrings(processesSelected)
+				}
 			}
 		}
 
 		if !hasIP && !hasDomain && !hasDomainRegex && !hasProc {
-			// Custom rule: use Raw (minus outbound) as JSON content
+			// Custom rule: use Rule data (minus outbound) as JSON content
 			ruleType = RuleTypeCustom
-			temp := make(map[string]interface{})
-			for k, v := range editRule.Rule.Raw {
-				if k == "outbound" {
-					continue
+			if ruleData != nil {
+				temp := make(map[string]interface{})
+				for k, v := range ruleData {
+					if k == "outbound" {
+						continue
+					}
+					temp[k] = v
 				}
-				temp[k] = v
-			}
-			if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
-				customEntry.SetText(string(b))
+				if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
+					customEntry.SetText(string(b))
+				}
 			}
 		}
 	}
@@ -461,7 +466,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		// Save or update rule
 		if isEdit {
 			editRule.Rule.Label = label
-			editRule.Rule.Raw = ruleRaw
+			editRule.Rule.Rule = ruleRaw
 			editRule.Rule.HasOutbound = true
 			editRule.Rule.DefaultOutbound = selectedOutbound
 			editRule.SelectedOutbound = selectedOutbound
@@ -469,7 +474,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			newRule := &wizardmodels.RuleState{
 				Rule: wizardtemplate.TemplateSelectableRule{
 					Label:           label,
-					Raw:             ruleRaw,
+					Rule:            ruleRaw,
 					HasOutbound:     true,
 					DefaultOutbound: selectedOutbound,
 					IsDefault:       true,

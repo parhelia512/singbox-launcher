@@ -191,17 +191,10 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 }
 
 // InitializeTemplateState инициализирует состояние шаблона.
+// Создаёт RuleState для каждого selectable rule из шаблона (если ещё не загружены из state.json).
 func (p *WizardPresenter) InitializeTemplateState() {
 	if p.model.TemplateData == nil {
 		return
-	}
-	if p.model.TemplateSectionSelections == nil {
-		p.model.TemplateSectionSelections = make(map[string]bool)
-	}
-	for _, key := range p.model.TemplateData.SectionOrder {
-		if _, ok := p.model.TemplateSectionSelections[key]; !ok {
-			p.model.TemplateSectionSelections[key] = true
-		}
 	}
 
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))

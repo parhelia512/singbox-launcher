@@ -1,30 +1,24 @@
 // Package template содержит функциональность загрузки и парсинга шаблонов конфигурации.
 //
-// Файл loader.go содержит функции для загрузки шаблона конфигурации из файла и извлечения его частей:
-//   - LoadTemplateData - загружает шаблон из файла (config_template.json или config_template_macos.json)
-//   - GetTemplateFileName - возвращает имя файла шаблона для текущей платформы
-//   - GetTemplateURL - возвращает URL для загрузки шаблона с GitHub
-//   - TemplateData - структура данных шаблона (ParserConfig, секции, правила, defaultFinal)
-//   - TemplateSelectableRule - структура правила, которое может быть выбрано в визарде
+// Файл loader.go загружает единый шаблон конфигурации (config_template.json) и преобразует
+// его в TemplateData для использования визардом.
 //
-// LoadTemplateData выполняет парсинг шаблона с извлечением специальных блоков:
-//  1. Извлекает @ParserConfig блок из комментариев (для использования в визарде)
-//  2. Извлекает @SelectableRule блоки (правила маршрутизации, которые можно настраивать)
-//  3. Парсит JSON конфигурации с сохранением порядка секций
-//  4. Определяет defaultFinal outbound из секции route
-//  5. Проверяет наличие маркера @PARSER_OUTBOUNDS_BLOCK для вставки сгенерированных outbounds
+// Шаблон содержит 4 секции:
+//   - parser_config — конфигурация парсера подписок (JSON-объект)
+//   - config — основной конфиг sing-box (после применения params)
+//   - selectable_rules — правила маршрутизации для визарда (с platforms и rule_set)
+//   - params — платформозависимые параметры (применяются по runtime.GOOS)
 //
-// Шаблоны используются в визарде как основа для генерации финальной конфигурации:
-// пользователь настраивает ParserConfig, выбирает секции и правила, и визард объединяет
-// это с шаблоном для создания финальной конфигурации sing-box.
-//
-// Загрузка шаблонов - это отдельная ответственность от бизнес-логики визарда.
-// Шаблоны содержат статическую структуру конфигурации и правила маршрутизации по умолчанию.
+// LoadTemplateData выполняет:
+//  1. Чтение и валидацию JSON файла шаблона
+//  2. Применение params для текущей платформы (replace/prepend/append)
+//  3. Фильтрацию selectable_rules по platforms
+//  4. Извлечение defaultFinal из config.route.final
+//  5. Парсинг config в упорядоченные секции для генератора
 //
 // Используется в:
-//   - wizard.go - LoadTemplateData вызывается при инициализации визарда для загрузки шаблона
-//   - business/template_loader.go - DefaultTemplateLoader использует LoadTemplateData
-//   - business/generator.go - TemplateData используется при генерации финальной конфигурации
+//   - business/template_loader.go — DefaultTemplateLoader использует LoadTemplateData
+//   - business/generator.go — TemplateData используется при генерации финальной конфигурации
 package template
 
 import (
@@ -33,498 +27,396 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
-
-	"github.com/muhammadmuzzammil1998/jsonc"
 
 	"singbox-launcher/internal/debuglog"
 )
 
-// TemplateLoader uses global logging level (controlled via SINGBOX_DEBUG environment variable)
+// TemplateFileName — единственный файл шаблона для всех платформ.
+const TemplateFileName = "config_template.json"
 
-// TemplateData represents the loaded template data.
+// TemplateData — данные шаблона, подготовленные для визарда.
 type TemplateData struct {
-	ParserConfig            string
-	Sections                map[string]json.RawMessage
-	SectionOrder            []string
-	SelectableRules         []TemplateSelectableRule
-	DefaultFinal            string
-	HasParserOutboundsBlock bool   // true if @PARSER_OUTBOUNDS_BLOCK marker was found in template
-	OutboundsAfterMarker    string // Elements after @PARSER_OUTBOUNDS_BLOCK marker (e.g., direct-out)
+	// ParserConfig — JSON-текст блока parser_config для отображения и редактирования в визарде.
+	ParserConfig string
+
+	// Config — секции основного конфига (после применения params), сохраняя порядок из шаблона.
+	Config map[string]json.RawMessage
+
+	// ConfigOrder — порядок секций конфига (log, dns, inbounds, ...).
+	ConfigOrder []string
+
+	// SelectableRules — правила маршрутизации для визарда (уже отфильтрованные по платформе).
+	SelectableRules []TemplateSelectableRule
+
+	// DefaultFinal — outbound по умолчанию из config.route.final.
+	DefaultFinal string
 }
 
-// TemplateSelectableRule represents a rule that can be selected in the template.
+// TemplateSelectableRule — правило маршрутизации, управляемое пользователем в визарде.
 type TemplateSelectableRule struct {
-	Label           string
-	Description     string
-	Raw             map[string]interface{}
+	// Label — название правила для отображения в UI.
+	Label string
+
+	// Description — описание правила (tooltip в визарде).
+	Description string
+
+	// IsDefault — включено по умолчанию при первом запуске визарда.
+	IsDefault bool
+
+	// Platforms — платформы, на которых правило доступно. Пустой = все.
+	Platforms []string
+
+	// RuleSets — определения rule_set, необходимые для работы правила.
+	// Добавляются в config.route.rule_set только если правило включено.
+	RuleSets []json.RawMessage
+
+	// Rule — одиночное правило маршрутизации sing-box (map для модификации outbound).
+	Rule map[string]interface{}
+
+	// Rules — несколько правил маршрутизации (взаимоисключающее с Rule).
+	Rules []map[string]interface{}
+
+	// DefaultOutbound — outbound по умолчанию (извлекается из rule.outbound или action).
 	DefaultOutbound string
-	HasOutbound     bool // true if rule has "outbound" field that can be selected
-	IsDefault       bool // true if rule should be enabled by default
+
+	// HasOutbound — true если правило имеет outbound/action, который можно выбрать.
+	HasOutbound bool
 }
 
-// GetTemplateFileName returns the template file name for the current platform.
-// On macOS returns "config_template_macos.json", on other platforms returns "config_template.json".
+// templateParam — платформозависимый параметр из секции params шаблона.
+type templateParam struct {
+	Name      string          `json:"name"`
+	Platforms []string        `json:"platforms"`
+	Value     json.RawMessage `json:"value"`
+	Mode      string          `json:"mode"` // "replace" (по умолчанию), "prepend", "append"
+}
+
+// jsonSelectableRule — промежуточная структура для десериализации selectable_rules из JSON.
+type jsonSelectableRule struct {
+	Label       string                   `json:"label"`
+	Description string                   `json:"description"`
+	Default     bool                     `json:"default"`
+	Platforms   []string                 `json:"platforms,omitempty"`
+	RuleSet     []json.RawMessage        `json:"rule_set,omitempty"`
+	Rule        map[string]interface{}   `json:"rule,omitempty"`
+	Rules       []map[string]interface{} `json:"rules,omitempty"`
+}
+
+// GetTemplateFileName возвращает имя файла шаблона. Один файл для всех платформ.
 func GetTemplateFileName() string {
-	if runtime.GOOS == "darwin" {
-		return "config_template_macos.json"
-	}
-	return "config_template.json"
+	return TemplateFileName
 }
 
-// GetTemplateURL returns the GitHub URL for downloading the template for the current platform.
+// GetTemplateURL возвращает URL для загрузки шаблона с GitHub.
 func GetTemplateURL() string {
-	fileName := GetTemplateFileName()
-	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/bin/%s", fileName)
+	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/bin/%s", TemplateFileName)
 }
 
-// stripUTF8BOM removes UTF-8 BOM (EF BB BF) from the beginning of the byte slice if present.
-// Returns the (possibly) trimmed slice and whether BOM was removed.
-// Some editors/tools may add UTF-8 BOM, which breaks json.Valid/jsonc parsing.
-func stripUTF8BOM(b []byte) ([]byte, bool) {
-	removed := false
-	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
-		b = b[3:]
-		removed = true
-	}
-	if len(b) >= 3 {
-		n := len(b)
-		if b[n-3] == 0xEF && b[n-2] == 0xBB && b[n-1] == 0xBF {
-			b = b[:n-3]
-			removed = true
-		}
-	}
-	return b, removed
-}
-
-// LoadTemplateData loads template data from file.
+// LoadTemplateData загружает и обрабатывает шаблон конфигурации.
+// Применяет params для текущей платформы, фильтрует selectable_rules.
 func LoadTemplateData(execDir string) (*TemplateData, error) {
-	templateFileName := GetTemplateFileName()
-	templatePath := filepath.Join(execDir, "bin", templateFileName)
-	debuglog.InfoLog("TemplateLoader: Starting to load template from: %s", templatePath)
+	templatePath := filepath.Join(execDir, "bin", TemplateFileName)
+	debuglog.InfoLog("TemplateLoader: загрузка шаблона из: %s", templatePath)
+
 	raw, err := os.ReadFile(templatePath)
 	if err != nil {
-		debuglog.ErrorLog("TemplateLoader: Failed to read template file: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("не удалось прочитать %s: %w", TemplateFileName, err)
 	}
-	// Remove UTF-8 BOM if present to avoid JSON validation errors
-	if trimmed, removed := stripUTF8BOM(raw); removed {
-		debuglog.WarnLog("TemplateLoader: Detected and removed UTF-8 BOM from template file: %s", templateFileName)
-		raw = trimmed
+
+	// Удаление UTF-8 BOM если присутствует
+	raw = stripUTF8BOM(raw)
+
+	// Десериализация корневой структуры шаблона
+	var root struct {
+		ParserConfig    json.RawMessage  `json:"parser_config"`
+		Config          json.RawMessage  `json:"config"`
+		SelectableRules []jsonSelectableRule `json:"selectable_rules"`
+		Params          []templateParam  `json:"params"`
 	}
-	debuglog.DebugLog("TemplateLoader: Successfully read template file, size: %d bytes", len(raw))
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("невалидный JSON в %s: %w", TemplateFileName, err)
+	}
 
-	rawStr := string(raw)
-	parserConfig, cleaned := extractCommentBlock(rawStr, "ParserConfig")
-	debuglog.DebugLog("TemplateLoader: After extractCommentBlock, parserConfig length: %d, cleaned length: %d", len(parserConfig), len(cleaned))
-
-	selectableBlocks, cleaned := extractAllSelectableBlocks(cleaned)
-	debuglog.DebugLog("TemplateLoader: After extractAllSelectableBlocks, found %d blocks, cleaned length: %d", len(selectableBlocks), len(cleaned))
-	if len(selectableBlocks) > 0 {
-		for i, block := range selectableBlocks {
-			debuglog.DebugLog("TemplateLoader: Block %d (first 100 chars): %s", i+1, truncateString(block, 100))
+	// 1. ParserConfig → сериализуем в строку для модели
+	parserConfigStr := ""
+	if len(root.ParserConfig) > 0 {
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, root.ParserConfig, "", "  "); err == nil {
+			parserConfigStr = buf.String()
+		} else {
+			parserConfigStr = string(root.ParserConfig)
 		}
 	}
+	debuglog.DebugLog("TemplateLoader: ParserConfig длина: %d", len(parserConfigStr))
 
-	// Check for @PARSER_OUTBOUNDS_BLOCK marker before parsing JSON
-	// (JSON parser will ignore comments, so we need to check the raw string)
-	hasParserBlock := strings.Contains(cleaned, "@PARSER_OUTBOUNDS_BLOCK")
-	debuglog.DebugLog("TemplateLoader: Has @PARSER_OUTBOUNDS_BLOCK marker: %v", hasParserBlock)
-
-	// Extract elements after the marker (e.g., direct-out)
-	var outboundsAfterMarker string
-	if hasParserBlock {
-		outboundsAfterMarker = extractOutboundsAfterMarker(cleaned)
-		if outboundsAfterMarker != "" {
-			debuglog.DebugLog("TemplateLoader: Extracted outbounds after marker (first 200 chars): %s", truncateString(outboundsAfterMarker, 200))
-		}
-	}
-
-	// Validate JSON before parsing
-	jsonBytes := jsonc.ToJSON([]byte(cleaned))
-	debuglog.DebugLog("TemplateLoader: After jsonc.ToJSON, jsonBytes length: %d", len(jsonBytes))
-
-	if !json.Valid(jsonBytes) {
-		debuglog.WarnLog("TemplateLoader: JSON validation failed. First 500 chars: %s", truncateString(string(jsonBytes), 500))
-		return nil, fmt.Errorf("invalid JSON after removing @SelectableRule blocks. This may indicate a syntax error in %s", templateFileName)
-	}
-
-	debuglog.DebugLog("TemplateLoader: JSON is valid, proceeding to unmarshal")
-
-	// Parse JSON while preserving key order from template
-	sections, sectionOrder, err := parseJSONWithOrder(jsonBytes)
+	// 2. Применение params к config для текущей платформы
+	configJSON := root.Config
+	configJSON, err = applyParams(configJSON, root.Params, runtime.GOOS)
 	if err != nil {
-		debuglog.ErrorLog("TemplateLoader: JSON unmarshal failed: %v", err)
-		return nil, fmt.Errorf("failed to parse %s: %w", templateFileName, err)
+		return nil, fmt.Errorf("ошибка применения params: %w", err)
 	}
 
-	debuglog.DebugLog("TemplateLoader: Successfully unmarshaled %d sections", len(sections))
-	debuglog.DebugLog("TemplateLoader: Section order from template: %v", sectionOrder)
-
-	defaultFinal := extractDefaultFinal(sections)
-	if defaultFinal != "" {
-		debuglog.DebugLog("TemplateLoader: Detected default final outbound: %s", defaultFinal)
-	}
-
-	selectableRules, err := parseSelectableRules(selectableBlocks)
+	// 3. Парсинг config в упорядоченные секции
+	configSections, configOrder, err := parseJSONWithOrder(configJSON)
 	if err != nil {
-		debuglog.ErrorLog("TemplateLoader: parseSelectableRules failed: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("ошибка парсинга config: %w", err)
 	}
+	debuglog.DebugLog("TemplateLoader: секции конфига: %v", configOrder)
 
-	debuglog.DebugLog("TemplateLoader: Successfully parsed %d selectable rules", len(selectableRules))
+	// 4. Извлечение defaultFinal из route
+	defaultFinal := extractDefaultFinal(configSections)
+	debuglog.DebugLog("TemplateLoader: defaultFinal: %s", defaultFinal)
 
-	result := &TemplateData{
-		ParserConfig:            strings.TrimSpace(parserConfig),
-		Sections:                sections,
-		SectionOrder:            sectionOrder,
-		SelectableRules:         selectableRules,
-		DefaultFinal:            defaultFinal,
-		HasParserOutboundsBlock: hasParserBlock,
-		OutboundsAfterMarker:    outboundsAfterMarker,
-	}
+	// 5. Фильтрация selectable_rules по платформе и преобразование
+	platform := runtime.GOOS
+	selectableRules := filterAndConvertRules(root.SelectableRules, platform)
+	debuglog.InfoLog("TemplateLoader: загружено %d selectable rules для платформы %s", len(selectableRules), platform)
 
-	debuglog.InfoLog("TemplateLoader: Successfully loaded template data with %d sections and %d selectable rules", len(sections), len(selectableRules))
-
-	return result, nil
+	return &TemplateData{
+		ParserConfig:    parserConfigStr,
+		Config:          configSections,
+		ConfigOrder:     configOrder,
+		SelectableRules: selectableRules,
+		DefaultFinal:    defaultFinal,
+	}, nil
 }
 
-// truncateString truncates a string to maxLen characters, adding "..." if truncated
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-func extractCommentBlock(src, marker string) (string, string) {
-	pattern := regexp.MustCompile(`(?s)/\*\*\s*@` + marker + `\s*(.*?)\*/`)
-	matches := pattern.FindStringSubmatch(src)
-	if len(matches) < 2 {
-		return "", src
-	}
-	cleaned := pattern.ReplaceAllString(src, "")
-	return strings.TrimSpace(matches[1]), cleaned
-}
-
-func extractAllSelectableBlocks(src string) ([]string, string) {
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: input length: %d", len(src))
-	// Only support @SelectableRule
-	// Match the block including optional leading/trailing commas, whitespace, and empty lines
-	pattern := regexp.MustCompile(`(?is)(\s*,?\s*)/\*\*\s*@selectablerule\s*(.*?)\*/(\s*,?\s*)`)
-	matches := pattern.FindAllStringSubmatch(src, -1)
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: found %d matches", len(matches))
-	if len(matches) == 0 {
-		debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: no matches, returning original source")
-		return nil, src
+// applyParams применяет платформозависимые параметры к config.
+// Поддерживает dot notation (например, "route.rules") и режимы: replace, prepend, append.
+func applyParams(configJSON json.RawMessage, params []templateParam, goos string) (json.RawMessage, error) {
+	if len(params) == 0 {
+		return configJSON, nil
 	}
 
-	// Extract blocks first before removing
-	var blocks []string
-	for _, m := range matches {
-		if len(m) >= 3 {
-			blocks = append(blocks, strings.TrimSpace(m[2]))
-		}
-	}
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: extracted %d blocks", len(blocks))
-
-	// Remove the blocks, including surrounding commas and whitespace
-	// Use a more aggressive pattern that also removes empty lines after blocks
-	cleaned := pattern.ReplaceAllString(src, "")
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: after removing blocks, length: %d", len(cleaned))
-
-	// Remove empty lines that might be left (lines with only whitespace)
-	cleaned = regexp.MustCompile(`(?m)^\s*$\n?`).ReplaceAllString(cleaned, "")
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: after removing empty lines, length: %d", len(cleaned))
-
-	// Clean up any double commas that might result
-	cleaned = regexp.MustCompile(`,\s*,`).ReplaceAllString(cleaned, ",")
-	// Clean up comma before closing bracket
-	cleaned = regexp.MustCompile(`,\s*\]`).ReplaceAllString(cleaned, "]")
-	// Clean up comma after opening bracket
-	cleaned = regexp.MustCompile(`\[\s*,`).ReplaceAllString(cleaned, "[")
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: after cleaning commas, length: %d", len(cleaned))
-	debuglog.DebugLog("TemplateLoader: extractAllSelectableBlocks: first 200 chars of cleaned: %s", truncateString(cleaned, 200))
-
-	return blocks, cleaned
-}
-
-func parseSelectableRules(blocks []string) ([]TemplateSelectableRule, error) {
-	debuglog.DebugLog("TemplateLoader: parseSelectableRules: incoming blocks (%d total)", len(blocks))
-	for i, block := range blocks {
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: incoming block %d raw (first 200 chars): %s", i+1, truncateString(block, 200))
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(configJSON, &config); err != nil {
+		return nil, fmt.Errorf("не удалось распарсить config: %w", err)
 	}
 
-	if len(blocks) == 0 {
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: no blocks provided, returning empty result")
-		return nil, nil
-	}
-
-	var rules []TemplateSelectableRule
-	for i, rawBlock := range blocks {
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: processing block %d/%d", i+1, len(blocks))
-		if strings.TrimSpace(rawBlock) == "" {
-			debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d is empty after trimming, skipping", i+1)
+	for _, param := range params {
+		if !matchesPlatform(param.Platforms, goos) {
 			continue
 		}
-
-		label, description, isDefault, cleanedBlock := extractRuleMetadata(rawBlock, i+1)
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d label='%s', description='%s', isDefault=%v", i+1, label, description, isDefault)
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d cleaned body (first 200 chars): %s", i+1, truncateString(cleanedBlock, 200))
-
-		if cleanedBlock == "" {
-			return nil, fmt.Errorf("selectable rule block %d has no JSON content", i+1)
+		mode := param.Mode
+		if mode == "" {
+			mode = "replace"
 		}
+		debuglog.DebugLog("TemplateLoader: применение param '%s' (mode=%s) для платформы %s", param.Name, mode, goos)
 
-		jsonStr, err := normalizeRuleJSON(cleanedBlock, i+1)
-		if err != nil {
-			return nil, fmt.Errorf("selectable rule block %d: %w", i+1, err)
+		if err := applyParam(config, param.Name, param.Value, mode); err != nil {
+			return nil, fmt.Errorf("ошибка применения param '%s': %w", param.Name, err)
 		}
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d normalized JSON (first 200 chars): %s", i+1, truncateString(jsonStr, 200))
+	}
 
-		jsonBytes := jsonc.ToJSON([]byte(jsonStr))
-		if !json.Valid(jsonBytes) {
-			debuglog.WarnLog("TemplateLoader: parseSelectableRules: block %d JSON invalid after jsonc conversion (first 200 chars): %s", i+1, truncateString(string(jsonBytes), 200))
-			return nil, fmt.Errorf("selectable rule block %d contains invalid JSON", i+1)
+	return json.Marshal(config)
+}
+
+// applyParam применяет один параметр к config.
+// Поддерживает dot notation для вложенных путей (например, "route.rules").
+func applyParam(config map[string]json.RawMessage, name string, value json.RawMessage, mode string) error {
+	parts := strings.SplitN(name, ".", 2)
+	key := parts[0]
+
+	if len(parts) == 1 {
+		// Простой ключ верхнего уровня
+		return applyValue(config, key, value, mode)
+	}
+
+	// Вложенный путь — рекурсия
+	subKey := parts[1]
+	existing, ok := config[key]
+	if !ok {
+		existing = []byte("{}")
+	}
+
+	var subConfig map[string]json.RawMessage
+	if err := json.Unmarshal(existing, &subConfig); err != nil {
+		return fmt.Errorf("секция '%s' не является объектом: %w", key, err)
+	}
+
+	if err := applyParam(subConfig, subKey, value, mode); err != nil {
+		return err
+	}
+
+	updated, err := json.Marshal(subConfig)
+	if err != nil {
+		return err
+	}
+	config[key] = updated
+	return nil
+}
+
+// applyValue применяет значение к конкретному ключу с указанным режимом.
+func applyValue(config map[string]json.RawMessage, key string, value json.RawMessage, mode string) error {
+	switch mode {
+	case "replace":
+		config[key] = value
+		return nil
+
+	case "prepend":
+		existing, ok := config[key]
+		if !ok {
+			config[key] = value
+			return nil
 		}
+		return mergeArrays(config, key, value, existing)
 
-		var items []map[string]interface{}
-		if err := json.Unmarshal(jsonBytes, &items); err != nil {
-			debuglog.ErrorLog("TemplateLoader: parseSelectableRules: block %d JSON unmarshal failed: %v", i+1, err)
-			return nil, fmt.Errorf("failed to parse selectable rule block %d: %w", i+1, err)
+	case "append":
+		existing, ok := config[key]
+		if !ok {
+			config[key] = value
+			return nil
 		}
-		debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d parsed into %d item(s)", i+1, len(items))
+		return mergeArrays(config, key, existing, value)
 
-		for _, item := range items {
-			rule := TemplateSelectableRule{
-				Raw:         make(map[string]interface{}),
-				Label:       label,
-				Description: description,
-				IsDefault:   isDefault,
-			}
+	default:
+		return fmt.Errorf("неизвестный mode: %s", mode)
+	}
+}
 
-			for key, value := range item {
-				rule.Raw[key] = value
-			}
+// mergeArrays объединяет два JSON-массива: first + second.
+func mergeArrays(config map[string]json.RawMessage, key string, first, second json.RawMessage) error {
+	var arr1, arr2 []json.RawMessage
+	if err := json.Unmarshal(first, &arr1); err != nil {
+		return fmt.Errorf("'%s' первый массив невалиден: %w", key, err)
+	}
+	if err := json.Unmarshal(second, &arr2); err != nil {
+		return fmt.Errorf("'%s' второй массив невалиден: %w", key, err)
+	}
+	merged := append(arr1, arr2...)
+	result, err := json.Marshal(merged)
+	if err != nil {
+		return err
+	}
+	config[key] = result
+	return nil
+}
 
-			if rule.Label == "" {
-				if labelVal, ok := item["label"]; ok {
-					if labelStr, ok := labelVal.(string); ok {
-						rule.Label = labelStr
-					}
-				}
-			}
+// matchesPlatform проверяет, подходит ли текущая платформа.
+func matchesPlatform(platforms []string, goos string) bool {
+	if len(platforms) == 0 {
+		return true
+	}
+	for _, p := range platforms {
+		if p == goos {
+			return true
+		}
+	}
+	return false
+}
 
-			// Check if rule has action: reject
-			// If it does, ignore outbound field and set HasOutbound based on action: reject
-			actionVal, hasAction := item["action"]
-			if hasAction {
-				if actionStr, ok := actionVal.(string); ok && actionStr == "reject" {
-					// Rule has action: reject - ignore outbound field, set HasOutbound to true
-					// Default outbound depends on method field
-					rule.HasOutbound = true
-					methodVal, hasMethod := item["method"]
-					if hasMethod {
-						if methodStr, ok := methodVal.(string); ok && methodStr == "drop" {
-							// If method: drop, default outbound is "drop"
-							rule.DefaultOutbound = "drop"
-						} else {
-							// If action: reject with method but not drop, default outbound is "reject"
-							rule.DefaultOutbound = "reject"
-						}
-					} else {
-						// If action: reject without method, default outbound is "reject"
-						rule.DefaultOutbound = "reject"
-					}
+// filterAndConvertRules фильтрует правила по платформе и конвертирует в TemplateSelectableRule.
+func filterAndConvertRules(jsonRules []jsonSelectableRule, platform string) []TemplateSelectableRule {
+	var result []TemplateSelectableRule
+	for _, jr := range jsonRules {
+		if !matchesPlatform(jr.Platforms, platform) {
+			continue
+		}
+		rule := TemplateSelectableRule{
+			Label:       jr.Label,
+			Description: jr.Description,
+			IsDefault:   jr.Default,
+			Platforms:   jr.Platforms,
+			RuleSets:    jr.RuleSet,
+			Rule:        jr.Rule,
+			Rules:       jr.Rules,
+		}
+		// Вычисление DefaultOutbound и HasOutbound
+		computeOutboundInfo(&rule)
+
+		if rule.Label == "" {
+			rule.Label = fmt.Sprintf("Rule %d", len(result)+1)
+		}
+		result = append(result, rule)
+	}
+	return result
+}
+
+// computeOutboundInfo вычисляет DefaultOutbound и HasOutbound на основе содержимого правила.
+func computeOutboundInfo(rule *TemplateSelectableRule) {
+	// Определяем primary rule для анализа
+	ruleData := rule.Rule
+	if ruleData == nil && len(rule.Rules) > 0 {
+		ruleData = rule.Rules[0]
+	}
+	if ruleData == nil {
+		return
+	}
+
+	// Проверка action: reject
+	if actionVal, ok := ruleData["action"]; ok {
+		if actionStr, ok := actionVal.(string); ok && actionStr == "reject" {
+			rule.HasOutbound = true
+			if methodVal, ok := ruleData["method"]; ok {
+				if methodStr, ok := methodVal.(string); ok && methodStr == "drop" {
+					rule.DefaultOutbound = "drop"
 				} else {
-					// Action is not reject - check for outbound field
-					if outboundVal, hasOutbound := item["outbound"]; hasOutbound {
-						rule.HasOutbound = true
-						if outboundStr, ok := outboundVal.(string); ok {
-							rule.DefaultOutbound = outboundStr
-						}
-					}
+					rule.DefaultOutbound = "reject"
 				}
-			} else if outboundVal, hasOutbound := item["outbound"]; hasOutbound {
-				// Rule has outbound field and no action field
-				rule.HasOutbound = true
-				if outboundStr, ok := outboundVal.(string); ok {
-					rule.DefaultOutbound = outboundStr
-				}
+			} else {
+				rule.DefaultOutbound = "reject"
 			}
-
-			if rule.Label == "" {
-				rule.Label = fmt.Sprintf("Rule %d", len(rules)+1)
-			}
-
-			rules = append(rules, rule)
+			return
 		}
 	}
 
-	debuglog.DebugLog("TemplateLoader: parseSelectableRules: completed with %d rule(s)", len(rules))
-	return rules, nil
-}
-
-func extractRuleMetadata(block string, blockIndex int) (string, string, bool, string) {
-	const (
-		labelDirective   = "@label"
-		descDirective    = "@description"
-		defaultDirective = "@default"
-	)
-
-	var builder strings.Builder
-	var label string
-	var description string
-	var isDefault bool
-
-	lines := strings.Split(block, "\n")
-	for lineIdx, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmed, labelDirective):
-			value := strings.TrimSpace(trimmed[len(labelDirective):])
-			if value != "" {
-				label = value
-				debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d line %d label parsed: %s", blockIndex, lineIdx+1, value)
-			}
-			continue
-		case strings.HasPrefix(trimmed, descDirective):
-			value := strings.TrimSpace(trimmed[len(descDirective):])
-			if value != "" {
-				description = value
-				debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d line %d description parsed: %s", blockIndex, lineIdx+1, value)
-			}
-			continue
-		case strings.HasPrefix(trimmed, defaultDirective):
-			isDefault = true
-			debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d line %d @default directive found", blockIndex, lineIdx+1)
-			continue
-		default:
-			builder.WriteString(line)
-			builder.WriteString("\n")
+	// Проверка outbound
+	if outboundVal, ok := ruleData["outbound"]; ok {
+		rule.HasOutbound = true
+		if outboundStr, ok := outboundVal.(string); ok {
+			rule.DefaultOutbound = outboundStr
 		}
 	}
-
-	cleaned := strings.TrimSpace(builder.String())
-	debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d body length after removing directives: %d", blockIndex, len(cleaned))
-	return label, description, isDefault, cleaned
 }
 
-func normalizeRuleJSON(body string, blockIndex int) (string, error) {
-	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return "", fmt.Errorf("no JSON content after trimming block %d", blockIndex)
-	}
-
-	trimmed = strings.TrimRight(trimmed, " \t\r\n,")
-	trimmed = strings.TrimSpace(trimmed)
-	debuglog.DebugLog("TemplateLoader: parseSelectableRules: block %d body after trimming trailing commas (first 200 chars): %s", blockIndex, truncateString(trimmed, 200))
-
-	if trimmed == "" {
-		return "", fmt.Errorf("no JSON content remains in block %d after trimming", blockIndex)
-	}
-
-	if strings.HasPrefix(trimmed, "[") {
-		return trimmed, nil
-	}
-
-	normalized := fmt.Sprintf("[%s]", trimmed)
-	return normalized, nil
-}
-
-// parseJSONWithOrder parses JSON while preserving the order of keys
+// parseJSONWithOrder парсит JSON-объект с сохранением порядка ключей.
 func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string, error) {
 	sections := make(map[string]json.RawMessage)
 	var order []string
 
 	decoder := json.NewDecoder(bytes.NewReader(jsonBytes))
 
-	// Skip the opening '{'
 	token, err := decoder.Token()
 	if err != nil {
 		return nil, nil, err
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '{' {
-		return nil, nil, fmt.Errorf("expected object start, got %v", token)
+		return nil, nil, fmt.Errorf("ожидался '{', получен %v", token)
 	}
 
-	// Read keys in order
 	for decoder.More() {
-		// Read key
 		keyToken, err := decoder.Token()
 		if err != nil {
 			return nil, nil, err
 		}
 		key, ok := keyToken.(string)
 		if !ok {
-			return nil, nil, fmt.Errorf("expected string key, got %v", keyToken)
+			return nil, nil, fmt.Errorf("ожидался строковый ключ, получен %v", keyToken)
 		}
 
-		// Read value as RawMessage
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode value for key %s: %w", key, err)
+			return nil, nil, fmt.Errorf("ошибка декодирования значения для '%s': %w", key, err)
 		}
 
 		sections[key] = value
 		order = append(order, key)
 	}
 
-	// Skip the closing '}'
 	token, err = decoder.Token()
 	if err != nil {
 		return nil, nil, err
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '}' {
-		return nil, nil, fmt.Errorf("expected object end, got %v", token)
+		return nil, nil, fmt.Errorf("ожидался '}', получен %v", token)
 	}
 
 	return sections, order, nil
 }
 
-// extractOutboundsAfterMarker extracts elements that come after @PARSER_OUTBOUNDS_BLOCK marker
-// in the outbounds array (e.g., direct-out)
-func extractOutboundsAfterMarker(src string) string {
-	// Find the outbounds section
-	outboundsPattern := regexp.MustCompile(`(?is)"outbounds"\s*:\s*\[(.*?)\]`)
-	match := outboundsPattern.FindStringSubmatch(src)
-	if len(match) < 2 {
-		debuglog.DebugLog("TemplateLoader: extractOutboundsAfterMarker: outbounds section not found")
-		return ""
-	}
-
-	outboundsContent := match[1]
-	debuglog.DebugLog("TemplateLoader: extractOutboundsAfterMarker: found outbounds content (first 200 chars): %s", truncateString(outboundsContent, 200))
-
-	// Find the marker
-	markerPattern := regexp.MustCompile(`(?is)/\*\*\s*@PARSER_OUTBOUNDS_BLOCK\s*\*/(.*)`)
-	markerMatch := markerPattern.FindStringSubmatch(outboundsContent)
-	if len(markerMatch) < 2 {
-		debuglog.DebugLog("TemplateLoader: extractOutboundsAfterMarker: marker not found in outbounds content")
-		return ""
-	}
-
-	// Extract content after marker
-	afterMarker := strings.TrimSpace(markerMatch[1])
-	debuglog.DebugLog("TemplateLoader: extractOutboundsAfterMarker: content after marker (first 200 chars): %s", truncateString(afterMarker, 200))
-
-	// Remove leading commas and whitespace
-	afterMarker = strings.TrimLeft(afterMarker, ",\n\r\t ")
-
-	if afterMarker == "" {
-		debuglog.DebugLog("TemplateLoader: extractOutboundsAfterMarker: no content after marker")
-		return ""
-	}
-
-	// Remove trailing comma if present
-	afterMarker = strings.TrimRight(afterMarker, ",\n\r\t ")
-
-	debuglog.DebugLog("TemplateLoader: extractOutboundsAfterMarker: extracted %d chars", len(afterMarker))
-	return afterMarker
-}
-
+// extractDefaultFinal извлекает route.final из секций конфига.
 func extractDefaultFinal(sections map[string]json.RawMessage) string {
 	raw, ok := sections["route"]
 	if !ok || len(raw) == 0 {
@@ -532,7 +424,6 @@ func extractDefaultFinal(sections map[string]json.RawMessage) string {
 	}
 	var route map[string]interface{}
 	if err := json.Unmarshal(raw, &route); err != nil {
-		debuglog.WarnLog("TemplateLoader: extractDefaultFinal: failed to unmarshal route section: %v", err)
 		return ""
 	}
 	if finalVal, ok := route["final"]; ok {
@@ -541,4 +432,18 @@ func extractDefaultFinal(sections map[string]json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) если присутствует.
+func stripUTF8BOM(b []byte) []byte {
+	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
+		b = b[3:]
+	}
+	if len(b) >= 3 {
+		n := len(b)
+		if b[n-3] == 0xEF && b[n-2] == 0xBB && b[n-1] == 0xBF {
+			b = b[:n-3]
+		}
+	}
+	return b
 }
