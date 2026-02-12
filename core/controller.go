@@ -503,20 +503,6 @@ func StartSingBoxProcess(skipRunningCheck ...bool) {
 	ac.ProcessService.Start(skipRunningCheck...)
 }
 
-// MonitorSingBoxProcess monitors the sing-box process.
-// Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
-func MonitorSingBoxProcess(cmdToMonitor *exec.Cmd) {
-	ac := GetController()
-	if ac == nil {
-		return
-	}
-	if ac.ProcessService == nil {
-		debuglog.WarnLog("MonitorSingBoxProcess: ProcessService is nil, this should not happen. Initializing...")
-		ac.ProcessService = NewProcessService(ac)
-	}
-	ac.ProcessService.Monitor(cmdToMonitor)
-}
-
 // StopSingBoxProcess is the unified function to stop the sing-box process.
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func StopSingBoxProcess() {
@@ -614,47 +600,6 @@ func CheckIfLauncherAlreadyRunningUtil() {
 			return
 		}
 	}
-}
-
-func CheckFilesUtil() {
-	ac := GetController()
-	if ac == nil {
-		return
-	}
-	files := platform.GetRequiredFiles(ac.FileService.ExecDir)
-	msg := "File check:\n\n"
-	allOk := true
-	for _, f := range files {
-		info, err := os.Stat(f.Path)
-		if err == nil {
-			size := FormatBytesUtil(info.Size())
-			msg += fmt.Sprintf("%s (%s): Found (%s)\n", f.Name, f.Path, size)
-		} else {
-			msg += fmt.Sprintf("%s (%s): Not Found (Error: %v)\n", f.Name, f.Path, err)
-			allOk = false
-		}
-	}
-	if allOk {
-		msg += "\nAll files found. ✅"
-	} else {
-		msg += "\nSome files missing. ❌"
-	}
-	if ac.hasUI() {
-		dialogs.ShowInfo(ac.UIService.MainWindow, "File Check", msg)
-	}
-}
-
-func FormatBytesUtil(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func ShowSingBoxAlreadyRunningWarningUtil() {
