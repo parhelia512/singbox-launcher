@@ -156,8 +156,6 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 		return nil, fmt.Errorf("NewAppController: cannot create UIService: %w", err)
 	}
 	ac.UIService = uiService
-	ac.RunningState = &RunningState{controller: ac}
-	ac.RunningState.Set(false) // Use Set() method instead of direct assignment
 	ac.ConsecutiveCrashAttempts = 0
 	ac.ProcessService = NewProcessService(ac)
 	ac.ConfigService = NewConfigService(ac)
