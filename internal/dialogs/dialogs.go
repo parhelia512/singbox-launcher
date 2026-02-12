@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
@@ -41,6 +42,28 @@ func ShowCustom(window fyne.Window, title, dismiss string, content fyne.CanvasOb
 func ShowConfirm(window fyne.Window, title, message string, onConfirm func(bool)) {
 	fyne.Do(func() {
 		dialog.ShowConfirm(title, message, onConfirm, window)
+	})
+}
+
+// ShowProcessKillConfirmation shows a dialog asking user if they want to kill a running process.
+// onKill is called in a goroutine when user clicks "Kill Process".
+func ShowProcessKillConfirmation(window fyne.Window, onKill func()) {
+	fyne.Do(func() {
+		var d dialog.Dialog
+		killButton := widget.NewButton("Kill Process", nil)
+		closeButton := widget.NewButton("Close This Warning", nil)
+		content := container.NewVBox(
+			widget.NewLabel("Sing-Box appears to be already running.\nWould you like to kill the existing process?"),
+			killButton,
+			closeButton,
+		)
+		d = dialog.NewCustomWithoutButtons("Warning", content, window)
+		killButton.OnTapped = func() {
+			go onKill()
+			d.Hide()
+		}
+		closeButton.OnTapped = func() { d.Hide() }
+		d.Show()
 	})
 }
 
