@@ -85,7 +85,7 @@ type AppController struct {
 // RunningState - structure for tracking the VPN's running state.
 type RunningState struct {
 	running bool
-	sync.Mutex
+	sync.RWMutex
 	controller *AppController
 }
 
@@ -378,9 +378,10 @@ func (r *RunningState) Set(value bool) {
 }
 
 // IsRunning checks if the VPN is running.
+// Uses RLock to allow concurrent reads without blocking each other.
 func (r *RunningState) IsRunning() bool {
-	r.Lock()
-	defer r.Unlock()
+	r.RLock()
+	defer r.RUnlock()
 	return r.running
 }
 
