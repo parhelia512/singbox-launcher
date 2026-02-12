@@ -427,49 +427,6 @@ func (ac *AppController) GetSelectedIndex() int {
 	return -1
 }
 
-// getOurPID safely gets the PID of the tracked sing-box process
-func getOurPID() int {
-	ac := GetController()
-	if ac == nil {
-		return -1
-	}
-	ac.CmdMutex.Lock()
-	defer ac.CmdMutex.Unlock()
-	if ac.SingboxCmd != nil && ac.SingboxCmd.Process != nil {
-		return ac.SingboxCmd.Process.Pid
-	}
-	return -1
-}
-
-// parseCSVLine parses a CSV line, handling quoted fields
-func parseCSVLine(line string) []string {
-	var parts []string
-	var current strings.Builder
-	inQuotes := false
-
-	for _, r := range line {
-		switch r {
-		case '"':
-			inQuotes = !inQuotes
-		case ',':
-			if !inQuotes {
-				parts = append(parts, current.String())
-				current.Reset()
-			} else {
-				current.WriteRune(r)
-			}
-		default:
-			current.WriteRune(r)
-		}
-	}
-	// Add remaining content after the loop
-	if current.Len() > 0 || len(parts) > 0 {
-		parts = append(parts, current.String())
-	}
-
-	return parts
-}
-
 // StartSingBoxProcess launches the sing-box process.
 // skipRunningCheck: если true, пропускает проверку на уже запущенный процесс (для автоперезапуска)
 // Note: ProcessService must be initialized in NewAppController. This is a wrapper for backward compatibility.
