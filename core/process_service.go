@@ -300,14 +300,20 @@ func (svc *ProcessService) CheckIfRunningAtStart() {
 
 // checkAndShowSingBoxRunningWarning checks if sing-box is running and shows warning dialog if found.
 // Returns true if process was found and warning was shown, false otherwise.
-func (svc *ProcessService) checkAndShowSingBoxRunningWarning(context string) bool {
+func (svc *ProcessService) checkAndShowSingBoxRunningWarning(ctx string) bool {
 	found, foundPID := svc.isSingBoxProcessRunning()
 	if found {
-		debuglog.DebugLog("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", context, foundPID)
-		ShowSingBoxAlreadyRunningWarningUtil()
+		debuglog.DebugLog("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", ctx, foundPID)
+		if svc.ac.hasUI() {
+			dialogs.ShowProcessKillConfirmation(svc.ac.UIService.MainWindow, func() {
+				processName := platform.GetProcessNameForCheck()
+				_ = platform.KillProcess(processName)
+				svc.ac.RunningState.Set(false)
+			})
+		}
 		return true
 	}
-	debuglog.DebugLog("%s: No sing-box process found", context)
+	debuglog.DebugLog("%s: No sing-box process found", ctx)
 	return false
 }
 

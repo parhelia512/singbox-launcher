@@ -14,9 +14,6 @@ import (
 	"singbox-launcher/internal/debuglog"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/services"
@@ -539,31 +536,6 @@ func CheckIfLauncherAlreadyRunningUtil() {
 			return
 		}
 	}
-}
-
-func ShowSingBoxAlreadyRunningWarningUtil() {
-	ac := GetController()
-	if ac == nil {
-		return
-	}
-	label := widget.NewLabel("Sing-Box appears to be already running.\nWould you like to kill the existing process?")
-	killButton := widget.NewButton("Kill Process", nil)
-	closeButton := widget.NewButton("Close This Warning", nil)
-	content := container.NewVBox(label, killButton, closeButton)
-	var d dialog.Dialog
-	if ac.hasUI() {
-		d = dialog.NewCustomWithoutButtons("Warning", content, ac.UIService.MainWindow)
-	}
-	killButton.OnTapped = func() {
-		go func() {
-			processName := platform.GetProcessNameForCheck()
-			_ = platform.KillProcess(processName)
-			ac.RunningState.Set(false)
-		}()
-		fyne.Do(func() { d.Hide() })
-	}
-	closeButton.OnTapped = func() { fyne.Do(func() { d.Hide() }) }
-	fyne.Do(func() { d.Show() })
 }
 
 // AutoLoadProxies attempts to load proxies with retry intervals (1, 3, 7, 13, 17 seconds).
