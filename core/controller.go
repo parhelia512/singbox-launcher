@@ -33,14 +33,6 @@ const (
 	apiLogFileName   = "logs/" + constants.APILogFileName
 )
 
-// Constants for auto-update configuration
-const (
-	autoUpdateMinInterval   = 10 * time.Minute // Minimum check interval (constant)
-	autoUpdateRetryInterval = 10 * time.Second // Interval between retry attempts
-	autoUpdateMaxRetries    = 10               // Maximum consecutive failed attempts
-	autoUpdateDefaultReload = "4h"             // Default reload interval if not specified
-)
-
 // AppController - the main structure encapsulating all application state and logic.
 // AppController is the central controller coordinating all application components.
 // It manages UI state, process lifecycle, configuration, API interactions, and logging.
