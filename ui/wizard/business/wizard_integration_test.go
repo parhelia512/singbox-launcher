@@ -37,13 +37,6 @@ func TestDefaultWizardFlow_NextNextFinish(t *testing.T) {
 	// Emulate user entering subscription URL (Page 1 of wizard)
 	model.SourceURLs = "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt"
 
-	// Enable all sections by default (as wizard does)
-	for _, key := range templateData.SectionOrder {
-		if _, ok := model.TemplateSectionSelections[key]; !ok {
-			model.TemplateSectionSelections[key] = true
-		}
-	}
-
 	// Build selectable rule states with defaults (as wizard does)
 	options := EnsureDefaultAvailableOutbounds(GetAvailableOutbounds(model))
 	if len(model.SelectableRuleStates) == 0 {
@@ -109,11 +102,6 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 	// Emulate user entering subscription URL
 	model.SourceURLs = "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt"
 
-	// Enable all sections
-	for _, key := range templateData.SectionOrder {
-		model.TemplateSectionSelections[key] = true
-	}
-
 	// Initialize rule states
 	options := EnsureDefaultAvailableOutbounds(GetAvailableOutbounds(model))
 	for _, rule := range templateData.SelectableRules {
@@ -133,7 +121,7 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 		Rule: wizardtemplate.TemplateSelectableRule{
 			Label:       "Custom Test Rule",
 			Description: "Test custom rule",
-			Raw: map[string]interface{}{
+			Rule: map[string]interface{}{
 				"domain":   []interface{}{"example.com"},
 				"outbound": "direct-out",
 			},

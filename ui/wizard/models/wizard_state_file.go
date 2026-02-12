@@ -2,20 +2,22 @@
 //
 // Файл wizard_state_file.go определяет структуры данных для сериализации состояния визарда в JSON.
 //
-// WizardStateFile - основная структура для сохранения/загрузки состояния визарда:
+// WizardStateFile — основная структура для сохранения/загрузки state.json:
 //   - Метаданные (version, id, comment, created_at, updated_at)
-//   - ParserConfig - конфигурация парсера (единственный источник @ParserConfig)
-//   - ConfigParams - параметры конфигурации (route.final, experimental.clash_api.secret и т.д.)
-//   - SelectableRuleStates - состояния правил из шаблона
-//   - CustomRules - пользовательские правила
+//   - ParserConfig — конфигурация парсера
+//   - ConfigParams — параметры конфигурации (route.final и др.)
+//   - SelectableRuleStates — упрощённые состояния правил из шаблона (только label, enabled, selected_outbound)
+//   - CustomRules — пользовательские правила (полная структура)
 //
-// PersistedRuleState - сериализуемая версия RuleState с дополнительным полем type
-// PersistedTemplateSelectableRule - сериализуемая версия TemplateSelectableRule
-// WizardStateMetadata - метаданные состояния для списка (без полного содержимого)
+// Selectable rules хранят только выбор пользователя — определение правила берётся из шаблона.
+// Custom rules хранят полную структуру, т.к. они не привязаны к шаблону.
+//
+// Поддерживается миграция со старого формата state.json, где selectable_rule_states
+// содержали вложенный объект rule с полным определением правила.
 //
 // Используется в:
-//   - business/state_store.go - для сохранения/загрузки состояний
-//   - presentation/presenter.go - для создания состояния из модели и восстановления модели из состояния
+//   - business/state_store.go — для сохранения/загрузки состояний
+//   - presentation/presenter_state.go — для создания состояния из модели
 package models
 
 import (
@@ -29,71 +31,70 @@ import (
 )
 
 const (
-	// WizardStateVersion - версия формата файла состояния
-	WizardStateVersion = 1
+	// WizardStateVersion — версия формата файла состояния.
+	WizardStateVersion = 2
 
-	// MaxStateIDLength - максимальная длина ID состояния
+	// MaxStateIDLength — максимальная длина ID состояния.
 	MaxStateIDLength = 50
 
-	// StateFileName - имя файла текущего состояния
+	// StateFileName — имя файла текущего состояния.
 	StateFileName = "state.json"
 )
 
 var (
-	// stateIDRegex - регулярное выражение для валидации ID состояния
-	// Разрешены только: буквы (a-z, A-Z), цифры (0-9), дефис (-), подчёркивание (_)
+	// stateIDRegex — допустимые символы для ID состояния.
 	stateIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
 
 // WizardStateFile представляет сериализуемое состояние визарда.
 type WizardStateFile struct {
-	Version              int                  `json:"version"`
-	ID                   string               `json:"id,omitempty"` // Опционально для state.json, обязательно для именованных состояний
-	Comment              string               `json:"comment,omitempty"`
-	CreatedAt            time.Time            `json:"created_at"`
-	UpdatedAt            time.Time            `json:"updated_at"`
-	ParserConfig         config.ParserConfig  `json:"parser_config"`
-	ConfigParams         []ConfigParam        `json:"config_params"`
-	SelectableRuleStates []PersistedRuleState `json:"selectable_rule_states"`
-	CustomRules          []PersistedRuleState `json:"custom_rules"`
+	Version              int                           `json:"version"`
+	ID                   string                        `json:"id,omitempty"`
+	Comment              string                        `json:"comment,omitempty"`
+	CreatedAt            time.Time                     `json:"created_at"`
+	UpdatedAt            time.Time                     `json:"updated_at"`
+	ParserConfig         config.ParserConfig           `json:"parser_config"`
+	ConfigParams         []ConfigParam                 `json:"config_params"`
+	SelectableRuleStates []PersistedSelectableRuleState `json:"selectable_rule_states"`
+	CustomRules          []PersistedCustomRule          `json:"custom_rules"`
 }
 
 // ConfigParam представляет параметр конфигурации.
 type ConfigParam struct {
-	Name  string `json:"name"`  // Путь к параметру в точечной нотации (например, "route.final")
-	Value string `json:"value"` // Значение параметра
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
-// PersistedRuleState - сериализуемая версия RuleState с дополнительным полем type.
-type PersistedRuleState struct {
-	Type             string                          `json:"type"` // "System" для системных правил, или редактируемый тип для пользовательских
-	Rule             PersistedTemplateSelectableRule `json:"rule"`
-	Enabled          bool                            `json:"enabled"`
-	SelectedOutbound string                          `json:"selected_outbound"`
+// PersistedSelectableRuleState — упрощённое состояние selectable rule.
+// Правило определяется шаблоном, здесь хранится только выбор пользователя.
+type PersistedSelectableRuleState struct {
+	Label            string `json:"label"`
+	Enabled          bool   `json:"enabled"`
+	SelectedOutbound string `json:"selected_outbound"`
 }
 
-// PersistedTemplateSelectableRule - сериализуемая версия TemplateSelectableRule.
-type PersistedTemplateSelectableRule struct {
-	Label           string                 `json:"label"`
-	Description     string                 `json:"description"`
-	Raw             map[string]interface{} `json:"raw"`
-	DefaultOutbound string                 `json:"default_outbound"`
-	HasOutbound     bool                   `json:"has_outbound"`
-	IsDefault       bool                   `json:"is_default"`
+// PersistedCustomRule — полное определение пользовательского правила.
+type PersistedCustomRule struct {
+	Label            string                 `json:"label"`
+	Type             string                 `json:"type,omitempty"`
+	Enabled          bool                   `json:"enabled"`
+	SelectedOutbound string                 `json:"selected_outbound"`
+	Description      string                 `json:"description,omitempty"`
+	Rule             map[string]interface{} `json:"rule,omitempty"`
+	DefaultOutbound  string                 `json:"default_outbound,omitempty"`
+	HasOutbound      bool                   `json:"has_outbound"`
 }
 
-// WizardStateMetadata - метаданные состояния для списка (без полного содержимого).
+// WizardStateMetadata — метаданные состояния для списка (без полного содержимого).
 type WizardStateMetadata struct {
 	ID        string    `json:"id"`
 	Comment   string    `json:"comment,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	IsCurrent bool      `json:"is_current"` // true если это state.json
+	IsCurrent bool      `json:"is_current"`
 }
 
 // ValidateStateID проверяет валидность ID состояния.
-// Разрешены только: буквы (a-z, A-Z), цифры (0-9), дефис (-), подчёркивание (_)
-// Максимальная длина: 50 символов
 func ValidateStateID(id string) error {
 	if id == "" {
 		return fmt.Errorf("state ID cannot be empty")
@@ -107,80 +108,154 @@ func ValidateStateID(id string) error {
 	return nil
 }
 
-// ToPersistedRuleState преобразует RuleState в PersistedRuleState.
-// Определяет тип правила на основе rule.raw, если type не задан явно.
-func ToPersistedRuleState(ruleState *RuleState, ruleType string) PersistedRuleState {
-	// Если тип не задан, определяем его из rule.raw
-	if ruleType == "" {
-		ruleType = DetermineRuleType(ruleState.Rule.Raw)
-	}
-
-	return PersistedRuleState{
-		Type:             ruleType,
-		Rule:             ToPersistedTemplateSelectableRule(ruleState.Rule),
+// ToPersistedSelectableRuleState конвертирует RuleState в упрощённый формат для сохранения.
+func ToPersistedSelectableRuleState(ruleState *RuleState) PersistedSelectableRuleState {
+	return PersistedSelectableRuleState{
+		Label:            ruleState.Rule.Label,
 		Enabled:          ruleState.Enabled,
 		SelectedOutbound: ruleState.SelectedOutbound,
 	}
 }
 
-// ToPersistedTemplateSelectableRule преобразует TemplateSelectableRule в PersistedTemplateSelectableRule.
-func ToPersistedTemplateSelectableRule(rule wizardtemplate.TemplateSelectableRule) PersistedTemplateSelectableRule {
-	return PersistedTemplateSelectableRule{
-		Label:           rule.Label,
-		Description:     rule.Description,
-		Raw:             rule.Raw,
-		DefaultOutbound: rule.DefaultOutbound,
-		HasOutbound:     rule.HasOutbound,
-		IsDefault:       rule.IsDefault,
+// ToPersistedCustomRule конвертирует RuleState (custom rule) в формат для сохранения.
+func ToPersistedCustomRule(ruleState *RuleState) PersistedCustomRule {
+	ruleType := DetermineRuleType(ruleState.Rule.Rule)
+	return PersistedCustomRule{
+		Label:            ruleState.Rule.Label,
+		Type:             ruleType,
+		Enabled:          ruleState.Enabled,
+		SelectedOutbound: ruleState.SelectedOutbound,
+		Description:      ruleState.Rule.Description,
+		Rule:             ruleState.Rule.Rule,
+		DefaultOutbound:  ruleState.Rule.DefaultOutbound,
+		HasOutbound:      ruleState.Rule.HasOutbound,
 	}
 }
 
-// ToRuleState преобразует PersistedRuleState в RuleState.
-func (prs *PersistedRuleState) ToRuleState() *RuleState {
+// ToRuleState конвертирует PersistedCustomRule в RuleState.
+func (pcr *PersistedCustomRule) ToRuleState() *RuleState {
 	return &RuleState{
 		Rule: wizardtemplate.TemplateSelectableRule{
-			Label:           prs.Rule.Label,
-			Description:     prs.Rule.Description,
-			Raw:             prs.Rule.Raw,
-			DefaultOutbound: prs.Rule.DefaultOutbound,
-			HasOutbound:     prs.Rule.HasOutbound,
-			IsDefault:       prs.Rule.IsDefault,
+			Label:           pcr.Label,
+			Description:     pcr.Description,
+			Rule:            pcr.Rule,
+			DefaultOutbound: pcr.DefaultOutbound,
+			HasOutbound:     pcr.HasOutbound,
 		},
-		Enabled:          prs.Enabled,
-		SelectedOutbound: prs.SelectedOutbound,
+		Enabled:          pcr.Enabled,
+		SelectedOutbound: pcr.SelectedOutbound,
 	}
 }
 
-// DetermineRuleType определяет тип правила на основе rule.raw.
-// Используется для системных правил, если type не задан явно.
-// Экспортируется для использования в других пакетах.
-func DetermineRuleType(raw map[string]interface{}) string {
-	if raw == nil {
+// DetermineRuleType определяет тип правила на основе содержимого.
+func DetermineRuleType(rule map[string]interface{}) string {
+	if rule == nil {
 		return "Custom JSON"
 	}
-
-	// Проверяем наличие полей для определения типа
-	if _, ok := raw["ip_cidr"]; ok {
+	if _, ok := rule["ip_cidr"]; ok {
 		return "IP Addresses (CIDR)"
 	}
-	if _, ok := raw["domain_regex"]; ok {
+	if _, ok := rule["domain_regex"]; ok {
 		return "Domains/URLs"
 	}
-	if _, ok := raw["domain"]; ok {
+	if _, ok := rule["domain"]; ok {
 		return "Domains/URLs"
 	}
-	if _, ok := raw["domain_suffix"]; ok {
+	if _, ok := rule["domain_suffix"]; ok {
 		return "Domains/URLs"
 	}
-	if _, ok := raw["domain_keyword"]; ok {
+	if _, ok := rule["domain_keyword"]; ok {
 		return "Domains/URLs"
 	}
-	if _, ok := raw["process_name"]; ok {
+	if _, ok := rule["process_name"]; ok {
 		return "Processes"
 	}
-
-	// По умолчанию для системных правил
 	return "System"
+}
+
+// MigrateSelectableRuleStates мигрирует selectable_rule_states из старого формата.
+// Старый формат: [{rule: {label: "X", ...}, enabled: true, selected_outbound: "Y"}]
+// Новый формат: [{label: "X", enabled: true, selected_outbound: "Y"}]
+func MigrateSelectableRuleStates(raw json.RawMessage) []PersistedSelectableRuleState {
+	// Пробуем новый формат
+	var newFormat []PersistedSelectableRuleState
+	if err := json.Unmarshal(raw, &newFormat); err == nil {
+		// Проверяем, что labels заполнены (в новом формате label на верхнем уровне)
+		if len(newFormat) > 0 && newFormat[0].Label != "" {
+			return newFormat
+		}
+	}
+
+	// Пробуем старый формат с вложенным rule
+	var oldFormat []struct {
+		Enabled          bool   `json:"enabled"`
+		SelectedOutbound string `json:"selected_outbound"`
+		Rule             struct {
+			Label string `json:"label"`
+		} `json:"rule"`
+	}
+	if err := json.Unmarshal(raw, &oldFormat); err == nil {
+		result := make([]PersistedSelectableRuleState, 0, len(oldFormat))
+		for _, old := range oldFormat {
+			label := old.Rule.Label
+			if label == "" {
+				continue
+			}
+			result = append(result, PersistedSelectableRuleState{
+				Label:            label,
+				Enabled:          old.Enabled,
+				SelectedOutbound: old.SelectedOutbound,
+			})
+		}
+		return result
+	}
+
+	return nil
+}
+
+// MigrateCustomRules мигрирует custom_rules из старого формата.
+// Старый формат: [{type: "X", rule: {label: "Y", raw: {...}, ...}, enabled: true}]
+// Новый формат: [{label: "Y", type: "X", rule: {...}, enabled: true}]
+func MigrateCustomRules(raw json.RawMessage) []PersistedCustomRule {
+	// Пробуем новый формат
+	var newFormat []PersistedCustomRule
+	if err := json.Unmarshal(raw, &newFormat); err == nil {
+		if len(newFormat) > 0 && newFormat[0].Label != "" {
+			return newFormat
+		}
+	}
+
+	// Пробуем старый формат
+	var oldFormat []struct {
+		Type             string `json:"type"`
+		Enabled          bool   `json:"enabled"`
+		SelectedOutbound string `json:"selected_outbound"`
+		Rule             struct {
+			Label           string                 `json:"label"`
+			Description     string                 `json:"description"`
+			Raw             map[string]interface{} `json:"raw"`
+			DefaultOutbound string                 `json:"default_outbound"`
+			HasOutbound     bool                   `json:"has_outbound"`
+		} `json:"rule"`
+	}
+	if err := json.Unmarshal(raw, &oldFormat); err == nil {
+		result := make([]PersistedCustomRule, 0, len(oldFormat))
+		for _, old := range oldFormat {
+			result = append(result, PersistedCustomRule{
+				Label:            old.Rule.Label,
+				Type:             old.Type,
+				Enabled:          old.Enabled,
+				SelectedOutbound: old.SelectedOutbound,
+				Description:      old.Rule.Description,
+				Rule:             old.Rule.Raw,
+				DefaultOutbound:  old.Rule.DefaultOutbound,
+				HasOutbound:      old.Rule.HasOutbound,
+			})
+		}
+		return result
+	}
+
+	return nil
 }
 
 // MarshalJSON кастомная сериализация для правильного формата времени.
@@ -197,34 +272,53 @@ func (wsf *WizardStateFile) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON кастомная десериализация для правильного формата времени.
+// UnmarshalJSON кастомная десериализация с поддержкой миграции.
 func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
-	type Alias WizardStateFile
-	aux := &struct {
-		*Alias
-		CreatedAt string `json:"created_at"`
-		UpdatedAt string `json:"updated_at"`
-	}{
-		Alias: (*Alias)(wsf),
+	// Десериализуем базовые поля
+	type BasicFields struct {
+		Version      int                 `json:"version"`
+		ID           string              `json:"id,omitempty"`
+		Comment      string              `json:"comment,omitempty"`
+		CreatedAt    string              `json:"created_at"`
+		UpdatedAt    string              `json:"updated_at"`
+		ParserConfig config.ParserConfig `json:"parser_config"`
+		ConfigParams []ConfigParam       `json:"config_params"`
+		// raw messages для миграции
+		SelectableRuleStates json.RawMessage `json:"selectable_rule_states"`
+		CustomRules          json.RawMessage `json:"custom_rules"`
 	}
-	if err := json.Unmarshal(data, &aux); err != nil {
+
+	var basic BasicFields
+	if err := json.Unmarshal(data, &basic); err != nil {
 		return err
 	}
 
+	wsf.Version = basic.Version
+	wsf.ID = basic.ID
+	wsf.Comment = basic.Comment
+	wsf.ParserConfig = basic.ParserConfig
+	wsf.ConfigParams = basic.ConfigParams
+
 	// Парсим время
-	if aux.CreatedAt != "" {
-		createdAt, err := time.Parse(time.RFC3339, aux.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("invalid created_at format: %w", err)
+	if basic.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, basic.CreatedAt); err == nil {
+			wsf.CreatedAt = t
 		}
-		wsf.CreatedAt = createdAt
 	}
-	if aux.UpdatedAt != "" {
-		updatedAt, err := time.Parse(time.RFC3339, aux.UpdatedAt)
-		if err != nil {
-			return fmt.Errorf("invalid updated_at format: %w", err)
+	if basic.UpdatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, basic.UpdatedAt); err == nil {
+			wsf.UpdatedAt = t
 		}
-		wsf.UpdatedAt = updatedAt
+	}
+
+	// Мигрируем selectable_rule_states
+	if len(basic.SelectableRuleStates) > 0 {
+		wsf.SelectableRuleStates = MigrateSelectableRuleStates(basic.SelectableRuleStates)
+	}
+
+	// Мигрируем custom_rules
+	if len(basic.CustomRules) > 0 {
+		wsf.CustomRules = MigrateCustomRules(basic.CustomRules)
 	}
 
 	return nil
@@ -257,22 +351,15 @@ func (wsm *WizardStateMetadata) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-
-	// Парсим время
 	if aux.CreatedAt != "" {
-		createdAt, err := time.Parse(time.RFC3339, aux.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("invalid created_at format: %w", err)
+		if t, err := time.Parse(time.RFC3339, aux.CreatedAt); err == nil {
+			wsm.CreatedAt = t
 		}
-		wsm.CreatedAt = createdAt
 	}
 	if aux.UpdatedAt != "" {
-		updatedAt, err := time.Parse(time.RFC3339, aux.UpdatedAt)
-		if err != nil {
-			return fmt.Errorf("invalid updated_at format: %w", err)
+		if t, err := time.Parse(time.RFC3339, aux.UpdatedAt); err == nil {
+			wsm.UpdatedAt = t
 		}
-		wsm.UpdatedAt = updatedAt
 	}
-
 	return nil
 }

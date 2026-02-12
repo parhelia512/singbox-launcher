@@ -74,21 +74,17 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 	// Извлекаем config_params из модели
 	state.ConfigParams = p.extractConfigParams()
 
-	// Преобразуем SelectableRuleStates
-	state.SelectableRuleStates = make([]wizardmodels.PersistedRuleState, 0, len(p.model.SelectableRuleStates))
+	// Преобразуем SelectableRuleStates — сохраняем только label, enabled, selected_outbound
+	state.SelectableRuleStates = make([]wizardmodels.PersistedSelectableRuleState, 0, len(p.model.SelectableRuleStates))
 	for _, ruleState := range p.model.SelectableRuleStates {
-		// Определяем тип правила (по умолчанию "System" для предустановленных)
-		ruleType := "System"
-		persisted := wizardmodels.ToPersistedRuleState(ruleState, ruleType)
+		persisted := wizardmodels.ToPersistedSelectableRuleState(ruleState)
 		state.SelectableRuleStates = append(state.SelectableRuleStates, persisted)
 	}
 
-	// Преобразуем CustomRules
-	state.CustomRules = make([]wizardmodels.PersistedRuleState, 0, len(p.model.CustomRules))
+	// Преобразуем CustomRules — сохраняем полную структуру
+	state.CustomRules = make([]wizardmodels.PersistedCustomRule, 0, len(p.model.CustomRules))
 	for _, ruleState := range p.model.CustomRules {
-		// Для пользовательских правил тип определяется из rule.raw
-		ruleType := wizardmodels.DetermineRuleType(ruleState.Rule.Raw)
-		persisted := wizardmodels.ToPersistedRuleState(ruleState, ruleType)
+		persisted := wizardmodels.ToPersistedCustomRule(ruleState)
 		state.CustomRules = append(state.CustomRules, persisted)
 	}
 
@@ -189,19 +185,16 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Восстановление config_params (шаг 4)
 	p.restoreConfigParams(stateFile.ConfigParams)
 
-	// Инициализация TemplateSectionSelections (шаг 5)
-	p.initializeTemplateSectionSelections()
-
-	// Восстановление SelectableRuleStates (шаг 6)
+	// Восстановление SelectableRuleStates (шаг 5)
 	p.restoreSelectableRuleStates(stateFile.SelectableRuleStates)
 
-	// Восстановление CustomRules (шаг 7)
+	// Восстановление CustomRules (шаг 6)
 	p.restoreCustomRules(stateFile.CustomRules)
 
-	// Установка флага для парсинга (шаг 8)
+	// Установка флага для парсинга (шаг 7)
 	p.model.PreviewNeedsParse = true
 
-	// Синхронизация GUI (шаг 9)
+	// Синхронизация GUI (шаг 8)
 	p.SyncModelToGUI()
 
 	// Сбрасываем флаг изменений
@@ -228,29 +221,45 @@ func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStat
 	return nil
 }
 
-// initializeTemplateSectionSelections инициализирует TemplateSectionSelections (шаг 5).
-// Все секции устанавливаются в true.
-func (p *WizardPresenter) initializeTemplateSectionSelections() {
-	p.model.TemplateSectionSelections = make(map[string]bool)
-	for _, sectionKey := range p.model.TemplateData.SectionOrder {
-		p.model.TemplateSectionSelections[sectionKey] = true
+// restoreSelectableRuleStates восстанавливает SelectableRuleStates из состояния (шаг 5).
+// Сопоставляет сохранённые состояния с правилами из шаблона по label.
+// Правила без совпадения в шаблоне игнорируются (могли быть удалены из шаблона).
+// Правила из шаблона без сохранённого состояния получают значения по умолчанию.
+func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmodels.PersistedSelectableRuleState) {
+	// Создаём индекс сохранённых состояний по label
+	savedByLabel := make(map[string]wizardmodels.PersistedSelectableRuleState)
+	for _, pr := range persistedRules {
+		savedByLabel[pr.Label] = pr
+	}
+
+	// Для каждого правила из шаблона ищем сохранённое состояние
+	templateRules := p.model.TemplateData.SelectableRules
+	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(templateRules))
+	for i := range templateRules {
+		rule := &templateRules[i]
+		rs := &wizardmodels.RuleState{
+			Rule: *rule,
+		}
+
+		if saved, ok := savedByLabel[rule.Label]; ok {
+			// Восстанавливаем выбор пользователя
+			rs.Enabled = saved.Enabled
+			rs.SelectedOutbound = saved.SelectedOutbound
+		} else {
+			// Новое правило — используем default из шаблона
+			rs.Enabled = rule.IsDefault
+			rs.SelectedOutbound = rule.DefaultOutbound
+		}
+
+		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, rs)
 	}
 }
 
-// restoreSelectableRuleStates восстанавливает SelectableRuleStates из состояния (шаг 6).
-func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmodels.PersistedRuleState) {
-	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(persistedRules))
-	for _, persistedRule := range persistedRules {
-		ruleState := persistedRule.ToRuleState()
-		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, ruleState)
-	}
-}
-
-// restoreCustomRules восстанавливает CustomRules из состояния (шаг 7).
-func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.PersistedRuleState) {
+// restoreCustomRules восстанавливает CustomRules из состояния (шаг 6).
+func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.PersistedCustomRule) {
 	p.model.CustomRules = make([]*wizardmodels.RuleState, 0, len(persistedRules))
-	for _, persistedRule := range persistedRules {
-		ruleState := persistedRule.ToRuleState()
+	for i := range persistedRules {
+		ruleState := persistedRules[i].ToRuleState()
 		p.model.CustomRules = append(p.model.CustomRules, ruleState)
 	}
 }
