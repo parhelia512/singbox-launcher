@@ -311,12 +311,47 @@ func (svc *ProcessService) checkAndShowSingBoxRunningWarning(context string) boo
 	return false
 }
 
+// getTrackedPID safely gets the PID of the tracked sing-box process.
+func (svc *ProcessService) getTrackedPID() int {
+	svc.ac.CmdMutex.Lock()
+	defer svc.ac.CmdMutex.Unlock()
+	if svc.ac.SingboxCmd != nil && svc.ac.SingboxCmd.Process != nil {
+		return svc.ac.SingboxCmd.Process.Pid
+	}
+	return -1
+}
+
+// parseCSVLine parses a CSV line, handling quoted fields.
+func parseCSVLine(line string) []string {
+	var parts []string
+	var current strings.Builder
+	inQuotes := false
+
+	for _, r := range line {
+		switch r {
+		case '"':
+			inQuotes = !inQuotes
+		case ',':
+			if !inQuotes {
+				parts = append(parts, current.String())
+				current.Reset()
+			} else {
+				current.WriteRune(r)
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+	if current.Len() > 0 || len(parts) > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
+}
+
 // isSingBoxProcessRunning checks if sing-box process is running on the system.
 // Returns (isRunning, pid) tuple.
-// Uses getOurPID for thread-safe PID retrieval (with mutex protection).
 func (svc *ProcessService) isSingBoxProcessRunning() (bool, int) {
-	// Use getOurPID for thread-safe access (same as original implementation)
-	ourPID := getOurPID()
+	ourPID := svc.getTrackedPID()
 
 	if runtime.GOOS == "windows" {
 		// Use tasklist on Windows for better reliability
