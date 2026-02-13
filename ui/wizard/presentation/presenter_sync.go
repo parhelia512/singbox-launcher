@@ -18,6 +18,7 @@ package presentation
 
 import (
 	wizardbusiness "singbox-launcher/ui/wizard/business"
+	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
 // SyncModelToGUI синхронизирует данные из модели в GUI.
@@ -34,6 +35,39 @@ func (p *WizardPresenter) SyncModelToGUI() {
 			p.guiState.FinalOutboundSelect.Options = options
 			p.guiState.FinalOutboundSelect.SetSelected(p.model.SelectedFinalOutbound)
 			p.guiState.FinalOutboundSelect.Refresh()
+		}
+
+		// Обновляем селекторы outbound и чекбоксы для правил
+		options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
+		for _, ruleWidget := range p.guiState.RuleOutboundSelects {
+			// Находим соответствующее правило в модели
+			var ruleState *wizardmodels.RuleState
+			if rs, ok := ruleWidget.RuleState.(*wizardmodels.RuleState); ok {
+				ruleState = rs
+			} else {
+				continue
+			}
+
+			// Обновляем чекбокс
+			if ruleWidget.Checkbox != nil {
+				ruleWidget.Checkbox.SetChecked(ruleState.Enabled)
+				ruleWidget.Checkbox.Refresh()
+			}
+
+			// Обновляем селектор outbound
+			if ruleWidget.Select != nil {
+				ruleWidget.Select.Options = options
+				ruleWidget.Select.SetSelected(ruleState.SelectedOutbound)
+
+				// Обновляем состояние enabled/disabled
+				if ruleState.Enabled {
+					ruleWidget.Select.Enable()
+				} else {
+					ruleWidget.Select.Disable()
+				}
+
+				ruleWidget.Select.Refresh()
+			}
 		}
 	})
 }
