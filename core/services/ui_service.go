@@ -59,6 +59,7 @@ type UIService struct {
 	UpdateTrayMenuFunc       func()
 	UpdateParserProgressFunc func(progress float64, status string)
 	FocusOpenRuleDialogs     func()
+	ShowUpdatePopupFunc      func(currentVersion, latestVersion string) // Called to show update popup
 
 	// Dependencies (passed from AppController)
 	RunningStateIsRunning func() bool
@@ -111,6 +112,9 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	ui.UpdateTrayMenuFunc = func() { debuglog.DebugLog("UpdateTrayMenuFunc handler is not set yet.") }
 	ui.UpdateParserProgressFunc = func(progress float64, status string) {
 		debuglog.DebugLog("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
+	}
+	ui.ShowUpdatePopupFunc = func(currentVersion, latestVersion string) {
+		debuglog.DebugLog("ShowUpdatePopupFunc handler is not set yet. Current: %s, Latest: %s", currentVersion, latestVersion)
 	}
 
 	return ui, nil

@@ -68,7 +68,6 @@ type AppController struct {
 	cancelFunc context.CancelFunc // Cancel function for stopping goroutines
 
 	// --- Update popup state ---
-	StartInTray      bool         // Флаг запуска с параметром -tray
 	updatePopupShown bool         // Флаг, что попап обновления уже был показан в этой сессии
 	updatePopupMutex sync.RWMutex // Мьютекс для защиты updatePopupShown
 }
@@ -114,22 +113,8 @@ func GetController() *AppController {
 	return instance
 }
 
-// SetStartInTray сохраняет флаг запуска с параметром -tray
-func (ac *AppController) SetStartInTray(startInTray bool) {
-	ac.updatePopupMutex.Lock()
-	defer ac.updatePopupMutex.Unlock()
-	ac.StartInTray = startInTray
-}
-
-// WasStartedInTray возвращает, был ли запуск с параметром -tray
-func (ac *AppController) WasStartedInTray() bool {
-	ac.updatePopupMutex.RLock()
-	defer ac.updatePopupMutex.RUnlock()
-	return ac.StartInTray
-}
-
-// setUpdatePopupShown устанавливает флаг, что попап обновления был показан
-func (ac *AppController) setUpdatePopupShown(shown bool) {
+// SetUpdatePopupShown устанавливает флаг, что попап обновления был показан
+func (ac *AppController) SetUpdatePopupShown(shown bool) {
 	ac.updatePopupMutex.Lock()
 	defer ac.updatePopupMutex.Unlock()
 	ac.updatePopupShown = shown
@@ -181,7 +166,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 
 	// Устанавливаем callback для проверки обновлений при открытии окна
 	ac.UIService.OnWindowShown = func() {
-		ac.ShowUpdatePopupIfNeeded()
+		ac.ShowUpdatePopupIfAvailable()
 	}
 
 	// Initialize APIService

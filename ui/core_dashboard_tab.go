@@ -22,6 +22,9 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/platform"
+	"singbox-launcher/ui/components"
 	"singbox-launcher/ui/wizard"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
@@ -174,6 +177,9 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 
 	// Запускаем автообновление версии
 	tab.startAutoUpdate()
+
+	// Регистрируем callback для показа попапа обновления
+	tab.controller.UIService.ShowUpdatePopupFunc = tab.showUpdatePopup
 
 	return content
 }
@@ -967,4 +973,49 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 			})
 		}
 	}()
+}
+
+// showUpdatePopup показывает попап с информацией об обновлении
+func (tab *CoreDashboardTab) showUpdatePopup(currentVersion, latestVersion string) {
+	if tab.controller == nil || tab.controller.UIService == nil || tab.controller.UIService.MainWindow == nil {
+		debuglog.WarnLog("showUpdatePopup: UIService or MainWindow not available")
+		return
+	}
+
+	// Устанавливаем флаг, что попап был показан
+	tab.controller.SetUpdatePopupShown(true)
+
+	// Создаем содержимое попапа
+	fyne.Do(func() {
+		downloadURL := "https://github.com/Leadaxe/singbox-launcher/releases/latest"
+
+		// Создаем ссылку на скачивание
+		downloadLink := widget.NewHyperlink("Download from GitHub", nil)
+		if err := downloadLink.SetURLFromString(downloadURL); err != nil {
+			debuglog.ErrorLog("showUpdatePopup: Failed to set URL: %v", err)
+		}
+		downloadLink.OnTapped = func() {
+			if err := platform.OpenURL(downloadURL); err != nil {
+				debuglog.ErrorLog("showUpdatePopup: Failed to open download URL: %v", err)
+				dialogs.ShowError(tab.controller.UIService.MainWindow, fmt.Errorf("Failed to open link: %v", err))
+			}
+		}
+
+		// Создаем контейнер с информацией
+		mainContent := container.NewVBox(
+			widget.NewLabel("A new version of the application is available"),
+			widget.NewLabel(""),
+			widget.NewLabel(fmt.Sprintf("Current version: %s", currentVersion)),
+			widget.NewLabel(fmt.Sprintf("New version: %s", latestVersion)),
+			widget.NewLabel(""),
+			downloadLink,
+		)
+
+		// Используем components.NewCustom для создания диалога
+		// Передаем nil для кнопок, чтобы не было кнопки "Скачать", только "Закрыть"
+		d := components.NewCustom("Update Available", mainContent, nil, "Close", tab.controller.UIService.MainWindow)
+
+		// Показываем диалог
+		d.Show()
+	})
 }
