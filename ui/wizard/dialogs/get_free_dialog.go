@@ -205,7 +205,9 @@ func convertGetFreeDataToStateFile(getFreeData *GetFreeData) (*wizardmodels.Wiza
 			Enabled:          rule.Enabled,
 			SelectedOutbound: rule.SelectedOutbound,
 		})
+		debuglog.DebugLog("convertGetFreeDataToStateFile: converted rule label=%s, enabled=%v, selected_outbound=%s", rule.Label, rule.Enabled, rule.SelectedOutbound)
 	}
+	debuglog.DebugLog("convertGetFreeDataToStateFile: converted %d selectable rules", len(selectableRuleStates))
 
 	// Используем фабрику для создания WizardStateFile
 	// Логика работы с ParserConfig и проверки на nil инкапсулированы внутри NewWizardStateFile
@@ -299,6 +301,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			var freeVPNDialog dialog.Dialog
 			applyButton := widget.NewButton("Apply configuration", func() {
 				debuglog.DebugLog("Apply configuration button clicked")
+				debuglog.DebugLog("Apply configuration: stateFile has %d selectable_rule_states", len(stateFile.SelectableRuleStates))
 
 				// Load state using the same logic as LoadState
 				if err := presenter.LoadState(stateFile); err != nil {
@@ -308,6 +311,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 				}
 
 				debuglog.InfoLog("Successfully applied configuration from get_free.json")
+				debuglog.DebugLog("Apply configuration: after LoadState, model has %d selectable_rule_states", len(presenter.Model().SelectableRuleStates))
 				dialog.ShowInformation("Success", "Configuration from get_free.json has been applied successfully!", guiState.Window)
 
 				// Close the dialog

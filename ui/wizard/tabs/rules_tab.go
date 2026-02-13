@@ -111,15 +111,16 @@ func createSelectableRulesUI(presenter *wizardpresentation.WizardPresenter, mode
 			presenter, model, guiState, ruleState, idx, availableOutbounds,
 		)
 
+		// Create checkbox with callback
+		checkbox := createSelectableRuleCheckbox(presenter, model, guiState, ruleState, idx, outboundSelect)
+
 		// Create RuleWidget and add to GUIState
 		ruleWidget := &wizardpresentation.RuleWidget{
 			Select:    outboundSelect,
+			Checkbox:  checkbox,
 			RuleState: ruleState,
 		}
 		guiState.RuleOutboundSelects = append(guiState.RuleOutboundSelects, ruleWidget)
-
-		// Create checkbox with callback
-		checkbox := createSelectableRuleCheckbox(presenter, model, guiState, ruleState, idx, outboundSelect)
 
 		// Create row content
 		rowContent := createSelectableRuleRowContent(ruleState, guiState, checkbox, outboundRow)
@@ -239,20 +240,21 @@ func createCustomRulesUI(
 			presenter, model, guiState, customRule, idx, availableOutbounds,
 		)
 
-		// Create RuleWidget for custom rule
-		customRuleWidget := &wizardpresentation.RuleWidget{
-			Select:    outboundSelect,
-			RuleState: customRule,
-		}
-		guiState.RuleOutboundSelects = append(guiState.RuleOutboundSelects, customRuleWidget)
+		// Create checkbox
+		checkbox := createCustomRuleCheckbox(presenter, model, guiState, customRule, idx, outboundSelect)
 
 		// Create action buttons
 		editButton, deleteButton := createCustomRuleActionButtons(
 			presenter, model, guiState, customRule, idx, showAddRuleDialog,
 		)
 
-		// Create checkbox
-		checkbox := createCustomRuleCheckbox(presenter, model, guiState, customRule, idx, outboundSelect)
+		// Create RuleWidget for custom rule
+		customRuleWidget := &wizardpresentation.RuleWidget{
+			Select:    outboundSelect,
+			Checkbox:  checkbox,
+			RuleState: customRule,
+		}
+		guiState.RuleOutboundSelects = append(guiState.RuleOutboundSelects, customRuleWidget)
 
 		// Create row content
 		rowContent := createCustomRuleRowContent(checkbox, editButton, deleteButton, outboundSelect)

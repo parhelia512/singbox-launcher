@@ -34,10 +34,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// RuleWidget связывает виджет Select с правилом из модели.
+// RuleWidget связывает виджеты Select и Check с правилом из модели.
 type RuleWidget struct {
 	Select    *widget.Select
-	RuleState interface{} // *models.RuleState - используется interface{} чтобы избежать циклических зависимостей
+	Checkbox  *widget.Check // Может быть nil, если правило не имеет чекбокса
+	RuleState interface{}   // *models.RuleState - используется interface{} чтобы избежать циклических зависимостей
 }
 
 // GUIState содержит только GUI-виджеты и UI-флаги состояния.
