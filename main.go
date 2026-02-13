@@ -47,8 +47,11 @@ func main() {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
 
+	// Сохраняем флаг запуска с -tray
+	controller.SetStartInTray(*startInTray)
+
 	// Check launcher version on startup
-	controller.CheckLauncherVersionOnStartup()
+	controller.CheckLauncherVersionOnStartup(*startInTray)
 
 	// Configure the system tray if the application is running on a Desktop platform.
 	//nolint:unused // desktop is used for type assertion, even if linter can't detect it

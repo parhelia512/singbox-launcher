@@ -68,6 +68,9 @@ type UIService struct {
 	// Используется для того, чтобы UI-компоненты (например, overlay) могли
 	// подстраиваться под текущее состояние без жёсткой связи между слоями.
 	OnStateChange func() // Called when UI state changes
+	// OnWindowShown — опциональный callback, который вызывается после открытия главного окна
+	// Используется для проверки обновлений при первом открытии окна после запуска с -tray
+	OnWindowShown func() // Called after main window is shown
 }
 
 // NewUIService creates and initializes a new UIService instance.
@@ -131,6 +134,11 @@ func (ui *UIService) ShowMainWindowOrFocusWizard() {
 		if ui.WizardWindow != nil {
 			ui.WizardWindow.Show()
 			ui.WizardWindow.RequestFocus()
+		}
+
+		// Вызываем callback после открытия окна (для проверки обновлений)
+		if ui.OnWindowShown != nil {
+			ui.OnWindowShown()
 		}
 	})
 }
