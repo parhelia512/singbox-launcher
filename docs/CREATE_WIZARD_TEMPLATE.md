@@ -12,6 +12,7 @@ The Config Wizard is a visual interface that helps users create their `config.js
 - Which rules users can enable/disable via checkboxes
 - How generated proxy outbounds are inserted
 - Default proxy groups and selectors
+- Platform-specific configurations (Windows, macOS, Linux)
 
 Users simply:
 1. Enter their subscription URL or direct proxy links
@@ -24,70 +25,404 @@ Users simply:
 
 ### Step 1: Create the Template File
 
-Create a file named `config_template.json` in the `bin/` folder (next to the application executable).
+Create a file named `config_template.json` in the `bin/` folder (next to the application executable). **This single file works for all platforms** (Windows, macOS, Linux).
 
 ### Step 2: Use This Minimal Template
 
 Copy this skeleton and customize it:
 
-```jsonc
+```json
 {
-  /** @ParcerConfig
-    {
-      "ParserConfig": {
-        "version": 2,
-        "proxies": [
-          {
-            "source": "https://your-subscription-url-here"
-          }
-        ],
-        "outbounds": [
-          {
-            "tag": "auto-proxy-out",
-            "type": "urltest",
-            "options": {
-              "url": "https://cp.cloudflare.com/generate_204",
-              "interval": "5m",
-              "tolerance": 100
-            },
-            "outbounds": {
-              "proxies": {}
-            }
+  "parser_config": {
+    "ParserConfig": {
+      "version": 4,
+      "proxies": [
+        {
+          "source": "https://your-subscription-url-here"
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "auto-proxy-out",
+          "type": "urltest",
+          "options": {
+            "url": "https://cp.cloudflare.com/generate_204",
+            "interval": "5m",
+            "tolerance": 100
           },
-          {
-            "tag": "proxy-out",
-            "type": "selector",
-            "options": {
-              "default": "auto-proxy-out"
-            },
-            "outbounds": {
-              "addOutbounds": ["direct-out", "auto-proxy-out"],
-              "proxies": {}
-            }
+          "outbounds": {
+            "proxies": {}
           }
-        ]
+        },
+        {
+          "tag": "proxy-out",
+          "type": "selector",
+          "options": {
+            "default": "auto-proxy-out"
+          },
+          "outbounds": {
+            "addOutbounds": ["direct-out", "auto-proxy-out"],
+            "proxies": {}
+          }
+        }
+      ]
+    }
+  },
+
+  "config": {
+    "log": {
+      "level": "info",
+      "timestamp": true
+    },
+    "dns": {
+      "servers": [
+        {
+          "type": "udp",
+          "tag": "direct_dns",
+          "server": "9.9.9.9",
+          "server_port": 53
+        }
+      ],
+      "final": "direct_dns"
+    },
+    "inbounds": [],
+    "outbounds": [
+      { "type": "direct", "tag": "direct-out" }
+    ],
+    "route": {
+      "rule_set": [],
+      "rules": [
+        { "ip_is_private": true, "outbound": "direct-out" },
+        { "domain_suffix": ["local"], "outbound": "direct-out" }
+      ],
+      "final": "proxy-out"
+    },
+    "experimental": {
+      "clash_api": {
+        "external_controller": "127.0.0.1:9090",
+        "secret": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN"
       }
     }
-  */
-
-  "log": {
-    "level": "info",
-    "timestamp": true
   },
 
-  "dns": {
-    "servers": [
-      {
-        "type": "udp",
-        "tag": "direct_dns",
-        "server": "9.9.9.9",
-        "server_port": 53
+  "selectable_rules": [
+    {
+      "label": "Block Ads",
+      "description": "Soft-block ads by rejecting connections",
+      "default": true,
+      "rule_set": [
+        {
+          "tag": "ads-all",
+          "type": "remote",
+          "format": "binary",
+          "url": "https://raw.githubusercontent.com/v2fly/domain-list-community/release/geosite-category-ads-all.srs",
+          "download_detour": "direct-out",
+          "update_interval": "24h"
+        }
+      ],
+      "rule": {
+        "rule_set": "ads-all",
+        "action": "reject"
       }
-    ],
-    "final": "direct_dns"
-  },
+    },
+    {
+      "label": "Route Russian domains directly",
+      "description": "Send Russian domain traffic directly",
+      "rule": {
+        "rule_set": "ru-domains",
+        "outbound": "direct-out"
+      }
+    }
+  ],
 
-  "inbounds": [
+  "params": [
+    {
+      "name": "inbounds",
+      "platforms": ["windows", "linux"],
+      "value": [
+        {
+          "type": "tun",
+          "tag": "tun-in",
+          "interface_name": "singbox-tun0",
+          "address": ["172.16.0.1/30"],
+          "mtu": 1400,
+          "auto_route": true,
+          "strict_route": false,
+          "stack": "system"
+        }
+      ]
+    },
+    {
+      "name": "route.rules",
+      "platforms": ["windows", "linux"],
+      "mode": "prepend",
+      "value": [
+        { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+      ]
+    },
+    {
+      "name": "inbounds",
+      "platforms": ["darwin"],
+      "value": [
+        {
+          "type": "mixed",
+          "tag": "proxy-in",
+          "listen": "127.0.0.1",
+          "listen_port": 7890,
+          "sniff": true,
+          "sniff_override_destination": true,
+          "set_system_proxy": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Step 3: Customize for Your Service
+
+1. **Update `parser_config`**: Replace `"source": "https://your-subscription-url-here"` with your actual subscription URL (or leave empty if users will enter their own)
+2. **Adjust outbound groups**: Modify the `outbounds` array in `parser_config` to match your proxy group structure
+3. **Add your rules**: Replace the example `selectable_rules` with your own routing rules
+4. **Set default final**: Change `"final": "proxy-out"` in `config.route` to match your default proxy group tag
+5. **Configure platform-specific settings**: Add or modify entries in `params` for platform-specific configurations
+
+---
+
+## Understanding the Template Structure
+
+The unified template consists of four main sections:
+
+### 1. `parser_config` Section
+
+**Purpose**: Defines the default subscription parser configuration.
+
+**Structure**:
+```json
+{
+  "parser_config": {
+    "ParserConfig": {
+      "version": 4,
+      "proxies": [
+        { "source": "https://example.com/subscription" }
+      ],
+      "outbounds": [
+        {
+          "tag": "auto-proxy-out",
+          "type": "urltest",
+          "options": { "url": "https://cp.cloudflare.com/generate_204", "interval": "5m" },
+          "outbounds": { "proxies": {} }
+        }
+      ],
+      "parser": {
+        "reload": "1h",
+        "last_updated": "2026-01-30T12:00:00Z"
+      }
+    }
+  }
+}
+```
+
+**Fields**:
+- `version`: Always use `4` (current ParserConfig version)
+- `proxies`: Array with subscription URLs (users can override these in the wizard)
+- `outbounds`: Default proxy groups (urltest, selector, etc.) that will be available to users
+- `parser`: Parser settings (reload interval, last updated timestamp)
+
+**Important**: The wizard normalizes this to version 4 format automatically. Make sure all `tag` values match what you reference in your `route` section.
+
+---
+
+### 2. `config` Section
+
+**Purpose**: Contains the main sing-box configuration (platform-independent part).
+
+**Structure**:
+```json
+{
+  "config": {
+    "log": { "level": "warn", "timestamp": true },
+    "dns": { /* DNS configuration */ },
+    "inbounds": [],
+    "outbounds": [
+      { "type": "direct", "tag": "direct-out" }
+    ],
+    "route": {
+      "rule_set": [],
+      "rules": [
+        { "ip_is_private": true, "outbound": "direct-out" },
+        { "domain_suffix": ["local"], "outbound": "direct-out" }
+      ],
+      "final": "proxy-out"
+    },
+    "experimental": { /* experimental features */ }
+  }
+}
+```
+
+**Important points**:
+- `inbounds`: Should be an empty array `[]` — it will be filled from `params` based on the platform
+- `outbounds`: Contains only static outbounds (like `direct-out`). Generated proxy outbounds from the parser are automatically inserted at the beginning of this array
+- `route.rules`: Contains only basic universal rules (hijack-dns, ip_is_private, local). User-selectable rules are defined in `selectable_rules`
+- `route.rule_set`: Contains only shared rule sets used by multiple rules or DNS rules. Rule sets specific to individual selectable rules are defined within those rules
+
+---
+
+### 3. `selectable_rules` Section
+
+**Purpose**: Defines user-manageable routing rules that appear as checkboxes in the wizard.
+
+**Structure**:
+```json
+{
+  "selectable_rules": [
+    {
+      "label": "Block Ads",
+      "description": "Soft-block ads by rejecting connections",
+      "default": true,
+      "rule_set": [
+        {
+          "tag": "ads-all",
+          "type": "remote",
+          "format": "binary",
+          "url": "https://example.com/rules/ads.srs",
+          "download_detour": "direct-out",
+          "update_interval": "24h"
+        }
+      ],
+      "rule": {
+        "rule_set": "ads-all",
+        "action": "reject"
+      }
+    }
+  ]
+}
+```
+
+**Fields**:
+- `label` (required): The checkbox label shown in the wizard UI
+- `description` (required): Tooltip text shown when user clicks "?" button
+- `default` (optional, boolean): If `true`, the rule is enabled by default when the wizard first opens
+- `platforms` (optional, array of strings): Platforms where this rule is available (`"windows"`, `"linux"`, `"darwin"`). If omitted, the rule is available on all platforms
+- `rule_set` (optional, array): Rule set definitions needed for this rule. These are added to `config.route.rule_set` **only if the rule is enabled**
+- `rule` (optional, object): Single routing rule (mutually exclusive with `rules`)
+- `rules` (optional, array): Multiple routing rules (mutually exclusive with `rule`)
+
+**Rule format**: Can be a single rule object or an array of rules:
+```json
+// Single rule
+{
+  "label": "Block ads",
+  "rule": {
+    "rule_set": "ads-all",
+    "action": "reject"
+  }
+}
+
+// Multiple rules (array)
+{
+  "label": "Gaming rules",
+  "rules": [
+    { "rule_set": "games", "outbound": "direct-out" },
+    { "port": [27000, 27001], "outbound": "direct-out" }
+  ]
+}
+```
+
+**Outbound selection**: If your rule has an `outbound` field, the wizard automatically shows a dropdown so users can choose which proxy group to use. Available options come from:
+- Tags defined in `parser_config` outbounds
+- Tags from generated proxies
+- Always available: `direct-out`, `reject`, `drop`
+
+**Special case - reject rules**: If your rule has `"action": "reject"`, the wizard offers `reject` and `drop` options instead of proxy groups.
+
+**Platform-specific rules**: You can create platform-specific rules with the same label but different `platforms` and rule content:
+```json
+{
+  "label": "Messengers via proxy",
+  "platforms": ["windows"],
+  "rule": {
+    "rule_set": "messengers",
+    "process_name": ["Telegram.exe", "Discord.exe"],
+    "outbound": "proxy-out"
+  }
+},
+{
+  "label": "Messengers via proxy",
+  "platforms": ["darwin", "linux"],
+  "rule": {
+    "rule_set": "messengers",
+    "process_name": ["Telegram", "Discord"],
+    "outbound": "proxy-out"
+  }
+}
+```
+
+---
+
+### 4. `params` Section
+
+**Purpose**: Defines platform-specific configuration overrides applied to `config` during template loading.
+
+**Structure**:
+```json
+{
+  "params": [
+    {
+      "name": "inbounds",
+      "platforms": ["windows", "linux"],
+      "value": [
+        {
+          "type": "tun",
+          "tag": "tun-in",
+          "interface_name": "singbox-tun0",
+          "address": ["172.16.0.1/30"],
+          "mtu": 1400,
+          "auto_route": true,
+          "strict_route": false,
+          "stack": "system"
+        }
+      ]
+    },
+    {
+      "name": "route.rules",
+      "platforms": ["windows", "linux"],
+      "mode": "prepend",
+      "value": [
+        { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+      ]
+    }
+  ]
+}
+```
+
+**Fields**:
+- `name` (required, string): Path to the config property using dot notation (e.g., `"inbounds"`, `"route.rules"`, `"dns.servers"`)
+- `platforms` (required, array of strings): Platforms where this param applies (`"windows"`, `"linux"`, `"darwin"`)
+- `value` (required): The value to apply (can be any JSON type: object, array, string, number, boolean)
+- `mode` (optional, string): How to apply the value:
+  - `"replace"` (default): Replace `config[name]` with `value`
+  - `"prepend"`: Insert elements of `value` at the beginning of array `config[name]`
+  - `"append"`: Append elements of `value` to the end of array `config[name]`
+
+**Platform mapping**:
+- `"windows"` → Windows (`runtime.GOOS == "windows"`)
+- `"linux"` → Linux (`runtime.GOOS == "linux"`)
+- `"darwin"` → macOS (`runtime.GOOS == "darwin"`)
+
+**How it works**: During template loading, the wizard:
+1. Determines the current platform (`runtime.GOOS`)
+2. For each param, checks if the current platform is in `platforms`
+3. If yes, applies `value` to `config` at path `name` using the specified `mode`
+
+**Example**: To add TUN inbound only on Windows and Linux:
+```json
+{
+  "name": "inbounds",
+  "platforms": ["windows", "linux"],
+  "value": [
     {
       "type": "tun",
       "tag": "tun-in",
@@ -98,211 +433,127 @@ Copy this skeleton and customize it:
       "strict_route": false,
       "stack": "system"
     }
-  ],
-
-  "outbounds": [
-    /** @PARSER_OUTBOUNDS_BLOCK */
-    { "type": "direct", "tag": "direct-out" }
-  ],
-
-  "route": {
-    "rules": [
-      { "ip_is_private": true, "outbound": "direct-out" },
-      { "domain_suffix": ["local"], "outbound": "direct-out" },
-      
-      /** @SelectableRule
-        @label Block Ads
-        @description Soft-block ads by rejecting connections
-        @default
-        { "rule_set": "ads-all", "action": "reject" },
-      */
-      
-      /** @SelectableRule
-        @label Route Russian domains directly
-        @description Send Russian domain traffic directly
-        { "rule_set": "ru-domains", "outbound": "direct-out" },
-      */
-    ],
-    "final": "proxy-out"
-  },
-
-  "experimental": {
-    "clash_api": {
-      "external_controller": "127.0.0.1:9090",
-      "secret": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN"
-    }
-  }
+  ]
 }
 ```
 
-### Step 3: Customize for Your Service
-
-1. **Update `@ParcerConfig`**: Replace `"source": "https://your-subscription-url-here"` with your actual subscription URL (or leave empty if users will enter their own)
-2. **Adjust outbound groups**: Modify the `outbounds` array in `@ParcerConfig` to match your proxy group structure
-3. **Add your rules**: Replace the example `@SelectableRule` blocks with your own routing rules
-4. **Set default final**: Change `"final": "proxy-out"` to match your default proxy group tag
-
----
-
-## Understanding the Special Markers
-
-### 1. `@ParcerConfig` Block
-
-**Purpose**: Defines the default subscription parser configuration.
-
-**Location**: Must be a block comment `/** @ParcerConfig ... */` at the top of your template.
-
-**What it contains**:
-- `version`: Always use `2`
-- `proxies`: Array with subscription URLs (users can override these in the wizard)
-- `outbounds`: Default proxy groups (urltest, selector, etc.) that will be available to users
-
-**Example**:
-```jsonc
-/** @ParcerConfig
-  {
-    "ParserConfig": {
-      "version": 2,
-      "proxies": [{ "source": "https://example.com/subscription" }],
-      "outbounds": [
-        {
-          "tag": "auto-proxy-out",
-          "type": "urltest",
-          "options": { "url": "https://cp.cloudflare.com/generate_204", "interval": "5m" },
-          "outbounds": { "proxies": {} }
-        }
-      ]
+To add system proxy inbound only on macOS:
+```json
+{
+  "name": "inbounds",
+  "platforms": ["darwin"],
+  "value": [
+    {
+      "type": "mixed",
+      "tag": "proxy-in",
+      "listen": "127.0.0.1",
+      "listen_port": 7890,
+      "sniff": true,
+      "sniff_override_destination": true,
+      "set_system_proxy": true
     }
-  }
-*/
+  ]
+}
 ```
-
-**Important**: The wizard normalizes this to version 2 format automatically. Make sure all `tag` values match what you reference in your `route` section.
-
----
-
-### 2. `@PARSER_OUTBOUNDS_BLOCK` Marker
-
-**Purpose**: Tells the wizard where to insert generated proxy outbounds from the user's subscription.
-
-**Location**: Must be inside the `outbounds` array as a comment.
-
-**How it works**:
-- The wizard parses the user's subscription URL or direct links
-- It generates individual proxy outbounds (vless://, vmess://, etc.)
-- These are inserted at the location of `@PARSER_OUTBOUNDS_BLOCK`
-- Any outbounds **after** this marker are preserved (like `direct-out`)
-
-**Example**:
-```jsonc
-"outbounds": [
-  /** @PARSER_OUTBOUNDS_BLOCK */
-  { "type": "direct", "tag": "direct-out" },
-  { "type": "block", "tag": "block-out" }
-]
-```
-
-**Result**: Generated proxies appear first, then `direct-out`, then `block-out`.
-
----
-
-### 3. `@SelectableRule` Blocks
-
-**Purpose**: Creates user-friendly checkboxes for optional routing rules.
-
-**Location**: Must be inside the `route.rules` array as block comments.
-
-**Structure**:
-```jsonc
-/** @SelectableRule
-  @label Display Name
-  @description Detailed explanation shown in tooltip
-  @default
-  { "rule_set": "example", "outbound": "proxy-out" },
-*/
-```
-
-**Directives** (all optional):
-- `@label Text` - The checkbox label (required for clarity)
-- `@description Text` - Shown when user clicks "?" button
-- `@default` - Rule is checked/enabled by default
-
-**Rule format**: Can be a single rule object or an array of rules:
-```jsonc
-// Single rule
-/** @SelectableRule
-  @label Block ads
-  { "rule_set": "ads-all", "action": "reject" },
-*/
-
-// Multiple rules (array)
-/** @SelectableRule
-  @label Gaming rules
-  [
-    { "rule_set": "games", "outbound": "direct-out" },
-    { "port": [27000, 27001], "outbound": "direct-out" }
-  ],
-*/
-```
-
-**Outbound selection**: If your rule has an `outbound` field, the wizard automatically shows a dropdown so users can choose which proxy group to use. Available options come from:
-- Tags defined in `@ParcerConfig` outbounds
-- Tags from generated proxies
-- Always available: `direct-out`, `reject`, `drop`
-
-**Special case - reject rules**: If your rule has `"action": "reject"`, the wizard offers `reject` and `drop` options instead of proxy groups.
 
 ---
 
 ## Example Rules with Detailed Explanations
 
-This section provides detailed examples of `@SelectableRule` blocks with explanations of how they work in the wizard.
-
 ### Example 1: Rule with Outbound Selection
 
-```jsonc
-/** @SelectableRule
-    @label Gemini via Gemini VPN
-    @default
-    @description Use dedicated Gemini VPN selector for Gemini rule set.
-    { "rule_set": "gemini", "network": ["tcp", "udp"], "outbound": "proxy-out" },
-*/
+```json
+{
+  "label": "Gemini via Gemini VPN",
+  "description": "Use dedicated Gemini VPN selector for Gemini rule set.",
+  "default": true,
+  "rule_set": [
+    {
+      "tag": "gemini",
+      "type": "inline",
+      "format": "domain_suffix",
+      "rules": [
+        {
+          "domain_suffix": [
+            "generativelanguage.googleapis.com",
+            "gemini.google.com",
+            "ai.google.dev"
+          ]
+        }
+      ]
+    }
+  ],
+  "rule": {
+    "rule_set": "gemini",
+    "network": ["tcp", "udp"],
+    "outbound": "proxy-out"
+  }
+}
 ```
 
 **How it works:**
 - This rule has an `outbound` field (`"outbound": "proxy-out"`), so the wizard will show a dropdown selector
 - Users can choose from:
-  - Any outbound tag defined in `@ParcerConfig` (e.g., `proxy-out`, `auto-proxy-out`)
+  - Any outbound tag defined in `parser_config` (e.g., `proxy-out`, `auto-proxy-out`)
   - Any generated proxy tag from subscriptions (e.g., `🇳🇱Netherlands`, `🇺🇸USA`)
   - Always available options: `direct-out`, `reject`
-- The `@default` directive means this rule is checked/enabled by default when the wizard opens
-- The `@description` provides helpful context in the tooltip
+- The `default: true` means this rule is checked/enabled by default when the wizard opens
+- The `description` provides helpful context in the tooltip
+- The `rule_set` array contains the rule set definition that will be added to `config.route.rule_set` only if this rule is enabled
 
 ### Example 2: Rule with Direct Outbound Default
 
-```jsonc
-/** @SelectableRule
-    @label Games direct
-    @default
-    @description Send gaming rule set traffic directly for lower latency.
-    { "rule_set": "games", "network": ["tcp", "udp"], "outbound": "direct-out" },
-*/
+```json
+{
+  "label": "Games direct",
+  "description": "Send gaming rule set traffic directly for lower latency.",
+  "default": true,
+  "rule_set": [
+    {
+      "tag": "games",
+      "type": "remote",
+      "format": "binary",
+      "url": "https://example.com/rules/games.srs",
+      "download_detour": "direct-out",
+      "update_interval": "24h"
+    }
+  ],
+  "rule": {
+    "rule_set": "games",
+    "network": ["tcp", "udp"],
+    "outbound": "direct-out"
+  }
+}
 ```
 
 **How it works:**
 - Uses `direct-out` by default (traffic bypasses VPN)
 - Users can still change it in the wizard to route gaming traffic through VPN if needed
 - The `network` field specifies both TCP and UDP protocols (gaming often uses UDP)
-- Marked with `@default` because low-latency direct routing is usually preferred for gaming
+- Marked with `default: true` because low-latency direct routing is usually preferred for gaming
 
 ### Example 3: Blocking Rule with Reject Option
 
-```jsonc
-/** @SelectableRule
-    @label Block ads
-    @description Block advertising domains.
-    { "rule_set": "ads", "action": "reject", "method": "drop" },
-*/
+```json
+{
+  "label": "Block ads",
+  "description": "Block advertising domains.",
+  "rule_set": [
+    {
+      "tag": "ads",
+      "type": "remote",
+      "format": "binary",
+      "url": "https://example.com/rules/ads.srs",
+      "download_detour": "direct-out",
+      "update_interval": "24h"
+    }
+  ],
+  "rule": {
+    "rule_set": "ads",
+    "action": "reject",
+    "method": "drop"
+  }
+}
 ```
 
 **How it works:**
@@ -315,9 +566,9 @@ This section provides detailed examples of `@SelectableRule` blocks with explana
 - **Important:** Users can always change the rule behavior in the wizard by selecting any option from the list, regardless of what's specified in the template
 
 **Rule Requirements:**
-- All `@SelectableRule` blocks **must** have either an `outbound` field or an `action: reject` field
+- All `selectable_rules` **must** have either an `outbound` field in the rule or an `action: reject` field
 - Rules without these fields are not supported by the wizard and will not appear in the interface
-- Rules with `action: resolve`, `action: sniff`, and other actions without `outbound` or `action: reject` should be placed in the template as regular rules (without `@SelectableRule`)
+- Rules with `action: resolve`, `action: sniff`, and other actions without `outbound` or `action: reject` should be placed in `config.route.rules` as regular rules (not in `selectable_rules`)
 
 ---
 
@@ -329,54 +580,38 @@ This section explains how DNS configuration works in templates and how to route 
 
 In the example template, DNS servers are configured as follows:
 
-```jsonc
-"dns": {
-  "servers": [
-    {
-      "type": "udp",
-      "tag": "direct_dns_resolver",
-      "server": "9.9.9.9",
-      "server_port": 53
-    },
-    {
-      "type": "https",
-      "tag": "google_doh",
-      "server": "8.8.8.8",
-      "server_port": 443,
-      "path": "/dns-query"
-    },
-    {
-      "type": "https",
-      "tag": "google_doh_vpn",
-      "server": "8.8.8.8",
-      "server_port": 443,
-      "path": "/dns-query",
-      "detour": "proxy-out"
-    },
-    {
-      "type": "https",
-      "tag": "yandex_doh",
-      "server": "77.88.8.88",
-      "server_port": 443,
-      "path": "/dns-query",
-      "domain_strategy": "prefer_ipv4"
-    },
-    {
-      "type": "udp",
-      "tag": "yandex_dns_vpn",
-      "server": "77.88.8.2",
-      "server_port": 53,
-      "detour": "proxy-out",
-      "domain_strategy": "prefer_ipv4"
-    },
-    {
-      "type": "udp",
-      "tag": "yandex_dns_direct",
-      "server": "77.88.8.2",
-      "server_port": 53,
-      "domain_strategy": "prefer_ipv4"
-    }
-  ]
+```json
+{
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "direct_dns_resolver",
+        "server": "9.9.9.9",
+        "server_port": 53
+      },
+      {
+        "type": "https",
+        "tag": "google_doh",
+        "server": "8.8.8.8",
+        "server_port": 443,
+        "path": "/dns-query"
+      },
+      {
+        "type": "https",
+        "tag": "google_doh_vpn",
+        "server": "8.8.8.8",
+        "server_port": 443,
+        "path": "/dns-query",
+        "detour": "proxy-out"
+      }
+    ],
+    "rules": [
+      { "rule_set": "ru-domains", "server": "yandex_doh" },
+      { "server": "google_doh" }
+    ],
+    "final": "direct_dns_resolver"
+  }
 }
 ```
 
@@ -395,40 +630,6 @@ In the example template, DNS servers are configured as follows:
    - Same as `google_doh` but routed through `proxy-out` (via `detour`)
    - Use when you want DNS queries to appear from VPN location
    - Helps bypass DNS-based geo-blocking
-
-4. **`yandex_doh`** - Yandex DNS-over-HTTPS
-   - Direct connection
-   - Useful for resolving Russian domains correctly
-
-5. **`yandex_dns_vpn`** - Yandex DNS through VPN
-   - Routes through `proxy-out` via `detour`
-   - Use for Russian domains when VPN is active
-
-6. **`yandex_dns_direct`** - Yandex DNS direct UDP
-   - Fast UDP queries for Russian domains
-   - Direct connection
-
-### DNS Rules for Traffic Splitting
-
-DNS rules determine which DNS server to use for different domains:
-
-```jsonc
-"rules": [
-  { "rule_set": "ru-domains", "server": "yandex_doh" },
-  { "rule_set": "ru-domains", "server": "yandex_dns_vpn" },
-  { "rule_set": "ru-domains", "server": "yandex_dns_direct" },
-  { "server": "google_doh" },
-  { "server": "google_doh_vpn" }
-],
-"final": "direct_dns_resolver"
-```
-
-**How it works:**
-- Rules are processed **top to bottom** (first match wins)
-- `rule_set: "ru-domains"` matches Russian domains (`.ru`, `.рф`)
-- For Russian domains, it tries `yandex_doh`, then `yandex_dns_vpn`, then `yandex_dns_direct`
-- For all other domains, uses `google_doh`, then falls back to `google_doh_vpn`
-- `final` is the ultimate fallback if no rules match (uses `direct_dns_resolver`)
 
 **When to use DNS through VPN:**
 - ✅ You want DNS queries to appear from VPN location
@@ -470,17 +671,23 @@ This section explains the difference between TUN mode and system proxy mode, and
 **What it is:**
 TUN creates a virtual network interface that captures **all traffic** from your system.
 
-**Example configuration:**
-```jsonc
+**Example configuration (via `params`):**
+```json
 {
-  "type": "tun",
-  "tag": "tun-in",
-  "interface_name": "singbox-tun0",
-  "address": ["172.16.0.1/30"],
-  "mtu": 1400,
-  "auto_route": true,
-  "strict_route": false,
-  "stack": "system"
+  "name": "inbounds",
+  "platforms": ["windows", "linux"],
+  "value": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "singbox-tun0",
+      "address": ["172.16.0.1/30"],
+      "mtu": 1400,
+      "auto_route": true,
+      "strict_route": false,
+      "stack": "system"
+    }
+  ]
 }
 ```
 
@@ -530,12 +737,6 @@ TUN creates a virtual network interface that captures **all traffic** from your 
   - `"gvisor"` - uses gVisor (experimental, for special cases)
   - 💡 Leave `"system"` for stable operation
 
-**Recommendations:**
-- For most cases, leave all parameters as in the example
-- If changing `tag` or `interface_name`, ensure uniqueness
-- Change `address` only if it conflicts with local network
-- Adjust `mtu` only if experiencing packet fragmentation issues
-
 **When to use TUN:**
 - ✅ You want **full system-wide VPN** (all applications automatically)
 - ✅ You have administrator/root privileges
@@ -560,23 +761,22 @@ TUN creates a virtual network interface that captures **all traffic** from your 
 **What it is:**
 System proxy mode runs a proxy server (SOCKS or HTTP) that applications connect to manually.
 
-**SOCKS Proxy Example:**
-```jsonc
+**SOCKS Proxy Example (via `params`):**
+```json
 {
-  "type": "socks",
-  "tag": "socks-in",
-  "listen": "127.0.0.1",
-  "listen_port": 1080
-}
-```
-
-**HTTP Proxy Example:**
-```jsonc
-{
-  "type": "http",
-  "tag": "http-in",
-  "listen": "127.0.0.1",
-  "listen_port": 8080
+  "name": "inbounds",
+  "platforms": ["darwin"],
+  "value": [
+    {
+      "type": "mixed",
+      "tag": "proxy-in",
+      "listen": "127.0.0.1",
+      "listen_port": 7890,
+      "sniff": true,
+      "sniff_override_destination": true,
+      "set_system_proxy": true
+    }
+  ]
 }
 ```
 
@@ -639,20 +839,26 @@ Without proper local traffic rules, VPN users often experience:
 
 ### The Solution: Local Traffic Rules
 
-Always include these critical rules in your template:
+Always include these critical rules in your template's `config.route.rules`:
 
-```jsonc
-"rules": [
-  { "ip_is_private": true, "outbound": "direct-out" },
-  { "domain_suffix": ["local"], "outbound": "direct-out" }
-]
+```json
+{
+  "config": {
+    "route": {
+      "rules": [
+        { "ip_is_private": true, "outbound": "direct-out" },
+        { "domain_suffix": ["local"], "outbound": "direct-out" }
+      ]
+    }
+  }
+}
 ```
 
 ### Understanding the Rules
 
 #### Rule 1: Private IP Addresses
 
-```jsonc
+```json
 { "ip_is_private": true, "outbound": "direct-out" }
 ```
 
@@ -672,7 +878,7 @@ Always include these critical rules in your template:
 
 #### Rule 2: Local Domain Suffixes
 
-```jsonc
+```json
 { "domain_suffix": ["local"], "outbound": "direct-out" }
 ```
 
@@ -703,60 +909,25 @@ Always include these critical rules in your template:
 3. Request goes directly to router on local network
 4. ✅ **Router accessible**
 
-**Scenario: User tries to access NAS (nas.local)**
-
-**Without local traffic rules:**
-1. DNS query for `nas.local` may go through VPN DNS
-2. VPN DNS doesn't know about local `.local` domains
-3. Resolution fails
-4. ❌ **Cannot access NAS**
-
-**With local traffic rules:**
-1. Rule matches `domain_suffix: ["local"]`
-2. Traffic routed to `direct-out`
-3. DNS resolves via local mDNS
-4. ✅ **NAS accessible**
-
-### Additional Local Network Considerations
-
-#### Including `.lan` Domain Suffix
-
-If your network uses `.lan` domains, add them:
-
-```jsonc
-{ "domain_suffix": ["local", "lan"], "outbound": "direct-out" }
-```
-
-#### Placement in Rules Array
-
-**Important:** Local traffic rules should be placed **early** in the rules array (after critical system rules but before geo-routing rules):
-
-```jsonc
-"rules": [
-  { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
-  { "inbound": "tun-in", "action": "sniff", "timeout": "1s" },
-  { "protocol": "dns", "action": "hijack-dns" },
-  
-  // Local traffic rules - CRITICAL - place early
-  { "ip_is_private": true, "outbound": "direct-out" },
-  { "domain_suffix": ["local"], "outbound": "direct-out" },
-  
-  // Other rules...
-  { "rule_set": "ads-all", "action": "reject" },
-  { "rule_set": "ru-domains", "outbound": "direct-out" },
-  // ...
-]
-```
-
-This ensures local traffic is matched **before** other rules that might interfere.
-
 ### Understanding System Action Rules
 
-At the beginning of the rules array, you typically place system rules with special actions that don't route traffic but perform preprocessing:
+At the beginning of the rules array, you typically place system rules with special actions that don't route traffic but perform preprocessing. These should be added via `params` for TUN mode:
+
+```json
+{
+  "name": "route.rules",
+  "platforms": ["windows", "linux"],
+  "mode": "prepend",
+  "value": [
+    { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
+    { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+  ]
+}
+```
 
 #### `action: resolve` - DNS Resolution
 
-```jsonc
+```json
 { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" }
 ```
 
@@ -772,7 +943,7 @@ At the beginning of the rules array, you typically place system rules with speci
 
 #### `action: sniff` - Protocol Detection and Metadata Extraction
 
-```jsonc
+```json
 { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
 ```
 
@@ -792,7 +963,7 @@ At the beginning of the rules array, you typically place system rules with speci
 
 #### `action: hijack-dns` - DNS Query Hijacking
 
-```jsonc
+```json
 { "protocol": "dns", "action": "hijack-dns" }
 ```
 
@@ -818,30 +989,30 @@ At the beginning of the rules array, you typically place system rules with speci
 4. **Test thoroughly** - Verify router access and local device connectivity
 
 **Example template snippet:**
-```jsonc
-"rules": [
-  // System rules
-  { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
-  { "protocol": "dns", "action": "hijack-dns" },
-  
-  // CRITICAL: Local network access - DO NOT REMOVE
-  { "ip_is_private": true, "outbound": "direct-out" },
-  { "domain_suffix": ["local"], "outbound": "direct-out" },
-  
-  // User-selectable rules
-  /** @SelectableRule ... */
-]
+```json
+{
+  "config": {
+    "route": {
+      "rules": [
+        { "protocol": "dns", "action": "hijack-dns" },
+        { "ip_is_private": true, "outbound": "direct-out" },
+        { "domain_suffix": ["local"], "outbound": "direct-out" }
+      ]
+    }
+  },
+  "params": [
+    {
+      "name": "route.rules",
+      "platforms": ["windows", "linux"],
+      "mode": "prepend",
+      "value": [
+        { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+      ]
+    }
+  ]
+}
 ```
-
-### Troubleshooting Local Network Issues
-
-If users report local network access problems:
-
-1. **Verify rules exist** - Check that both rules are in the config
-2. **Check rule order** - Ensure local rules are before geo-routing rules
-3. **Test router access** - Try accessing 192.168.1.1 or 192.168.0.1
-4. **Check DNS** - Verify `.local` domains resolve correctly
-5. **Review logs** - Check sing-box logs for routing decisions
 
 ---
 
@@ -849,152 +1020,200 @@ If users report local network access problems:
 
 Here's a more complete example showing best practices:
 
-```jsonc
+```json
 {
-  /** @ParcerConfig
-    {
-      "ParserConfig": {
-        "version": 2,
-        "proxies": [
-          {
-            "source": "https://your-vpn-service.com/api/subscription?token=USER_TOKEN"
-          }
-        ],
-        "outbounds": [
-          {
-            "tag": "auto-proxy-out",
-            "type": "urltest",
-            "options": {
-              "url": "https://cp.cloudflare.com/generate_204",
-              "interval": "5m",
-              "tolerance": 100,
-              "interrupt_exist_connections": true
-            },
-            "outbounds": {
-              "proxies": {}
-            },
-            "comment": "Auto-select fastest proxy"
+  "parser_config": {
+    "ParserConfig": {
+      "version": 4,
+      "proxies": [
+        {
+          "source": "https://your-vpn-service.com/api/subscription?token=USER_TOKEN"
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "auto-proxy-out",
+          "type": "urltest",
+          "options": {
+            "url": "https://cp.cloudflare.com/generate_204",
+            "interval": "5m",
+            "tolerance": 100,
+            "interrupt_exist_connections": true
           },
-          {
-            "tag": "proxy-out",
-            "type": "selector",
-            "options": {
-              "interrupt_exist_connections": true,
-              "default": "auto-proxy-out"
-            },
-            "outbounds": {
-              "addOutbounds": ["direct-out", "auto-proxy-out"],
-              "proxies": {}
-            },
-            "comment": "Main proxy selector"
-          }
-        ]
+          "outbounds": {
+            "proxies": {}
+          },
+          "comment": "Auto-select fastest proxy"
+        },
+        {
+          "tag": "proxy-out",
+          "type": "selector",
+          "options": {
+            "interrupt_exist_connections": true,
+            "default": "auto-proxy-out"
+          },
+          "outbounds": {
+            "addOutbounds": ["direct-out", "auto-proxy-out"],
+            "proxies": {}
+          },
+          "comment": "Main proxy selector"
+        }
+      ],
+      "parser": {
+        "reload": "1h",
+        "last_updated": "2026-01-30T12:00:00Z"
       }
     }
-  */
-
-  "log": {
-    "level": "warn",
-    "timestamp": true
   },
 
-  "dns": {
-    "servers": [
-      {
-        "type": "udp",
-        "tag": "direct_dns",
-        "server": "9.9.9.9",
-        "server_port": 53
-      },
-      {
-        "type": "https",
-        "tag": "cloudflare_doh",
-        "server": "1.1.1.1",
-        "server_port": 443,
-        "path": "/dns-query"
+  "config": {
+    "log": {
+      "level": "warn",
+      "timestamp": true
+    },
+    "dns": {
+      "servers": [
+        {
+          "type": "udp",
+          "tag": "direct_dns",
+          "server": "9.9.9.9",
+          "server_port": 53
+        },
+        {
+          "type": "https",
+          "tag": "cloudflare_doh",
+          "server": "1.1.1.1",
+          "server_port": 443,
+          "path": "/dns-query"
+        }
+      ],
+      "rules": [
+        { "server": "cloudflare_doh" }
+      ],
+      "final": "direct_dns"
+    },
+    "inbounds": [],
+    "outbounds": [
+      { "type": "direct", "tag": "direct-out" }
+    ],
+    "route": {
+      "rule_set": [
+        {
+          "tag": "ru-domains",
+          "type": "inline",
+          "format": "domain_suffix",
+          "rules": [
+            { "domain_suffix": ["ru", "xn--p1ai"] }
+          ]
+        }
+      ],
+      "rules": [
+        { "protocol": "dns", "action": "hijack-dns" },
+        { "ip_is_private": true, "outbound": "direct-out" },
+        { "domain_suffix": ["local"], "outbound": "direct-out" }
+      ],
+      "final": "proxy-out",
+      "auto_detect_interface": true
+    },
+    "experimental": {
+      "clash_api": {
+        "external_controller": "127.0.0.1:9090",
+        "secret": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN"
       }
-    ],
-    "rules": [
-      { "server": "cloudflare_doh" }
-    ],
-    "final": "direct_dns"
+    }
   },
 
-  "inbounds": [
+  "selectable_rules": [
     {
-      "type": "tun",
-      "tag": "tun-in",
-      "interface_name": "singbox-tun0",
-      "address": ["172.16.0.1/30"],
-      "mtu": 1400,
-      "auto_route": true,
-      "strict_route": false,
-      "stack": "system"
-    }
-  ],
-
-  "outbounds": [
-    /** @PARSER_OUTBOUNDS_BLOCK */
-    { "type": "direct", "tag": "direct-out" },
-    { "type": "block", "tag": "block-out" }
-  ],
-
-  "route": {
-    "rule_set": [
-      {
-        "tag": "ads-all",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/v2fly/domain-list-community/release/geosite-category-ads-all.srs",
-        "download_detour": "direct-out",
-        "update_interval": "24h"
-      },
-      {
-        "tag": "ru-domains",
-        "type": "inline",
-        "format": "domain_suffix",
-        "rules": [
-          { "domain_suffix": ["ru", "xn--p1ai"] }
-        ]
+      "label": "Block Ads",
+      "description": "Soft-block ads by rejecting connections (recommended)",
+      "default": true,
+      "rule_set": [
+        {
+          "tag": "ads-all",
+          "type": "remote",
+          "format": "binary",
+          "url": "https://raw.githubusercontent.com/v2fly/domain-list-community/release/geosite-category-ads-all.srs",
+          "download_detour": "direct-out",
+          "update_interval": "24h"
+        }
+      ],
+      "rule": {
+        "rule_set": "ads-all",
+        "action": "reject"
       }
-    ],
-    "rules": [
-      { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
-      { "inbound": "tun-in", "action": "sniff", "timeout": "1s" },
-      { "protocol": "dns", "action": "hijack-dns" },
-      { "ip_is_private": true, "outbound": "direct-out" },
-      { "domain_suffix": ["local"], "outbound": "direct-out" },
-      
-      /** @SelectableRule
-        @label Block Ads
-        @description Soft-block ads by rejecting connections (recommended)
-        @default
-        { "rule_set": "ads-all", "action": "reject" },
-      */
-      
-      /** @SelectableRule
-        @label Russian domains direct
-        @description Route Russian domains directly (faster for local services)
-        { "rule_set": "ru-domains", "outbound": "direct-out" },
-      */
-      
-      /** @SelectableRule
-        @label Gaming traffic direct
-        @description Route gaming traffic directly for lower latency
-        @default
-        { "rule_set": "games", "outbound": "direct-out" },
-      */
-    ],
-    "final": "proxy-out",
-    "auto_detect_interface": true
-  },
-
-  "experimental": {
-    "clash_api": {
-      "external_controller": "127.0.0.1:9090",
-      "secret": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN"
+    },
+    {
+      "label": "Russian domains direct",
+      "description": "Route Russian domains directly (faster for local services)",
+      "rule": {
+        "rule_set": "ru-domains",
+        "outbound": "direct-out"
+      }
+    },
+    {
+      "label": "Gaming traffic direct",
+      "description": "Route gaming traffic directly for lower latency",
+      "default": true,
+      "rule_set": [
+        {
+          "tag": "games",
+          "type": "remote",
+          "format": "binary",
+          "url": "https://example.com/rules/games.srs",
+          "download_detour": "direct-out",
+          "update_interval": "24h"
+        }
+      ],
+      "rule": {
+        "rule_set": "games",
+        "outbound": "direct-out"
+      }
     }
-  }
+  ],
+
+  "params": [
+    {
+      "name": "inbounds",
+      "platforms": ["windows", "linux"],
+      "value": [
+        {
+          "type": "tun",
+          "tag": "tun-in",
+          "interface_name": "singbox-tun0",
+          "address": ["172.16.0.1/30"],
+          "mtu": 1400,
+          "auto_route": true,
+          "strict_route": false,
+          "stack": "system"
+        }
+      ]
+    },
+    {
+      "name": "route.rules",
+      "platforms": ["windows", "linux"],
+      "mode": "prepend",
+      "value": [
+        { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+      ]
+    },
+    {
+      "name": "inbounds",
+      "platforms": ["darwin"],
+      "value": [
+        {
+          "type": "mixed",
+          "tag": "proxy-in",
+          "listen": "127.0.0.1",
+          "listen_port": 7890,
+          "sniff": true,
+          "sniff_override_destination": true,
+          "set_system_proxy": true
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -1004,26 +1223,26 @@ Here's a more complete example showing best practices:
 
 ### 1. Always Include Static Outbounds
 
-Keep at least `direct-out` after `@PARSER_OUTBOUNDS_BLOCK`. Users need it for local traffic and as a fallback option.
+Keep at least `direct-out` in `config.outbounds`. Users need it for local traffic and as a fallback option. Generated proxy outbounds are automatically inserted at the beginning of this array.
 
 ### 2. Use Clear Labels and Descriptions
 
 Good labels help users understand what each rule does:
-- ✅ `@label Block Ads` 
-- ❌ `@label Rule 1`
+- ✅ `"label": "Block Ads"` 
+- ❌ `"label": "Rule 1"`
 
 Good descriptions explain the impact:
-- ✅ `@description Soft-block ads by rejecting connections instead of dropping packets`
-- ❌ `@description Blocks ads`
+- ✅ `"description": "Soft-block ads by rejecting connections instead of dropping packets"`
+- ❌ `"description": "Blocks ads"`
 
 ### 3. Set Sensible Defaults
 
-Use `@default` for rules that most users should enable:
+Use `"default": true` for rules that most users should enable:
 - Ad blocking
 - Common geo-routing rules
 - Performance optimizations
 
-Don't use `@default` for:
+Don't use `default: true` for:
 - Experimental features
 - Rules that might break common services
 - Region-specific rules (unless you're targeting that region)
@@ -1031,13 +1250,13 @@ Don't use `@default` for:
 ### 4. Match Tag Names
 
 Ensure all `tag` values referenced in `route.rules` exist in:
-- Your `@ParcerConfig` outbounds, OR
-- Static outbounds after `@PARSER_OUTBOUNDS_BLOCK`, OR
+- Your `parser_config` outbounds, OR
+- Static outbounds in `config.outbounds`, OR
 - Will be generated from subscriptions
 
 ### 5. Validate Your JSON
 
-After removing comments, your template must be valid JSON. Test it:
+Your template must be valid JSON. Test it:
 ```bash
 # Using jq (if installed)
 cat config_template.json | jq . > /dev/null
@@ -1048,12 +1267,22 @@ cat config_template.json | jq . > /dev/null
 ### 6. Keep Section Order Logical
 
 The wizard preserves your section order. Organize logically:
-1. `log` - Logging settings
-2. `dns` - DNS configuration
-3. `inbounds` - Incoming connections
-4. `outbounds` - Outgoing connections (with `@PARSER_OUTBOUNDS_BLOCK`)
-5. `route` - Routing rules
-6. `experimental` - Experimental features
+1. `parser_config` - Parser configuration
+2. `config` - Main sing-box configuration
+3. `selectable_rules` - User-selectable rules
+4. `params` - Platform-specific parameters
+
+### 7. Use `rule_set` Wisely
+
+- Include `rule_set` definitions in `selectable_rules` only if they're specific to that rule
+- Place shared rule sets (used by multiple rules or DNS) in `config.route.rule_set`
+- This ensures rule sets are only loaded when their rules are enabled
+
+### 8. Platform-Specific Rules
+
+Use the `platforms` field in `selectable_rules` to create platform-specific rules:
+- Same `label` with different `platforms` and rule content
+- Example: Windows uses `.exe` process names, macOS/Linux use process names without extension
 
 ---
 
@@ -1077,15 +1306,17 @@ Put `config_template.json` in the `bin/` folder next to the executable.
    - Click "Parse" - should generate outbounds preview
 
 2. **Tab 2 (Rules)**:
-   - Verify all your `@SelectableRule` checkboxes appear
+   - Verify all your `selectable_rules` checkboxes appear
    - Check that outbound dropdowns show correct options
    - Toggle some rules on/off
+   - Verify platform-specific rules only appear on the correct platform
 
 3. **Tab 3 (Preview)**:
    - Click "Show Preview"
    - Verify the generated config looks correct
    - Check that selected rules are included
-   - Verify `@PARSER_OUTBOUNDS_BLOCK` was replaced with generated proxies
+   - Verify generated proxy outbounds are inserted correctly
+   - Verify platform-specific `params` are applied correctly
 
 4. **Save**:
    - Click "Save"
@@ -1104,38 +1335,50 @@ Put `config_template.json` in the `bin/` folder next to the executable.
 **Solutions**:
 - Ensure file is named exactly `config_template.json` (case-sensitive)
 - Ensure file is in `bin/` folder
-- Validate JSON syntax (remove comments and test)
+- Validate JSON syntax (use `jq` or online validator)
 - Check for trailing commas or syntax errors
+- Ensure all required sections (`parser_config`, `config`, `selectable_rules`, `params`) are present
 
 ### Generated Outbounds Not Appearing
 
 **Problem**: After parsing, no outbounds show in preview.
 
 **Solutions**:
-- Verify `@PARSER_OUTBOUNDS_BLOCK` marker exists in `outbounds` array
-- Check subscription URL is accessible
+- Verify subscription URL is accessible
 - Verify subscription format is supported (vless://, vmess://, trojan://, ss://)
 - Check logs in `logs/` folder for parsing errors
+- Verify `parser_config` structure is correct
 
 ### Rules Not Showing in Wizard
 
-**Problem**: `@SelectableRule` blocks don't appear as checkboxes.
+**Problem**: `selectable_rules` don't appear as checkboxes.
 
 **Solutions**:
-- Verify `@SelectableRule` is spelled correctly (case-sensitive)
-- Ensure block is inside `route.rules` array
-- Check that JSON inside block is valid
-- Ensure `@label` directive is present
+- Verify JSON structure is valid
+- Ensure `label` and `description` fields are present
+- Check that rule has either `outbound` field or `action: reject`
+- Verify `platforms` field (if used) matches current platform
+- Check logs for parsing errors
 
 ### Outbound Tags Not Found
 
 **Problem**: Wizard shows "outbound not found" errors.
 
 **Solutions**:
-- Verify all referenced tags exist in `@ParcerConfig` outbounds
-- Ensure `final` tag exists
+- Verify all referenced tags exist in `parser_config` outbounds
+- Ensure `final` tag exists in `config.route.final`
 - Check that generated proxies will have matching tags (if using tag filters)
-- Add missing outbounds to static section after `@PARSER_OUTBOUNDS_BLOCK`
+- Add missing outbounds to static section in `config.outbounds`
+
+### Platform-Specific Settings Not Applied
+
+**Problem**: Platform-specific `params` are not being applied.
+
+**Solutions**:
+- Verify `platforms` array uses correct values: `"windows"`, `"linux"`, `"darwin"`
+- Check that `name` field uses correct dot notation path
+- Verify `mode` is correct (`"replace"`, `"prepend"`, `"append"`)
+- Ensure JSON structure is valid
 
 ---
 
@@ -1144,8 +1387,16 @@ Put `config_template.json` in the `bin/` folder next to the executable.
 ### Dynamic Subscription URLs
 
 If users need to enter their own subscription URL, leave `source` empty or use a placeholder:
-```jsonc
-"proxies": [{ "source": "" }]
+```json
+{
+  "parser_config": {
+    "ParserConfig": {
+      "proxies": [
+        { "source": "" }
+      ]
+    }
+  }
+}
 ```
 
 Users will enter their URL in the wizard's first tab.
@@ -1153,36 +1404,82 @@ Users will enter their URL in the wizard's first tab.
 ### Multiple Subscription Sources
 
 Support multiple subscriptions:
-```jsonc
-"proxies": [
-  { "source": "https://provider1.com/subscription" },
-  { "source": "https://provider2.com/subscription" }
-]
+```json
+{
+  "parser_config": {
+    "ParserConfig": {
+      "proxies": [
+        { "source": "https://provider1.com/subscription" },
+        { "source": "https://provider2.com/subscription" }
+      ]
+    }
+  }
+}
 ```
 
 Users can add more in the wizard interface.
 
 ### Conditional Rules Based on Outbound Selection
 
-When a rule has `outbound`, users can choose from available tags. Make sure your `@ParcerConfig` defines all options users might need.
+When a rule has `outbound`, users can choose from available tags. Make sure your `parser_config` defines all options users might need.
 
 ### Custom Rule Sets
 
-Reference remote rule sets in `route.rule_set`:
-```jsonc
-"rule_set": [
-  {
-    "tag": "ads-all",
-    "type": "remote",
-    "format": "binary",
-    "url": "https://example.com/rules/ads.srs",
-    "download_detour": "direct-out",
-    "update_interval": "24h"
+Reference remote rule sets in `selectable_rules`:
+```json
+{
+  "label": "Block ads",
+  "rule_set": [
+    {
+      "tag": "ads-all",
+      "type": "remote",
+      "format": "binary",
+      "url": "https://example.com/rules/ads.srs",
+      "download_detour": "direct-out",
+      "update_interval": "24h"
+    }
+  ],
+  "rule": {
+    "rule_set": "ads-all",
+    "action": "reject"
   }
-]
+}
 ```
 
-Then reference them in `@SelectableRule` blocks.
+Rule sets are only loaded when the rule is enabled.
+
+### Shared Rule Sets
+
+If multiple rules or DNS rules use the same rule set, define it in `config.route.rule_set`:
+```json
+{
+  "config": {
+    "route": {
+      "rule_set": [
+        {
+          "tag": "ru-domains",
+          "type": "inline",
+          "format": "domain_suffix",
+          "rules": [
+            { "domain_suffix": ["ru", "xn--p1ai"] }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+Then reference it in `selectable_rules` without defining it again:
+```json
+{
+  "label": "Russian domains direct",
+  "rule": {
+    "rule_set": "ru-domains",
+    "outbound": "direct-out"
+  }
+}
+```
 
 ---
 
@@ -1206,6 +1503,4 @@ When distributing your customized launcher:
 
 ---
 
-**Note**: This wizard template system is designed to make configuration easier for end users. As a provider, you maintain full control over the default configuration while giving users flexibility to customize their setup.
-
-
+**Note**: This wizard template system is designed to make configuration easier for end users. As a provider, you maintain full control over the default configuration while giving users flexibility to customize their setup. The unified template structure eliminates platform-specific files and comment-based directives, making templates easier to maintain and validate.
