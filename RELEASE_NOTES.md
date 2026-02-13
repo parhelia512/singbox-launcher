@@ -14,6 +14,7 @@
 - **Chat GPT button** — builds a prompt from ParserConfig and opens ChatGPT
 - **Per-selector last proxy** — remembers last proxy per group, shows live active outbound
 - **Hide app from Dock** (macOS) — [PR #23](https://github.com/Leadaxe/singbox-launcher/pull/23) by [@MustDie-green](https://github.com/MustDie-green)
+- **Unified config template** — single `config_template.json` for all platforms, JSON structure with `params` for platform-specific settings, no more comment-based directives
 - **Logging centralization** — unified `debuglog.*` API, env-controlled log level
 - **Singleton Controller** — simplified `core.*` API, removed parameter passing
 - **CI/CD** — Go build cache, golangci-lint v2.8.0, faster builds
@@ -32,6 +33,7 @@
 - **Кнопка Chat GPT** — формирует промпт из ParserConfig и открывает ChatGPT
 - **Per-selector last proxy** — запоминает последний прокси для каждой группы, показывает активный outbound в реальном времени
 - **Скрытие из Dock** (macOS) — [PR #23](https://github.com/Leadaxe/singbox-launcher/pull/23) от [@MustDie-green](https://github.com/MustDie-green)
+- **Единый шаблон конфигурации** — один `config_template.json` для всех платформ, JSON-структура с `params` для платформо-зависимых настроек, без директив в комментариях
 - **Централизация логирования** — единый API `debuglog.*`, управление уровнем через переменную окружения
 - **Singleton Controller** — упрощён API `core.*`, убрана передача параметров
 - **CI/CD** — кэш сборки Go, golangci-lint v2.8.0, ускорение билдов
