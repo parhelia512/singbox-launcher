@@ -1,120 +1,127 @@
 {
-    "get_free":{
-        "text":"Thank @igareck for providing VPN lists:",
-        "link":"https://github.com/igareck/vpn-configs-for-russia"
-    },
-    "ParserConfig": {
-      "version": 4,
-      "proxies": [
-        {
-          "source": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
-          "tag_prefix": "BL:"
-        },
-        {
-          "source": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-          "tag_prefix": "W:"
-        }
-      ],
-      "outbounds": [
-        {
-          "tag": "auto-proxy-out",
-          "type": "urltest",
-          "options": {
-            "interrupt_exist_connections": true,
-            "interval": "5m",
-            "tolerance": 100,
-            "url": "https://cp.cloudflare.com/generate_204"
-          },
-          "filters": {
-            "tag": "!/(🇷🇺)/i"
-          },
-          "comment": "Proxy automated group for everything that should go through VPN",
-          "wizard": {
-            "required": 1
-          }
-        },
-        {
-          "tag": "proxy-out",
-          "type": "selector",
-          "options": {
-            "default": "auto-proxy-out",
-            "interrupt_exist_connections": true
-          },
-          "filters": {
-            "tag": "!/(🇷🇺)/i"
-          },
-          "addOutbounds": [
-            "direct-out",
-            "auto-proxy-out"
-          ],
-          "comment": "Proxy group for everything that should go through VPN",
-          "wizard": {
-            "required": 1
-          }
-        },
-        {
-          "tag": "ru VPN 🇷🇺",
-          "type": "selector",
-          "options": {
-            "default": "direct-out",
-            "interrupt_exist_connections": true
-          },
-          "filters": {
-            "tag": "/(🇷🇺)/i"
-          },
-          "addOutbounds": [
-            "direct-out"
-          ],
-          "comment": "Proxy group for russian VPN"
-        },
-        {
-          "tag": "vpn ①",
-          "type": "selector",
-          "options": {
-            "default": "proxy-out",
-            "interrupt_exist_connections": true
-          },
-          "addOutbounds": [
-            "direct-out",
-            "proxy-out"
-          ],
-          "comment": "Proxy group 1"
-        },
-        {
-          "tag": "vpn ②",
-          "type": "selector",
-          "options": {
-            "default": "proxy-out",
-            "interrupt_exist_connections": true
-          },
-          "addOutbounds": [
-            "direct-out",
-            "proxy-out"
-          ],
-          "comment": "Proxy group 2"
-        },
-        {
-          "tag": "go-any-way-githubusercontent",
-          "type": "urltest",
-          "options": {
-            "idle_timeout": "1h",
-            "interrupt_exist_connections": true,
-            "interval": "1h",
-            "tolerance": 1000,
-            "url": "https://raw.githubusercontent.com/github/gitignore/main/Global/GPG.gitignore"
-          },
-          "addOutbounds": [
-            "direct-out"
-          ],
-          "comment": "find any way",
-          "wizard": {
-            "hide": true,
-            "required": 2
-          }
-        }
-      ],
-      "parser": {
-        "reload": "4h"
+  "get_free": {
+    "text": "Thank @igareck for providing VPN lists:",
+    "link": "https://github.com/igareck/vpn-configs-for-russia"
+  },
+  "parser_config": {
+    "version": 4,
+    "proxies": [
+      {
+        "source": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
+        "tag_prefix": "BL:"
+      },
+      {
+        "source": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+        "tag_prefix": "W:"
       }
+    ],
+    "outbounds": [
+      {
+        "tag": "auto-proxy-out",
+        "type": "urltest",
+        "options": {
+          "interrupt_exist_connections": true,
+          "interval": "5m",
+          "tolerance": 100,
+          "url": "https://cp.cloudflare.com/generate_204"
+        },
+        "filters": {
+          "tag": "!/(🇷🇺)/i"
+        },
+        "comment": "Proxy automated group for everything that should go through VPN",
+        "wizard": {
+          "required": 1
+        }
+      },
+      {
+        "tag": "proxy-out",
+        "type": "selector",
+        "options": {
+          "default": "auto-proxy-out",
+          "interrupt_exist_connections": true
+        },
+        "filters": {
+          "tag": "!/(🇷🇺)/i"
+        },
+        "addOutbounds": [
+          "direct-out",
+          "auto-proxy-out"
+        ],
+        "comment": "Proxy group for everything that should go through VPN",
+        "wizard": {
+          "required": 1
+        }
+      },
+      {
+        "tag": "ru VPN 🇷🇺",
+        "type": "selector",
+        "options": {
+          "default": "direct-out",
+          "interrupt_exist_connections": true
+        },
+        "filters": {
+          "tag": "/(🇷🇺)/i"
+        },
+        "addOutbounds": [
+          "direct-out"
+        ],
+        "comment": "Proxy group for russian VPN"
+      },
+      {
+        "tag": "vpn ①",
+        "type": "selector",
+        "options": {
+          "default": "proxy-out",
+          "interrupt_exist_connections": true
+        },
+        "addOutbounds": [
+          "direct-out",
+          "proxy-out"
+        ],
+        "comment": "Proxy group 1"
+      },
+      {
+        "tag": "vpn ②",
+        "type": "selector",
+        "options": {
+          "default": "proxy-out",
+          "interrupt_exist_connections": true
+        },
+        "addOutbounds": [
+          "direct-out",
+          "proxy-out"
+        ],
+        "comment": "Proxy group 2"
+      },
+      {
+        "tag": "go-any-way-githubusercontent",
+        "type": "urltest",
+        "options": {
+          "idle_timeout": "1h",
+          "interrupt_exist_connections": true,
+          "interval": "1h",
+          "tolerance": 1000,
+          "url": "https://raw.githubusercontent.com/github/gitignore/main/Global/GPG.gitignore"
+        },
+        "addOutbounds": [
+          "direct-out"
+        ],
+        "comment": "find any way",
+        "wizard": {
+          "hide": true,
+          "required": 2
+        }
+      }
+    ],
+    "parser": {
+      "reload": "4h"
     }
-  }
+  },
+  "selectable_rules": [
+    {
+      "label": "Russia-only services",
+      "enabled": true,
+      "selected_outbound": "ru VPN 🇷🇺"
+    }
+  ]
+}
