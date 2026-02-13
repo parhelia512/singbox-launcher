@@ -27,7 +27,7 @@ package presentation
 
 // UpdateURLStatus обновляет статус проверки URL.
 func (p *WizardPresenter) UpdateURLStatus(status string) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.URLStatusLabel != nil {
 			p.guiState.URLStatusLabel.SetText(status)
 		}
@@ -36,7 +36,7 @@ func (p *WizardPresenter) UpdateURLStatus(status string) {
 
 // UpdateCheckURLProgress обновляет прогресс проверки URL (0.0-1.0, -1 для скрытия).
 func (p *WizardPresenter) UpdateCheckURLProgress(progress float64) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.CheckURLProgress == nil {
 			return
 		}
@@ -52,7 +52,7 @@ func (p *WizardPresenter) UpdateCheckURLProgress(progress float64) {
 
 // UpdateCheckURLButtonText обновляет текст кнопки Check (пустая строка для скрытия).
 func (p *WizardPresenter) UpdateCheckURLButtonText(text string) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.CheckURLButton == nil {
 			return
 		}
@@ -68,7 +68,7 @@ func (p *WizardPresenter) UpdateCheckURLButtonText(text string) {
 
 // UpdateOutboundsPreview обновляет текст preview outbounds.
 func (p *WizardPresenter) UpdateOutboundsPreview(text string) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.OutboundsPreview == nil {
 			return
 		}
@@ -82,7 +82,7 @@ func (p *WizardPresenter) UpdateOutboundsPreview(text string) {
 
 // UpdateParserConfig обновляет текст ParserConfig.
 func (p *WizardPresenter) UpdateParserConfig(text string) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.ParserConfigEntry != nil {
 			p.guiState.ParserConfigUpdating = true
 			p.guiState.ParserConfigEntry.SetText(text)
@@ -98,7 +98,7 @@ func (p *WizardPresenter) UpdateTemplatePreview(text string) {
 	}
 
 	if len(text) > 50000 {
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
 			if p.guiState.TemplatePreviewStatusLabel != nil {
 				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
@@ -106,13 +106,13 @@ func (p *WizardPresenter) UpdateTemplatePreview(text string) {
 		})
 
 		go func() {
-			SafeFyneDo(p.guiState.Window, func() {
+			p.UpdateUI(func() {
 				p.guiState.TemplatePreviewEntry.SetText(text)
 				p.model.TemplatePreviewNeedsUpdate = false
 			})
 		}()
 	} else {
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			p.guiState.TemplatePreviewEntry.SetText(text)
 			p.model.TemplatePreviewNeedsUpdate = false
 		})
@@ -121,7 +121,7 @@ func (p *WizardPresenter) UpdateTemplatePreview(text string) {
 
 // UpdateSaveProgress обновляет прогресс сохранения (0.0-1.0, -1 для скрытия).
 func (p *WizardPresenter) UpdateSaveProgress(progress float64) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.SaveProgress == nil {
 			return
 		}
@@ -139,7 +139,7 @@ func (p *WizardPresenter) UpdateSaveProgress(progress float64) {
 
 // UpdateSaveButtonText обновляет текст кнопки Save (пустая строка для скрытия).
 func (p *WizardPresenter) UpdateSaveButtonText(text string) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.SaveButton == nil {
 			return
 		}

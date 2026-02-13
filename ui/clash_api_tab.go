@@ -3,20 +3,20 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"log"
 	"sort"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/api"
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/ui/components"
 )
 
 // CreateClashAPITab creates and returns the content for the "Clash API" tab.
@@ -27,7 +27,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	selectorOptions, defaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
 	if err != nil {
-		log.Printf("clash_api_tab: failed to get selector groups: %v", err)
+		debuglog.ErrorLog("clash_api_tab: failed to get selector groups: %v", err)
 	}
 	if len(selectorOptions) == 0 {
 		selectorOptions = []string{"proxy-out"}
@@ -119,6 +119,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	updateSelectorList := func() {
 		updatedSelectorOptions, updatedDefaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
 		if err == nil && len(updatedSelectorOptions) > 0 && groupSelect != nil {
+			// Обновляем и переменную selectorOptions, и виджет groupSelect
+			selectorOptions = updatedSelectorOptions
 			groupSelect.SetOptions(updatedSelectorOptions)
 
 			// Обновить selectedGroup если текущий выбор больше не доступен
@@ -175,7 +177,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	onResetAPIState := func() {
-		log.Println("clash_api_tab: Resetting API state.")
+		debuglog.InfoLog("clash_api_tab: Resetting API state.")
 		ac.SetProxiesList([]api.ProxyInfo{})
 		ac.SetActiveProxyName("")
 		ac.SetSelectedIndex(-1)
@@ -470,7 +472,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 					status.SetText(fmt.Sprintf("Pinging %d/%d...", i+1, len(proxies)))
 				})
 				// Небольшая задержка между запросами, чтобы не перегружать API
-				time.Sleep(100 * time.Millisecond)
+				<-time.After(100 * time.Millisecond)
 			}
 			fyne.Do(func() {
 				status.SetText(fmt.Sprintf("Ping test completed for %d proxies", len(proxies)))
@@ -537,8 +539,26 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		// Run queries in background to avoid blocking UI
 		go func() {
-			results := make([]string, 0, len(selectorOptions))
-			for _, sel := range selectorOptions {
+			// Используем актуальный список селекторов из groupSelect или перечитываем из конфига
+			var currentSelectorOptions []string
+			if groupSelect != nil && len(groupSelect.Options) > 0 {
+				// Используем актуальный список из виджета (обновляется через updateSelectorList)
+				currentSelectorOptions = groupSelect.Options
+			} else {
+				// Fallback: перечитываем из конфига, если groupSelect еще не инициализирован
+				updatedOptions, _, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
+				if err != nil {
+					debuglog.ErrorLog("clash_api_tab: failed to get selector groups for popup: %v", err)
+					currentSelectorOptions = selectorOptions // Используем старый список как fallback
+				} else if len(updatedOptions) > 0 {
+					currentSelectorOptions = updatedOptions
+				} else {
+					currentSelectorOptions = selectorOptions // Fallback на старый список
+				}
+			}
+
+			results := make([]string, 0, len(currentSelectorOptions))
+			for _, sel := range currentSelectorOptions {
 				_, now, err := api.GetProxiesInGroup(baseURL, token, sel, ac.FileService.ApiLogFile)
 				if err != nil {
 					results = append(results, fmt.Sprintf("%s → error: %v", sel, err))
@@ -560,7 +580,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 				scroll := container.NewVScroll(content)
 				scroll.SetMinSize(fyne.NewSize(480, 260))
-				dlg := dialog.NewCustom("Selector → Active Outbound", "Close", scroll, ac.UIService.MainWindow)
+				dlg := components.NewCustom("Selector → Active Outbound", scroll, nil, "Close", ac.UIService.MainWindow)
 				dlg.Show()
 			})
 		}()

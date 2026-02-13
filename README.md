@@ -371,20 +371,23 @@ If you prefer to edit `config.json` manually, see the sections below.
 
 #### Config Template (config_template.json)
 
-The `config_template.json` file provides a template for the Config Wizard and defines selectable routing rules.
+The `config_template.json` file provides a template for the Config Wizard and defines selectable routing rules. **This single file works for all platforms** (Windows, macOS, Linux).
 
-**Template Directives:**
+**Template Structure:**
 
-- `/** @ParserConfig ... */` - Default parser configuration block
-- `/** @SelectableRule ... */` - Defines a selectable routing rule
-  - `@label` - Display name for the rule (shown in wizard)
-  - `@description` - Description shown in info tooltip (optional)
-  - `@default` - Rule is enabled by default when wizard opens (optional)
-- `/** @PARSER_OUTBOUNDS_BLOCK */` - Marker where generated outbounds are inserted
+The unified template uses a clean JSON structure with four main sections:
 
-**@SelectableRule Syntax:**
+1. **`parser_config`** - Default parser configuration (subscriptions, outbound groups, update intervals)
+2. **`config`** - Main sing-box configuration (platform-independent part: log, dns, route, etc.)
+3. **`selectable_rules`** - User-selectable routing rules (appear as checkboxes in the wizard)
+4. **`params`** - Platform-specific configuration overrides (applied based on `runtime.GOOS`)
 
-The rule body is a JSON object that defines the routing rule. If the rule contains an `outbound` field, the wizard will show a dropdown selector for that rule.
+**Key Features:**
+
+- **No comment-based directives** - Pure JSON structure, easy to validate and maintain
+- **Platform-specific via `params`** - Single template file with platform-specific sections applied automatically
+- **Self-contained rules** - Each `selectable_rule` includes its own `rule_set` definitions (only loaded when rule is enabled)
+- **Platform filtering** - Rules can be filtered by platform using the `platforms` field
 
 **Outbound Selection:**
 
@@ -394,11 +397,42 @@ When a rule has an `outbound` field, the wizard provides a dropdown with the fol
 2. **`direct-out`** - Always available for direct connections (bypass proxy)
 3. **`reject`** - Always available for blocking traffic (converted to `"action": "reject", "method": "drop"` in config)
 
-**Example Rules:**
+**Example Template Structure:**
 
-See [docs/CREATE_WIZARD_TEMPLATE.md](docs/CREATE_WIZARD_TEMPLATE.md) for detailed examples and explanations.
-
-If the template is missing, you can download it via the **"Download Config Template"** button in the **"Core"** tab.
+```json
+{
+  "parser_config": {
+    "ParserConfig": {
+      "version": 4,
+      "proxies": [{ "source": "https://your-subscription-url-here" }],
+      "outbounds": [ /* proxy groups */ ]
+    }
+  },
+  "config": {
+    "log": { /* logging config */ },
+    "dns": { /* DNS config */ },
+    "inbounds": [],
+    "outbounds": [{ "type": "direct", "tag": "direct-out" }],
+    "route": { /* routing config */ }
+  },
+  "selectable_rules": [
+    {
+      "label": "Block Ads",
+      "description": "Soft-block ads by rejecting connections",
+      "default": true,
+      "rule_set": [ /* rule set definitions */ ],
+      "rule": { "rule_set": "ads-all", "action": "reject" }
+    }
+  ],
+  "params": [
+    {
+      "name": "inbounds",
+      "platforms": ["windows", "linux"],
+      "value": [ /* TUN configuration */ ]
+    }
+  ]
+}
+```
 
 **Creating Custom Templates:**
 
@@ -406,12 +440,10 @@ You can create your own `config_template.json` file to customize the rules avail
 
 1. **Start with the default template**: Download the default template using the **"Download Config Template"** button
 2. **Edit the template**: Modify `config_template.json` in the `bin/` folder
-3. **Add custom rules**: Use the `/** @SelectableRule ... */` syntax to add your own routing rules
-4. **Customize ParserConfig**: Modify the `/** @ParserConfig ... */` block to set default subscription settings
-5. **Save and use**: The wizard will automatically use your custom template
-
-**Template Structure:**
-- Base configuration sections (log, dns, inbounds, route, etc.) are always included
+3. **Add custom rules**: Add entries to the `selectable_rules` array with `label`, `description`, `rule`, and optional `rule_set`
+4. **Customize ParserConfig**: Modify the `parser_config` section to set default subscription settings
+5. **Add platform-specific settings**: Use the `params` section to add platform-specific configurations
+6. **Save and use**: The wizard will automatically use your custom template
 
 **User-Defined Custom Rules:**
 
@@ -450,11 +482,9 @@ Custom rules are saved in the standard sing-box rule format:
 
 For detailed instructions on creating your own `config_template.json` template, see:
 - **[docs/CREATE_WIZARD_TEMPLATE.md](docs/CREATE_WIZARD_TEMPLATE.md)** - Complete guide with examples and best practices
-- Rules marked with `/** @SelectableRule ... */` appear in the wizard's Rules tab
-- The `/** @PARSER_OUTBOUNDS_BLOCK */` marker indicates where generated outbounds will be inserted
-- Rules with `@default` directive are enabled by default in the wizard
+- The guide covers the unified JSON structure, platform-specific configurations, DNS setup, TUN vs System Proxy, and local traffic rules
 
-**Note:** The template file must be valid JSONC (JSON with comments). The wizard validates the template before use.
+**Note:** The template file must be valid JSON. The wizard validates the template before use.
 
 #### Enabling Clash API
 
@@ -473,43 +503,50 @@ To use the "Clash API" tab, add to `config.json`:
 
 #### Subscription Parser Configuration
 
-For automatic configuration updates from subscriptions, add at the beginning of `config.json`:
+For automatic configuration updates from subscriptions, configure the `parser_config` section in `config_template.json` or use the Config Wizard.
+
+**Using Config Wizard (Recommended):**
+
+1. Open the Config Wizard (click **"Wizard"** button in the **"Core"** tab)
+2. Go to **"Sources & ParserConfig"** tab
+3. Enter your subscription URL or direct links
+4. Configure ParserConfig JSON in the visual editor
+5. The wizard will save the configuration to `config.json`
+
+**Manual Configuration:**
+
+If you prefer to edit manually, the parser configuration is stored in `config.json` (loaded from `config_template.json` by default). The structure follows the ParserConfig format:
 
 ```json
 {
-  /** @ParserConfig
-  {
-    "ParserConfig": {
-      "version": 3,
-      "proxies": [
-        {
-          "source": "https://your-subscription-url.com/subscription",
-          "connections": [
-            "vless://uuid@server.com:443?security=reality&...#ServerName",
-            "vmess://eyJ2IjoiMiIsInBzIjoi..."
-          ]
-        }
-      ],
-      "outbounds": [
-        {
-          "tag": "proxy-out",
-          "type": "selector",
-          "options": { "interrupt_exist_connections": true },
-          "filters": {
-            "tag": "!/(🇷🇺)/i"
-          },
-          "addOutbounds": ["direct-out"],
-          "preferredDefault": { "tag": "/🇳🇱/i" },
-          "comment": "Proxy group for international connections"
-        }
-      ],
-      "parser": {
-        "reload": "4h"
+  "ParserConfig": {
+    "version": 4,
+    "proxies": [
+      {
+        "source": "https://your-subscription-url.com/subscription",
+        "connections": [
+          "vless://uuid@server.com:443?security=reality&...#ServerName",
+          "vmess://eyJ2IjoiMiIsInBzIjoi..."
+        ]
       }
+    ],
+    "outbounds": [
+      {
+        "tag": "proxy-out",
+        "type": "selector",
+        "options": { "interrupt_exist_connections": true },
+        "filters": {
+          "tag": "!/(🇷🇺)/i"
+        },
+        "addOutbounds": ["direct-out"],
+        "preferredDefault": { "tag": "/🇳🇱/i" },
+        "comment": "Proxy group for international connections"
+      }
+    ],
+    "parser": {
+      "reload": "4h"
     }
   }
-  */
-  // ... rest of configuration
 }
 ```
 
@@ -523,7 +560,7 @@ The subscription parser automatically updates the proxy server list in `config.j
 
 ### Overview
 
-The parser reads the `/** @ParserConfig ... */` block at the beginning of `config.json`, downloads subscriptions, filters nodes, and generates selectors according to your configuration.
+The parser reads the `ParserConfig` section from `config.json` (or `config_template.json`), downloads subscriptions, filters nodes, and generates selectors according to your configuration.
 
 **Key Features:**
 - Supports multiple subscription URLs and direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://)

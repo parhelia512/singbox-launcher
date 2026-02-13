@@ -3,14 +3,14 @@
 
 package platform
 
-import "log"
+import "singbox-launcher/internal/debuglog"
 
 // HideDockIcon is a no-op on non-macOS platforms
 func HideDockIcon() {
-	log.Printf("platform: HideDockIcon is not implemented on non-darwin platforms")
+	debuglog.DebugLog("platform: HideDockIcon is not implemented on non-darwin platforms")
 }
 
 // RestoreDockIcon is a no-op on non-macOS platforms
 func RestoreDockIcon() {
-	log.Printf("platform: RestoreDockIcon is not implemented on non-darwin platforms")
+	debuglog.DebugLog("platform: RestoreDockIcon is not implemented on non-darwin platforms")
 }

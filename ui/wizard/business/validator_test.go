@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/parser"
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
@@ -291,12 +292,12 @@ func TestValidateJSONSize(t *testing.T) {
 		},
 		{
 			name:        "Size at limit",
-			data:        []byte(strings.Repeat("a", int(wizardutils.MaxJSONConfigSize))),
+			data:        []byte(strings.Repeat("a", int(parser.MaxConfigFileSize))),
 			expectError: false,
 		},
 		{
 			name:        "Size exceeds limit",
-			data:        []byte(strings.Repeat("a", int(wizardutils.MaxJSONConfigSize)+1)),
+			data:        []byte(strings.Repeat("a", int(parser.MaxConfigFileSize)+1)),
 			expectError: true,
 		},
 		{
@@ -341,7 +342,7 @@ func TestValidateJSON(t *testing.T) {
 		},
 		{
 			name:        "JSON too large",
-			data:        []byte(strings.Repeat("a", int(wizardutils.MaxJSONConfigSize)+1)),
+			data:        []byte(strings.Repeat("a", int(parser.MaxConfigFileSize)+1)),
 			expectError: true,
 		},
 		{
@@ -454,7 +455,7 @@ func TestValidateParserConfigJSON(t *testing.T) {
 		},
 		{
 			name:        "JSON too large",
-			jsonText:    `{"ParserConfig": {` + strings.Repeat("a", int(wizardutils.MaxJSONConfigSize)) + `}}`,
+			jsonText:    `{"ParserConfig": {` + strings.Repeat("a", int(parser.MaxConfigFileSize)) + `}}`,
 			expectError: true,
 		},
 		{

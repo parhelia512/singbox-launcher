@@ -4,11 +4,11 @@ package core
 
 import (
 	"fmt"
-	"log"
 
 	"singbox-launcher/core/config"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/core/config/subscription"
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 )
 
@@ -42,7 +42,7 @@ func (svc *ConfigService) RunParserProcess() {
 	ac.ParserRunning = true
 	ac.ParserMutex.Unlock()
 
-	log.Println("RunParser: Starting internal configuration update...")
+	debuglog.InfoLog("RunParser: Starting internal configuration update...")
 	// Ensure flag is reset after completion, even if there's an error
 	defer func() {
 		ac.ParserMutex.Lock()
@@ -55,11 +55,11 @@ func (svc *ConfigService) RunParserProcess() {
 
 	// Обрабатываем результат
 	if err != nil {
-		log.Printf("RunParser: Failed to update config: %v", err)
+		debuglog.ErrorLog("RunParser: Failed to update config: %v", err)
 		// Progress already updated in UpdateConfigFromSubscriptions with error status
 		ac.ShowParserError(fmt.Errorf("failed to update config: %w", err))
 	} else {
-		log.Println("RunParser: Config updated successfully.")
+		debuglog.InfoLog("RunParser: Config updated successfully.")
 		// Progress already updated in UpdateConfigFromSubscriptions with success status
 		if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
 			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Parser", "Config updated successfully!")

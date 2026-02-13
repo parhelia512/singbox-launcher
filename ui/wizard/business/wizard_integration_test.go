@@ -37,13 +37,6 @@ func TestDefaultWizardFlow_NextNextFinish(t *testing.T) {
 	// Emulate user entering subscription URL (Page 1 of wizard)
 	model.SourceURLs = "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt"
 
-	// Enable all sections by default (as wizard does)
-	for _, key := range templateData.SectionOrder {
-		if _, ok := model.TemplateSectionSelections[key]; !ok {
-			model.TemplateSectionSelections[key] = true
-		}
-	}
-
 	// Build selectable rule states with defaults (as wizard does)
 	options := EnsureDefaultAvailableOutbounds(GetAvailableOutbounds(model))
 	if len(model.SelectableRuleStates) == 0 {
@@ -109,11 +102,6 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 	// Emulate user entering subscription URL
 	model.SourceURLs = "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt"
 
-	// Enable all sections
-	for _, key := range templateData.SectionOrder {
-		model.TemplateSectionSelections[key] = true
-	}
-
 	// Initialize rule states
 	options := EnsureDefaultAvailableOutbounds(GetAvailableOutbounds(model))
 	for _, rule := range templateData.SelectableRules {
@@ -133,7 +121,7 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 		Rule: wizardtemplate.TemplateSelectableRule{
 			Label:       "Custom Test Rule",
 			Description: "Test custom rule",
-			Raw: map[string]interface{}{
+			Rule: map[string]interface{}{
 				"domain":   []interface{}{"example.com"},
 				"outbound": "direct-out",
 			},
@@ -166,7 +154,7 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 }
 
 // findProjectRoot walks up the directory tree to find project root.
-// Returns path to directory containing go.mod and bin/config_template.json
+// Returns path to directory containing go.mod and bin/wizard_template.json
 func findProjectRoot(t *testing.T) string {
 	t.Helper()
 
@@ -175,11 +163,11 @@ func findProjectRoot(t *testing.T) string {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 
-	// Walk up until we find bin/config_template.json and go.mod
+	// Walk up until we find bin/wizard_template.json and go.mod
 	dir := wd
 	for i := 0; i < 10; i++ {
 		goModPath := filepath.Join(dir, "go.mod")
-		templatePath := filepath.Join(dir, "bin", "config_template.json")
+		templatePath := filepath.Join(dir, "bin", "wizard_template.json")
 
 		if fileExists(goModPath) && fileExists(templatePath) {
 			return dir
@@ -192,7 +180,7 @@ func findProjectRoot(t *testing.T) string {
 		dir = parent
 	}
 
-	t.Fatalf("Project root not found from wd=%s (expected go.mod and bin/config_template.json)", wd)
+	t.Fatalf("Project root not found from wd=%s (expected go.mod and bin/wizard_template.json)", wd)
 	return ""
 }
 

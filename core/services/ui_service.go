@@ -1,7 +1,6 @@
 package services
 
 import (
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/constants"
+	"singbox-launcher/internal/debuglog"
 )
 
 // UIService manages UI-related state, callbacks, and tray menu logic.
@@ -59,6 +59,7 @@ type UIService struct {
 	UpdateTrayMenuFunc       func()
 	UpdateParserProgressFunc func(progress float64, status string)
 	FocusOpenRuleDialogs     func()
+	ShowUpdatePopupFunc      func(currentVersion, latestVersion string) // Called to show update popup
 
 	// Dependencies (passed from AppController)
 	RunningStateIsRunning func() bool
@@ -68,6 +69,9 @@ type UIService struct {
 	// Используется для того, чтобы UI-компоненты (например, overlay) могли
 	// подстраиваться под текущее состояние без жёсткой связи между слоями.
 	OnStateChange func() // Called when UI state changes
+	// OnWindowShown — опциональный callback, который вызывается после открытия главного окна
+	// Используется для проверки обновлений при первом открытии окна после запуска с -tray
+	OnWindowShown func() // Called after main window is shown
 }
 
 // NewUIService creates and initializes a new UIService instance.
@@ -86,7 +90,7 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	ui.RedIconData = fyne.NewStaticResource("errorIcon", redIconData)
 
 	// Initialize Fyne application
-	log.Println("UIService: Initializing Fyne application...")
+	debuglog.InfoLog("UIService: Initializing Fyne application...")
 	ui.Application = app.NewWithID("com.singbox.launcher")
 	ui.Application.SetIcon(ui.AppIconData)
 
@@ -101,13 +105,16 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	}
 
 	// Initialize callbacks with default no-op handlers
-	ui.RefreshAPIFunc = func() { log.Println("RefreshAPIFunc handler is not set yet.") }
-	ui.ResetAPIStateFunc = func() { log.Println("ResetAPIStateFunc handler is not set yet.") }
-	ui.UpdateCoreStatusFunc = func() { log.Println("UpdateCoreStatusFunc handler is not set yet.") }
-	ui.UpdateConfigStatusFunc = func() { log.Println("UpdateConfigStatusFunc handler is not set yet.") }
-	ui.UpdateTrayMenuFunc = func() { log.Println("UpdateTrayMenuFunc handler is not set yet.") }
+	ui.RefreshAPIFunc = func() { debuglog.DebugLog("RefreshAPIFunc handler is not set yet.") }
+	ui.ResetAPIStateFunc = func() { debuglog.DebugLog("ResetAPIStateFunc handler is not set yet.") }
+	ui.UpdateCoreStatusFunc = func() { debuglog.DebugLog("UpdateCoreStatusFunc handler is not set yet.") }
+	ui.UpdateConfigStatusFunc = func() { debuglog.DebugLog("UpdateConfigStatusFunc handler is not set yet.") }
+	ui.UpdateTrayMenuFunc = func() { debuglog.DebugLog("UpdateTrayMenuFunc handler is not set yet.") }
 	ui.UpdateParserProgressFunc = func(progress float64, status string) {
-		log.Printf("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
+		debuglog.DebugLog("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
+	}
+	ui.ShowUpdatePopupFunc = func(currentVersion, latestVersion string) {
+		debuglog.DebugLog("ShowUpdatePopupFunc handler is not set yet. Current: %s, Latest: %s", currentVersion, latestVersion)
 	}
 
 	return ui, nil
@@ -132,6 +139,11 @@ func (ui *UIService) ShowMainWindowOrFocusWizard() {
 			ui.WizardWindow.Show()
 			ui.WizardWindow.RequestFocus()
 		}
+
+		// Вызываем callback после открытия окна (для проверки обновлений)
+		if ui.OnWindowShown != nil {
+			ui.OnWindowShown()
+		}
 	})
 }
 
@@ -140,11 +152,11 @@ func (ui *UIService) UpdateUI() {
 	fyne.Do(func() {
 		// Update tray icon
 		if desk, ok := ui.Application.(desktop.App); ok {
-			// Check that icons are initialized
-			if ui.GreenIconData == nil || ui.GreyIconData == nil || ui.RedIconData == nil {
-				log.Printf("UpdateUI: Icons not initialized, skipping icon update")
-				return
-			}
+		// Check that icons are initialized
+		if ui.GreenIconData == nil || ui.GreyIconData == nil || ui.RedIconData == nil {
+			debuglog.WarnLog("UpdateUI: Icons not initialized, skipping icon update")
+			return
+		}
 
 			var iconToSet fyne.Resource
 
@@ -167,7 +179,7 @@ func (ui *UIService) UpdateUI() {
 
 		// Reset API state if VPN is down
 		if !ui.RunningStateIsRunning() && ui.ResetAPIStateFunc != nil {
-			log.Println("UpdateUI: Triggering API state reset because state is 'Down'.")
+			debuglog.DebugLog("UpdateUI: Triggering API state reset because state is 'Down'.")
 			ui.ResetAPIStateFunc()
 		}
 

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -69,7 +68,7 @@ func (ac *AppController) DownloadCore(ctx context.Context, version string, progr
 	}
 	defer func() {
 		if err := os.RemoveAll(tempDir); err != nil {
-			log.Printf("DownloadCore: failed to remove temp dir %s: %v", tempDir, err)
+			debuglog.WarnLog("DownloadCore: failed to remove temp dir %s: %v", tempDir, err)
 		}
 	}()
 
@@ -108,7 +107,7 @@ func (ac *AppController) getReleaseInfo(ctx context.Context, version string) (*R
 		return release, nil
 	}
 
-	log.Printf("GitHub failed, trying SourceForge...")
+	debuglog.InfoLog("GitHub failed, trying SourceForge...")
 
 	// If GitHub doesn't work, try SourceForge
 	return ac.getReleaseInfoFromSourceForge(ctx, version)
@@ -170,7 +169,7 @@ func (ac *AppController) getReleaseInfoFromSourceForge(ctx context.Context, vers
 		// If that fails, use fixed version
 		latest, err := ac.GetLatestCoreVersion()
 		if err != nil {
-			log.Printf("getReleaseInfoFromSourceForge: failed to get latest version, using fallback: %v", err)
+			debuglog.WarnLog("getReleaseInfoFromSourceForge: failed to get latest version, using fallback: %v", err)
 			version = FallbackVersion
 		} else {
 			version = latest
@@ -283,7 +282,7 @@ func (ac *AppController) downloadFile(ctx context.Context, url, destPath string,
 		return nil
 	}
 
-	log.Printf("downloadFile: failed to download from original URL, trying mirrors...")
+	debuglog.InfoLog("downloadFile: failed to download from original URL, trying mirrors...")
 
 	// If that didn't work, try GitHub mirrors
 	mirrors := []string{
@@ -291,17 +290,17 @@ func (ac *AppController) downloadFile(ctx context.Context, url, destPath string,
 	}
 
 	for _, mirrorURL := range mirrors {
-		log.Printf("downloadFile: trying mirror: %s", mirrorURL)
+		debuglog.DebugLog("downloadFile: trying mirror: %s", mirrorURL)
 		err := ac.downloadFileFromURL(ctx, mirrorURL, destPath, progressChan)
 		if err == nil {
 			return nil
 		}
-		log.Printf("downloadFile: mirror failed: %v", err)
+		debuglog.DebugLog("downloadFile: mirror failed: %v", err)
 	}
 
 	// If all GitHub mirrors don't work, try SourceForge
 	if strings.Contains(url, "github.com") {
-		log.Printf("downloadFile: trying SourceForge...")
+		debuglog.DebugLog("downloadFile: trying SourceForge...")
 		// Extract version and file name from URL
 		version, fileName := ac.extractVersionAndFileName(url)
 		if version != "" && fileName != "" {
@@ -310,7 +309,7 @@ func (ac *AppController) downloadFile(ctx context.Context, url, destPath string,
 			if err == nil {
 				return nil
 			}
-			log.Printf("downloadFile: SourceForge failed: %v", err)
+			debuglog.WarnLog("downloadFile: SourceForge failed: %v", err)
 		}
 	}
 
@@ -466,7 +465,7 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 			// Set execute permissions (for Unix-like systems)
 			if runtime.GOOS != "windows" {
 				if err := os.Chmod(binaryPath, 0755); err != nil {
-					log.Printf("extractZip: failed to chmod %s: %v", binaryPath, err)
+					debuglog.WarnLog("extractZip: failed to chmod %s: %v", binaryPath, err)
 				}
 			}
 
@@ -521,7 +520,7 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 
 			// Set execute permissions
 			if err := os.Chmod(binaryPath, 0755); err != nil {
-				log.Printf("extractTarGz: failed to chmod %s: %v", binaryPath, err)
+				debuglog.WarnLog("extractTarGz: failed to chmod %s: %v", binaryPath, err)
 			}
 
 			return binaryPath, nil
@@ -543,10 +542,10 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 	if _, err := os.Stat(destPath); err == nil {
 		oldPath := destPath + ".old"
 		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
-			log.Printf("installBinary: failed to remove old backup %s: %v", oldPath, err)
+			debuglog.WarnLog("installBinary: failed to remove old backup %s: %v", oldPath, err)
 		}
 		if err := os.Rename(destPath, oldPath); err != nil {
-			log.Printf("Warning: failed to rename old binary: %v", err)
+			debuglog.WarnLog("Warning: failed to rename old binary: %v", err)
 		}
 	}
 
@@ -571,16 +570,16 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 	// Set execute permissions (for Unix)
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(destPath, 0755); err != nil {
-			log.Printf("installBinary: failed to chmod %s: %v", destPath, err)
+			debuglog.WarnLog("installBinary: failed to chmod %s: %v", destPath, err)
 		}
 	}
 
 	// Remove old backup
 	oldPath := destPath + ".old"
 	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
-		log.Printf("installBinary: failed to remove backup %s: %v", oldPath, err)
+		debuglog.WarnLog("installBinary: failed to remove backup %s: %v", oldPath, err)
 	}
 
-	log.Printf("installBinary: binary installed successfully to %s", destPath)
+	debuglog.InfoLog("installBinary: binary installed successfully to %s", destPath)
 	return nil
 }

@@ -16,7 +16,7 @@ type ConfigService interface {
 	GenerateOutboundsFromParserConfig(parserConfig *config.ParserConfig, tagCounts map[string]int, progressCallback func(float64, string)) (*config.OutboundGenerationResult, error)
 }
 
-// FileServiceInterface предоставляет доступ к путям конфигурации и файлам.
+// FileServiceInterface предоставляет доступ к путям конфигурации.
 // Интерфейс определен здесь для использования в тестах без зависимости от core/services.
 type FileServiceInterface interface {
 	ConfigPath() string

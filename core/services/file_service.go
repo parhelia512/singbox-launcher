@@ -1,3 +1,25 @@
+// Package services содержит сервисы приложения, инкапсулирующие специфическую функциональность.
+//
+// FileService управляет файловыми путями и лог-файлами приложения.
+//
+// Ответственности:
+//   - Определение путей к исполняемым файлам и конфигурации (ExecDir, ConfigPath, SingboxPath)
+//   - Создание необходимых директорий (logs/, bin/) при старте
+//   - Управление жизненным циклом лог-файлов (открытие, закрытие)
+//   - Ротация логов при превышении размера (максимум 1 старый файл на каждый лог)
+//   - Создание резервных копий файлов (BackupFile, BackupPath)
+//
+// Ротация логов:
+//   - Порог: 2 MB (maxLogFileSize)
+//   - При превышении: file.log → file.log.old (старый .old удаляется)
+//   - Хранится максимум 1 резервная копия каждого лог-файла
+//   - Ротация вызывается при открытии лога и перед каждым запуском sing-box
+//
+// Используется в:
+//   - controller.go — инициализация при старте, RunHidden для логирования дочерних процессов
+//   - process_service.go — пути к sing-box, лог-файл дочернего процесса
+//   - wintun_downloader.go — путь к wintun.dll
+//   - ui/wizard/business/saver.go — путь к config.json через FileServiceInterface
 package services
 
 import (
@@ -5,27 +27,47 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 )
 
-// FileService manages file paths and log file handles.
-// It encapsulates file-related operations to reduce AppController complexity.
-type FileService struct {
-	// File paths
-	ExecDir     string
-	ConfigPath  string
-	SingboxPath string
-	WintunPath  string
+// maxLogFileSize — порог ротации лог-файлов (2 MB).
+// При превышении текущий лог переименовывается в .old, старый .old удаляется.
+const maxLogFileSize = 2 * 1024 * 1024 // 2 MB
 
-	// Log files
-	MainLogFile  *os.File
+// FileService управляет файловыми путями и лог-файлами приложения.
+// Создаётся один раз при старте через NewFileService и хранится в AppController.
+type FileService struct {
+	// ExecDir — директория, в которой находится исполняемый файл приложения.
+	// Все относительные пути (bin/, logs/, config.json) строятся от неё.
+	ExecDir string
+
+	// ConfigPath — полный путь к config.json (платформозависимый).
+	ConfigPath string
+
+	// SingboxPath — полный путь к исполняемому файлу sing-box (bin/sing-box или bin/sing-box.exe).
+	SingboxPath string
+
+	// WintunPath — полный путь к wintun.dll (только Windows, пустая строка на других платформах).
+	WintunPath string
+
+	// MainLogFile — лог приложения (singbox-launcher.log).
+	// Используется как вывод стандартного log пакета.
+	MainLogFile *os.File
+
+	// ChildLogFile — лог дочернего процесса sing-box (sing-box.log).
+	// Stdout/Stderr sing-box перенаправляются в этот файл.
 	ChildLogFile *os.File
-	ApiLogFile   *os.File
+
+	// ApiLogFile — лог API-запросов (api.log).
+	ApiLogFile *os.File
 }
 
-// NewFileService creates and initializes a new FileService instance.
+// NewFileService создаёт и инициализирует FileService.
+// Определяет все пути и создаёт необходимые директории (logs/, bin/).
+// Вызывается один раз при создании AppController.
 func NewFileService() (*FileService, error) {
 	fs := &FileService{}
 
@@ -35,7 +77,6 @@ func NewFileService() (*FileService, error) {
 	}
 	fs.ExecDir = filepath.Dir(ex)
 
-	// Use platform-specific functions
 	if err := platform.EnsureDirectories(fs.ExecDir); err != nil {
 		return nil, fmt.Errorf("NewFileService: cannot create directories: %w", err)
 	}
@@ -48,9 +89,11 @@ func NewFileService() (*FileService, error) {
 	return fs, nil
 }
 
-// OpenLogFiles opens all log files with rotation support.
+// OpenLogFiles открывает все лог-файлы приложения с ротацией.
+// Основной лог (MainLogFile) устанавливается как вывод стандартного log пакета.
+// Ошибки открытия ChildLogFile и ApiLogFile не являются критическими —
+// приложение продолжает работу без них.
 func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileName string) error {
-	// Open main log file
 	logFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, logFileName))
 	if err != nil {
 		return fmt.Errorf("OpenLogFiles: cannot open main log file: %w", err)
@@ -58,19 +101,17 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 	log.SetOutput(logFile)
 	fs.MainLogFile = logFile
 
-	// Open child log file
 	childLogFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, childLogFileName))
 	if err != nil {
-		log.Printf("OpenLogFiles: failed to open sing-box child log file: %v", err)
+		debuglog.WarnLog("OpenLogFiles: failed to open sing-box child log file: %v", err)
 		fs.ChildLogFile = nil
 	} else {
 		fs.ChildLogFile = childLogFile
 	}
 
-	// Open API log file
 	apiLogFile, err := fs.OpenLogFileWithRotation(filepath.Join(fs.ExecDir, apiLogFileName))
 	if err != nil {
-		log.Printf("OpenLogFiles: failed to open API log file: %v", err)
+		debuglog.WarnLog("OpenLogFiles: failed to open API log file: %v", err)
 		fs.ApiLogFile = nil
 	} else {
 		fs.ApiLogFile = apiLogFile
@@ -79,7 +120,8 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 	return nil
 }
 
-// CloseLogFiles closes all log files.
+// CloseLogFiles закрывает все открытые лог-файлы.
+// Вызывается при завершении приложения (GracefulExit).
 func (fs *FileService) CloseLogFiles() {
 	if fs.MainLogFile != nil {
 		debuglog.RunAndLog("CloseLogFiles: close main log file", fs.MainLogFile.Close)
@@ -95,17 +137,18 @@ func (fs *FileService) CloseLogFiles() {
 	}
 }
 
-// OpenLogFileWithRotation opens a log file with rotation support.
+// OpenLogFileWithRotation открывает лог-файл с предварительной ротацией.
+// Если файл превышает maxLogFileSize, он будет переименован в .old перед открытием.
+// Файл открывается в режиме append (O_APPEND) — новые записи добавляются в конец.
 func (fs *FileService) OpenLogFileWithRotation(logPath string) (*os.File, error) {
 	fs.CheckAndRotateLogFile(logPath)
-	// Open file in append mode (not truncate) to preserve recent logs
-	// But if file was rotated, it will be a new file
 	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
-// CheckAndRotateLogFile checks log file size and rotates if it exceeds maxLogFileSize.
-const maxLogFileSize = 2 * 1024 * 1024 // 2 MB
-
+// CheckAndRotateLogFile проверяет размер лог-файла и выполняет ротацию при необходимости.
+// Ротация: file.log → file.log.old (предыдущий .old удаляется).
+// Хранится максимум 1 резервная копия.
+// Вызывается также из process_service.go перед каждым запуском sing-box.
 func (fs *FileService) CheckAndRotateLogFile(logPath string) {
 	info, err := os.Stat(logPath)
 	if err != nil {
@@ -113,13 +156,45 @@ func (fs *FileService) CheckAndRotateLogFile(logPath string) {
 	}
 
 	if info.Size() > maxLogFileSize {
-		// Rotate: rename current file to .old
 		oldPath := logPath + ".old"
 		_ = os.Remove(oldPath) // Remove old backup if exists
 		if err := os.Rename(logPath, oldPath); err != nil {
-			log.Printf("CheckAndRotateLogFile: Failed to rotate log file %s: %v", logPath, err)
+			debuglog.WarnLog("CheckAndRotateLogFile: Failed to rotate log file %s: %v", logPath, err)
 		} else {
-			log.Printf("CheckAndRotateLogFile: Rotated log file %s (size: %d bytes)", logPath, info.Size())
+			debuglog.DebugLog("CheckAndRotateLogFile: Rotated log file %s (size: %d bytes)", logPath, info.Size())
 		}
 	}
+}
+
+// BackupPath генерирует путь для резервной копии файла.
+// Формат: file.ext → file-old.ext (например, config.json → config-old.json).
+func BackupPath(path string) string {
+	dir := filepath.Dir(path)
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(filepath.Base(path), ext)
+	return filepath.Join(dir, fmt.Sprintf("%s-old%s", base, ext))
+}
+
+// BackupFile создаёт резервную копию файла (file.ext → file-old.ext).
+// Предыдущая резервная копия удаляется — хранится максимум 1 бэкап.
+// Если файл не существует или является директорией — ничего не делает.
+func BackupFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // Nothing to backup
+		}
+		return fmt.Errorf("BackupFile: cannot stat %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return nil
+	}
+
+	backup := BackupPath(path)
+	_ = os.Remove(backup) // Remove old backup if exists
+	if err := os.Rename(path, backup); err != nil {
+		return fmt.Errorf("BackupFile: cannot rename %s to %s: %w", path, backup, err)
+	}
+	debuglog.DebugLog("BackupFile: %s → %s", path, backup)
+	return nil
 }

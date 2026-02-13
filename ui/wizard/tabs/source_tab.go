@@ -19,12 +19,11 @@ package tabs
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	"image/color"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -33,8 +32,10 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
+	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
 
@@ -63,7 +64,7 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 		model.PreviewNeedsParse = true
 		trimmed := strings.TrimSpace(value)
 		if err := wizardbusiness.ApplyURLToParserConfig(model, presenter, trimmed); err != nil {
-			log.Printf("source_tab: error applying URL to ParserConfig: %v", err)
+			debuglog.ErrorLog("source_tab: error applying URL to ParserConfig: %v", err)
 		}
 
 		// Debounce CheckURL: cancel previous timer and set a new one (2s after last change)
@@ -89,7 +90,7 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 				// Run the check in background
 				go func() {
 					if err := wizardbusiness.CheckURL(presenter.Model(), presenter); err != nil {
-						log.Printf("source_tab: CheckURL failed: %v", err)
+						debuglog.ErrorLog("source_tab: CheckURL failed: %v", err)
 					}
 					// Clear in-progress flag
 					fyne.Do(func() { guiState.CheckURLInProgress = false })
@@ -105,44 +106,8 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://). For multiple links, use a new line for each.")
 	hintLabel.Wrapping = fyne.TextWrapWord
 
-	var freeVPNDialog dialog.Dialog
-	var freeVPNDialogOpen bool
 	getFreeVPNButton := widget.NewButton("Get free VPN!", func() {
-		if freeVPNDialogOpen {
-			return
-		}
-		thanks := widget.NewLabel("Thank @igareck for providing VPN lists:")
-		thanks.Wrapping = fyne.TextWrapWord
-		linkURL, _ := url.Parse("https://github.com/igareck/vpn-configs-for-russia?tab=readme-ov-file#-%D1%87%D0%B5%D1%80%D0%BD%D1%8B%D0%B9-%D1%81%D0%BF%D0%B8%D1%81%D0%BE%D0%BA-")
-		link := widget.NewHyperlink("https://github.com/igareck/vpn-configs-for-russia", linkURL)
-		addButton := widget.NewButton("Add links", func() {
-			urls := []string{
-				"https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
-				"https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-			}
-			current := strings.TrimSpace(guiState.SourceURLEntry.Text)
-			linksText := strings.Join(urls, "\n")
-			if current != "" {
-				guiState.SourceURLEntry.SetText(current + "\n" + linksText)
-			} else {
-				guiState.SourceURLEntry.SetText(linksText)
-			}
-			if freeVPNDialog != nil {
-				freeVPNDialog.Hide()
-			}
-		})
-		spacer := canvas.NewRectangle(color.Transparent)
-		spacer.SetMinSize(fyne.NewSize(0, addButton.MinSize().Height))
-		content := container.NewVBox(
-			thanks,
-			link,
-			spacer,
-			addButton,
-		)
-		freeVPNDialog = dialog.NewCustom("Get free VPN", "Close", content, guiState.Window)
-		freeVPNDialog.SetOnClosed(func() { freeVPNDialogOpen = false })
-		freeVPNDialogOpen = true
-		freeVPNDialog.Show()
+		wizarddialogs.ShowGetFreeVPNDialog(presenter)
 	})
 
 	hintRow := container.NewBorder(
@@ -194,6 +159,8 @@ func CreateSourceTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasO
 		}
 		model := presenter.Model()
 		model.PreviewNeedsParse = true
+		// Sync GUI to model to update ParserConfigJSON before refreshing outbound options
+		presenter.SyncGUIToModel()
 		presenter.RefreshOutboundOptions()
 
 		// Preview status will be updated when switching to Preview tab
@@ -317,7 +284,7 @@ Here is the current configuration to review:
 			})
 			return
 		}
-		log.Printf("source_tab: Parse clicked, parser length=%d", len(strings.TrimSpace(model.ParserConfigJSON)))
+		debuglog.DebugLog("source_tab: Parse clicked, parser length=%d", len(strings.TrimSpace(model.ParserConfigJSON)))
 		if model.AutoParseInProgress {
 			return
 		}
@@ -326,7 +293,7 @@ Here is the current configuration to review:
 		configService := presenter.ConfigServiceAdapter()
 		go func() {
 			if err := wizardbusiness.ParseAndPreview(model, presenter, configService); err != nil {
-				log.Printf("source_tab: ParseAndPreview failed: %v", err)
+				debuglog.ErrorLog("source_tab: ParseAndPreview failed: %v", err)
 				// Show error to user in case of parse failure
 				fyne.Do(func() {
 					if guiState.OutboundsPreview != nil {

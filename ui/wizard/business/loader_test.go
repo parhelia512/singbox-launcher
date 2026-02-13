@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"singbox-launcher/core/config"
-	wizardutils "singbox-launcher/ui/wizard/utils"
+	"singbox-launcher/core/config/parser"
 )
 
 // TestSerializeParserConfig tests SerializeParserConfig function
@@ -353,7 +353,7 @@ func TestLoadConfigFromFile_FileSizeValidation(t *testing.T) {
 	configPath := filepath.Join(tempDir, "config.json")
 
 	// Create a config file that exceeds size limit
-	largeContent := strings.Repeat("a", int(wizardutils.MaxJSONConfigSize)+1)
+	largeContent := strings.Repeat("a", int(parser.MaxConfigFileSize)+1)
 	err := os.WriteFile(configPath, []byte(largeContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -366,7 +366,7 @@ func TestLoadConfigFromFile_FileSizeValidation(t *testing.T) {
 		t.Fatalf("Failed to stat test file: %v", err)
 	}
 
-	if fileInfo.Size() <= wizardutils.MaxJSONConfigSize {
+	if fileInfo.Size() <= parser.MaxConfigFileSize {
 		t.Error("Test file should exceed size limit")
 	}
 }

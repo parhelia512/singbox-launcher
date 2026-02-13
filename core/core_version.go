@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,6 +15,7 @@ import (
 
 	"fyne.io/fyne/v2"
 
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
@@ -33,24 +33,24 @@ func (ac *AppController) GetInstalledCoreVersion() (string, error) {
 	platform.PrepareCommand(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("GetInstalledCoreVersion: command failed: %v, output: %q", err, string(output))
+		debuglog.WarnLog("GetInstalledCoreVersion: command failed: %v, output: %q", err, string(output))
 		return "", fmt.Errorf("failed to get version: %w", err)
 	}
 
 	// Парсим вывод - формат: "sing-box version 1.12.12"
 	outputStr := strings.TrimSpace(string(output))
-	log.Printf("GetInstalledCoreVersion: raw output: %q", outputStr)
+	debuglog.DebugLog("GetInstalledCoreVersion: raw output: %q", outputStr)
 
 	// Ищем версию после "sing-box version" до конца строки
 	versionRegex := regexp.MustCompile(`sing-box version\s+(\S+)`)
 	matches := versionRegex.FindStringSubmatch(outputStr)
 	if len(matches) > 1 {
 		version := matches[1]
-		log.Printf("GetInstalledCoreVersion: found version: %s", version)
+		debuglog.DebugLog("GetInstalledCoreVersion: found version: %s", version)
 		return version, nil
 	}
 
-	log.Printf("GetInstalledCoreVersion: unable to parse version from output: %q", outputStr)
+	debuglog.WarnLog("GetInstalledCoreVersion: unable to parse version from output: %q", outputStr)
 	return "", fmt.Errorf("unable to parse version from output: %s", outputStr)
 }
 
@@ -76,7 +76,7 @@ type CoreVersionInfo struct {
 }
 
 // FallbackVersion - фиксированная версия для использования, если не удается получить последнюю
-const FallbackVersion = "1.12.12"
+const FallbackVersion = "1.12.21"
 
 // GetLatestCoreVersion получает последнюю версию sing-box (с fallback на фиксированную версию)
 func (ac *AppController) GetLatestCoreVersion() (string, error) {
@@ -89,17 +89,17 @@ func (ac *AppController) GetLatestCoreVersion() (string, error) {
 	}
 
 	for _, source := range sources {
-		log.Printf("Trying to get latest version from %s...", source.name)
+		debuglog.DebugLog("Trying to get latest version from %s...", source.name)
 		version, err := ac.getLatestVersionFromURL(source.url)
 		if err == nil {
-			log.Printf("Successfully got latest version %s from %s", version, source.name)
+			debuglog.InfoLog("Successfully got latest version %s from %s", version, source.name)
 			return version, nil
 		}
-		log.Printf("Failed to get latest version from %s: %v", source.name, err)
+		debuglog.DebugLog("Failed to get latest version from %s: %v", source.name, err)
 	}
 
 	// Если GitHub недоступен, используем фиксированную версию для скачивания с SourceForge
-	log.Printf("All GitHub sources failed, using fallback version %s from SourceForge", FallbackVersion)
+	debuglog.WarnLog("All GitHub sources failed, using fallback version %s from SourceForge", FallbackVersion)
 	return FallbackVersion, nil
 }
 
@@ -114,14 +114,14 @@ func (ac *AppController) GetLatestLauncherVersion() (string, error) {
 	}
 
 	for _, source := range sources {
-		log.Printf("Trying to get latest launcher version from %s...", source.name)
+		debuglog.DebugLog("Trying to get latest launcher version from %s...", source.name)
 		// Сохраняем префикс "v" для launcher версии
 		version, err := ac.getLatestVersionFromURLWithPrefix(source.url, true)
 		if err == nil {
-			log.Printf("Successfully got latest launcher version %s from %s", version, source.name)
+			debuglog.InfoLog("Successfully got latest launcher version %s from %s", version, source.name)
 			return version, nil
 		}
-		log.Printf("Failed to get latest launcher version from %s: %v", source.name, err)
+		debuglog.DebugLog("Failed to get latest launcher version from %s: %v", source.name, err)
 	}
 
 	return "", fmt.Errorf("failed to get latest launcher version from all sources")
@@ -143,6 +143,8 @@ func (ac *AppController) SetCachedLauncherVersion(version string) {
 }
 
 // CheckLauncherVersionOnStartup выполняет разовую проверку версии launcher при старте
+// Проверка всегда выполняется и сохраняет результат в кеш.
+// Попап с обновлением показывается при первом отображении окна (через OnWindowShown).
 func (ac *AppController) CheckLauncherVersionOnStartup() {
 	// Проверяем, не идет ли уже проверка
 	if ac.StateService == nil {
@@ -163,13 +165,13 @@ func (ac *AppController) CheckLauncherVersionOnStartup() {
 		// Пытаемся получить последнюю версию
 		latest, err := ac.GetLatestLauncherVersion()
 		if err != nil {
-			log.Printf("CheckLauncherVersionOnStartup: Failed to get latest launcher version: %v", err)
+			debuglog.WarnLog("CheckLauncherVersionOnStartup: Failed to get latest launcher version: %v", err)
 			return
 		}
 
 		// Сохраняем в кеш
 		ac.SetCachedLauncherVersion(latest)
-		log.Printf("CheckLauncherVersionOnStartup: Successfully cached launcher version %s", latest)
+		debuglog.InfoLog("CheckLauncherVersionOnStartup: Successfully cached launcher version %s", latest)
 	}()
 }
 
@@ -256,7 +258,7 @@ func (ac *AppController) CheckVersionInBackground() {
 		for attemptCount < maxTotalAttempts {
 			// Проверяем кеш перед каждой попыткой - возможно версия уже получена другой горутиной
 			if !ac.ShouldCheckVersion() {
-				log.Println("CheckVersionInBackground: Version already cached, stopping")
+				debuglog.DebugLog("CheckVersionInBackground: Version already cached, stopping")
 				return
 			}
 
@@ -274,7 +276,7 @@ func (ac *AppController) CheckVersionInBackground() {
 			if attemptCount > 0 {
 				select {
 				case <-ac.ctx.Done():
-					log.Println("CheckVersionInBackground: Stopped (context cancelled)")
+					debuglog.DebugLog("CheckVersionInBackground: Stopped (context cancelled)")
 					return
 				case <-time.After(interval):
 					// Continue
@@ -283,12 +285,12 @@ func (ac *AppController) CheckVersionInBackground() {
 
 			// Еще раз проверяем кеш после ожидания - возможно версия была получена во время ожидания
 			if !ac.ShouldCheckVersion() {
-				log.Println("CheckVersionInBackground: Version already cached during wait, stopping")
+				debuglog.DebugLog("CheckVersionInBackground: Version already cached during wait, stopping")
 				return
 			}
 
 			attemptCount++
-			log.Printf("CheckVersionInBackground: Attempt %d/%d to get latest version", attemptCount, maxTotalAttempts)
+			debuglog.DebugLog("CheckVersionInBackground: Attempt %d/%d to get latest version", attemptCount, maxTotalAttempts)
 
 			// Пытаемся получить версию
 			version, err := ac.GetLatestCoreVersion()
@@ -297,20 +299,20 @@ func (ac *AppController) CheckVersionInBackground() {
 				// Это предотвращает бесконечные проверки
 				ac.SetCachedVersion(version)
 				if version == FallbackVersion {
-					log.Printf("CheckVersionInBackground: Using fallback version %s (GitHub unavailable), will retry in 24h", version)
+					debuglog.WarnLog("CheckVersionInBackground: Using fallback version %s (GitHub unavailable), will retry in 24h", version)
 				} else {
-					log.Printf("CheckVersionInBackground: Successfully cached version %s, checks stopped until app restart", version)
+					debuglog.InfoLog("CheckVersionInBackground: Successfully cached version %s, checks stopped until app restart", version)
 				}
 				return
 			}
 
 			if err != nil {
-				log.Printf("CheckVersionInBackground: Attempt %d failed: %v", attemptCount, err)
+				debuglog.DebugLog("CheckVersionInBackground: Attempt %d failed: %v", attemptCount, err)
 			}
 		}
 
 		// Если достигли максимального количества попыток, сохраняем FallbackVersion
-		log.Printf("CheckVersionInBackground: Reached max attempts (%d), using fallback version %s", maxTotalAttempts, FallbackVersion)
+		debuglog.WarnLog("CheckVersionInBackground: Reached max attempts (%d), using fallback version %s", maxTotalAttempts, FallbackVersion)
 		ac.SetCachedVersion(FallbackVersion)
 	}()
 }
@@ -395,7 +397,7 @@ func (ac *AppController) CheckForUpdates() {
 		// Пытаемся получить последнюю версию
 		latest, err := ac.GetLatestCoreVersion()
 		if err != nil {
-			log.Printf("CheckForUpdates: Failed to get latest version: %v", err)
+			debuglog.WarnLog("CheckForUpdates: Failed to get latest version: %v", err)
 			fyne.Do(func() {
 				if ac.UIService != nil && ac.UIService.MainWindow != nil {
 					dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Failed to check for updates: %v", err))
@@ -469,11 +471,52 @@ func (ac *AppController) GetCoreVersionInfo() CoreVersionInfo {
 	return info
 }
 
-// CompareVersions сравнивает две версии (формат X.Y.Z)
+// CompareVersions сравнивает две версии (формат X.Y.Z или X.Y.Z-N-hash или X.Y.Z-dev.branch-hash)
 // Возвращает: -1 если v1 < v2, 0 если v1 == v2, 1 если v1 > v2
 func CompareVersions(v1, v2 string) int {
-	parts1 := strings.Split(v1, ".")
-	parts2 := strings.Split(v2, ".")
+	// Убираем префикс v
+	v1 = strings.TrimPrefix(v1, "v")
+	v2 = strings.TrimPrefix(v2, "v")
+
+	// Извлекаем базовую версию и проверяем наличие суффиксов
+	base1, hasSuffix1 := extractBaseVersion(v1)
+	base2, hasSuffix2 := extractBaseVersion(v2)
+
+	// Сравниваем базовые версии
+	baseCompare := compareBaseVersions(base1, base2)
+	if baseCompare != 0 {
+		return baseCompare
+	}
+
+	// Если базовые версии равны:
+	// - Версия с суффиксом (коммиты после тега или dev) считается новее
+	// - v0.7.1-96-gc1343cc > v0.7.1
+	// - v0.7.1-dev.branch-hash > v0.7.1
+	if hasSuffix1 && !hasSuffix2 {
+		return 1 // v1 новее
+	}
+	if !hasSuffix1 && hasSuffix2 {
+		return -1 // v2 новее
+	}
+
+	return 0
+}
+
+// extractBaseVersion извлекает базовую версию и проверяет наличие суффикса
+// Форматы: "0.7.1", "0.7.1-96-gc1343cc", "0.7.1-dev.branch-hash"
+func extractBaseVersion(version string) (base string, hasSuffix bool) {
+	// Ищем первый дефис (может быть -N-hash или -dev.branch-hash)
+	idx := strings.Index(version, "-")
+	if idx == -1 {
+		return version, false
+	}
+	return version[:idx], true
+}
+
+// compareBaseVersions сравнивает базовые версии (формат X.Y.Z)
+func compareBaseVersions(base1, base2 string) int {
+	parts1 := strings.Split(base1, ".")
+	parts2 := strings.Split(base2, ".")
 
 	maxLen := len(parts1)
 	if len(parts2) > maxLen {
@@ -498,4 +541,41 @@ func CompareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+// ShowUpdatePopupIfAvailable проверяет наличие обновления и показывает попап
+func (ac *AppController) ShowUpdatePopupIfAvailable() {
+	// Проверяем, не был ли попап уже показан
+	if ac.isUpdatePopupShown() {
+		debuglog.DebugLog("ShowUpdatePopupIfAvailable: Update popup already shown, skipping")
+		return
+	}
+
+	// Получаем текущую версию
+	currentVersion := constants.AppVersion
+	currentVersionClean := strings.TrimPrefix(currentVersion, "v")
+
+	// Получаем последнюю версию из кеша
+	latestVersion := ac.GetCachedLauncherVersion()
+	if latestVersion == "" {
+		debuglog.DebugLog("ShowUpdatePopupIfAvailable: No cached version available, skipping popup")
+		return
+	}
+	latestVersionClean := strings.TrimPrefix(latestVersion, "v")
+
+	// Сравниваем версии
+	compareResult := CompareVersions(currentVersionClean, latestVersionClean)
+	if compareResult >= 0 {
+		// Нет обновления или текущая версия новее
+		debuglog.DebugLog("ShowUpdatePopupIfAvailable: No update available (current: %s, latest: %s)", currentVersion, latestVersion)
+		return
+	}
+
+	// Есть обновление - вызываем callback для показа попапа
+	debuglog.InfoLog("ShowUpdatePopupIfAvailable: Update available (current: %s, latest: %s), triggering popup callback", currentVersion, latestVersion)
+	if ac.UIService != nil && ac.UIService.ShowUpdatePopupFunc != nil {
+		ac.UIService.ShowUpdatePopupFunc(currentVersion, latestVersion)
+	} else {
+		debuglog.WarnLog("ShowUpdatePopupIfAvailable: ShowUpdatePopupFunc callback not set")
+	}
 }
