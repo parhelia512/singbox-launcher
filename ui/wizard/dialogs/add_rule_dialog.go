@@ -44,12 +44,17 @@ import (
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
-	wizardtabs "singbox-launcher/ui/wizard/tabs"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
 
+// CreateRulesTabFunc is a function type for creating the rules tab.
+// This is used to avoid circular import between dialogs and tabs packages.
+type CreateRulesTabFunc func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject
+
 // ShowAddRuleDialog opens a dialog for adding or editing a custom rule.
-func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int) {
+// createRulesTab is a function that creates the rules tab content (used for RefreshRulesTab).
+// This parameter is required to avoid circular import between dialogs and tabs packages.
+func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int, createRulesTab CreateRulesTabFunc) {
 	guiState := presenter.GUIState()
 	model := presenter.Model()
 
@@ -493,10 +498,9 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		// Mark as changed
 		presenter.MarkAsChanged()
 		// Refresh rules tab
-		refreshWrapper := func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
-			return wizardtabs.CreateRulesTab(p, ShowAddRuleDialog)
+		if createRulesTab != nil {
+			presenter.RefreshRulesTab(createRulesTab)
 		}
-		presenter.RefreshRulesTab(refreshWrapper)
 		delete(openDialogs, dialogKey)
 		updateRuleDialogOverlay()
 		dialogWindow.Close()
