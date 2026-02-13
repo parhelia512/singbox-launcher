@@ -10,6 +10,7 @@
 - **Wizard state save/load** — save, switch, and restore multiple configurations (`state.json`)
 - **New rule types** — *Processes* (select running apps) and *Custom JSON* (arbitrary rule body)
 - **Auto-parse on Rules tab** — outbounds always up-to-date when you switch tabs
+- **Automatic update check** — checks for new versions on startup, shows popup on first window display
 - **Wizard single-instance** + click-redirect overlay + tray "Open" focus
 - **Chat GPT button** — builds a prompt from ParserConfig and opens ChatGPT
 - **Per-selector last proxy** — remembers last proxy per group, shows live active outbound
@@ -30,6 +31,7 @@
 - **Сохранение/загрузка состояний визарда** — сохраняйте, переключайте и восстанавливайте несколько конфигураций (`state.json`)
 - **Новые типы правил** — *Processes* (выбор запущенных приложений) и *Custom JSON* (произвольное тело правила)
 - **Автопарсинг на вкладке Rules** — outbounds всегда актуальны при переключении вкладок
+- **Автоматическая проверка обновлений** — проверка новых версий при запуске, показ попапа при первом открытии окна
 - **Визард в одном экземпляре** + оверлей перенаправления кликов + фокус через "Open" в трее
 - **Кнопка Chat GPT** — формирует промпт из ParserConfig и открывает ChatGPT
 - **Per-selector last proxy** — запоминает последний прокси для каждой группы, показывает активный outbound в реальном времени
