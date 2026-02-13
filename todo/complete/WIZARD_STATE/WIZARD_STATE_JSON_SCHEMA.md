@@ -1,6 +1,5 @@
 # Схема файла state.json
 
-**⚠️ TODO:** Структура `parser_config` в текущей реализации использует обертку `ParserConfig` внутри (`parser_config.ParserConfig`). Нужно упростить структуру до формата `wizard_template.json` (без обертки `ParserConfig`), чтобы `parser_config` содержал поля `version`, `proxies`, `outbounds`, `parser` напрямую. Задача не выполнена.
 
 ## Общая структура
 
@@ -107,7 +106,7 @@
 
 **Примечание:** URL источников прокси хранятся в `parser_config.proxies` (поля `source` и `connections`). При восстановлении состояния URL'ы извлекаются из `parser_config.proxies` обратно в текстовый формат для отображения в UI.
 
-**⚠️ TODO:** Текущая реализация использует структуру с оберткой `ParserConfig` внутри `parser_config`. Нужно упростить структуру до формата `wizard_template.json` (без обертки `ParserConfig`). Задача не выполнена.
+
 
 ---
 
@@ -473,7 +472,6 @@
    - Это единственный источник ParserConfig
 3. **Извлечь SourceURLs** из `parser_config.proxies` (поля `source` и `connections`) для отображения в UI
 
-**⚠️ TODO:** Текущая реализация использует `parser_config.ParserConfig.proxies`. После упрощения структуры будет `parser_config.proxies`. Задача не выполнена.
 4. **Восстановить параметры конфигурации** из `config_params` (например, `route.final`, `experimental.clash_api.secret`)
 5. **Восстановить состояния правил:**
    - Для `selectable_rule_states`: маппинг по `label` с правилами из шаблона. Применяются `enabled` и `selected_outbound` из state.json
@@ -508,7 +506,6 @@
 - `id` должен быть валидным (только разрешённые символы, макс. 50 символов)
 - `parser_config` должен быть валидным JSON объектом с полями `version`, `proxies`, `outbounds`, `parser`
 
-**⚠️ TODO:** Текущая валидация проверяет наличие поля `ParserConfig` внутри `parser_config`. После упрощения структуры валидация должна проверять поля напрямую. Задача не выполнена.
 - `config_params` должен быть массивом
 - Каждый элемент `config_params` должен иметь поля `name` и `value` (оба строки)
 - `selectable_rule_states` должен быть массивом

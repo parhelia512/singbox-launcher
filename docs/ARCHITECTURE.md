@@ -240,6 +240,7 @@ singbox-launcher/
 │       │   │   │   - ValidateStateID()                       # Валидация ID состояния
 │       │   │   │   - MigrateSelectableRuleStates()           # Миграция v1 → v2 selectable rules
 │       │   │   │   - MigrateCustomRules()                    # Миграция v1 → v2 custom rules
+│       │   │   │   - NewWizardStateFile()                    # Фабрика для создания WizardStateFile из компонентов
 │       │   │   │   - StateFileName const                     # Имя файла состояния
 │       │   │   │
 │       │   └── wizard_model.go  # Модель + константы
@@ -420,7 +421,7 @@ singbox-launcher/
 │       ├── template/            # Работа с шаблонами конфигурации
 │       │   ├── loader.go        # Загрузка единого JSON-шаблона
 │       │   │   │   - LoadTemplateData()                        # Загрузка и разбор шаблона
-│       │   │   │   - GetTemplateFileName()                     # Имя файла шаблона (config_template.json)
+│       │   │   │   - GetTemplateFileName()                     # Имя файла шаблона (wizard_template.json)
 │       │   │   │   - GetTemplateURL()                          # URL для загрузки шаблона
 │       │   │   │   - TemplateData struct                       # Данные шаблона для визарда
 │       │   │   │   - TemplateSelectableRule struct             # Правило маршрутизации из шаблона
@@ -770,6 +771,14 @@ singbox-launcher/
   - `ShowSaveStateDialog()` - диалог сохранения состояния визарда
   - Ввод ID и комментария для нового состояния
   - Сохранение состояния через презентер
+- `get_free_dialog.go`:
+  - `ShowGetFreeVPNDialog()` - диалог загрузки конфигурации из get_free.json
+  - `downloadGetFreeJSON()` - скачивание get_free.json с GitHub
+  - `loadGetFreeJSON()` - загрузка и парсинг get_free.json
+  - `convertGetFreeDataToStateFile()` - преобразование в WizardStateFile
+  - Работа с упрощенным форматом: parser_config, selectable_rules (без дефолтов)
+  - Использует фабрику `wizardmodels.NewWizardStateFile()` для инкапсуляции логики
+  - Применяет конфигурацию через `presenter.LoadState()` (та же логика, что и для state.json)
 - `rule_dialog.go`:
   - `extractStringArray()` - извлечение массива строк
   - `parseLines()` - парсинг строк
@@ -842,8 +851,8 @@ singbox-launcher/
 
 **template/** - Работа с единым шаблоном конфигурации
 - `loader.go`:
-  - `LoadTemplateData()` - загрузка единого JSON-шаблона (`config_template.json`), парсинг секций, применение `params` по текущей платформе, фильтрация `selectable_rules` по `platforms`
-  - `GetTemplateFileName()` - возврат имени файла шаблона (`config_template.json`, единый для всех платформ)
+  - `LoadTemplateData()` - загрузка единого JSON-шаблона (`wizard_template.json`), парсинг секций, применение `params` по текущей платформе, фильтрация `selectable_rules` по `platforms`
+  - `GetTemplateFileName()` - возврат имени файла шаблона (`wizard_template.json`, единый для всех платформ)
   - `GetTemplateURL()` - возврат URL для загрузки шаблона с GitHub
   - `UnifiedTemplate` struct - структура JSON-шаблона (`parser_config`, `config`, `selectable_rules`, `params`)
   - `UnifiedSelectableRule` struct - правило в шаблоне (label, description, default, platforms, rule_set, rule/rules)
@@ -1092,7 +1101,7 @@ singbox-launcher/
 │  │  • Взаимодействие через Presenter                    │   │
 │  │                                                      │   │
 │  │  template/:                                          │   │
-│  │  • Загрузка единого JSON-шаблона (config_template.json) │  │
+│  │  • Загрузка единого JSON-шаблона (wizard_template.json) │  │
 │  │  • Парсинг секций: parser_config, config, selectable_rules, params │
 │  │  • Применение params по платформе (runtime.GOOS)     │   │
 │  │  • Фильтрация selectable_rules по platforms          │   │
@@ -1146,6 +1155,12 @@ UI (core_dashboard_tab.go)
       ├─> wizard/business/loader.go: LoadConfigFromFile()
       ├─> wizard/presentation/presenter_state.go: LoadState()
       │   └─> wizard/business/state_store.go: LoadCurrentState()
+      ├─> wizard/dialogs/get_free_dialog.go: ShowGetFreeVPNDialog()
+      │   ├─> downloadGetFreeJSON() - скачивание get_free.json с GitHub
+      │   ├─> loadGetFreeJSON() - загрузка и парсинг get_free.json
+      │   ├─> convertGetFreeDataToStateFile() - преобразование в WizardStateFile
+      │   │   └─> wizard/models/wizard_state_file.go: NewWizardStateFile() - фабрика
+      │   └─> presenter.LoadState() - применение конфигурации (та же логика, что и для state.json)
       ├─> wizard/presentation/presenter_async.go: TriggerParseForPreview()
       │   └─> wizard/business/parser.go: ParseAndPreview()
       ├─> wizard/presentation/presenter_async.go: UpdateTemplatePreviewAsync()

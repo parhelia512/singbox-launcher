@@ -264,8 +264,18 @@ func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *w
 	var previewTabItem *container.TabItem
 
 	// Use ShowAddRuleDialog from wizard/dialogs directly
-	showAddRuleDialogWrapper := func(p *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int) {
-		wizarddialogs.ShowAddRuleDialog(p, editRule, ruleIndex)
+	// We need to create a wrapper that includes createRulesTab to avoid circular import
+	var showAddRuleDialogWrapper func(*wizardpresentation.WizardPresenter, *wizardmodels.RuleState, int)
+	var createRulesTabWrapper func(*wizardpresentation.WizardPresenter) fyne.CanvasObject
+	
+	// Define createRulesTabWrapper first (it depends on showAddRuleDialogWrapper)
+	createRulesTabWrapper = func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
+		return wizardtabs.CreateRulesTab(p, showAddRuleDialogWrapper)
+	}
+	
+	// Define showAddRuleDialogWrapper (it depends on createRulesTabWrapper)
+	showAddRuleDialogWrapper = func(p *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int) {
+		wizarddialogs.ShowAddRuleDialog(p, editRule, ruleIndex, createRulesTabWrapper)
 	}
 
 	if templateTab := wizardtabs.CreateRulesTab(presenter, showAddRuleDialogWrapper); templateTab != nil {
