@@ -22,7 +22,7 @@ import (
 
 // SyncModelToGUI синхронизирует данные из модели в GUI.
 func (p *WizardPresenter) SyncModelToGUI() {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if p.guiState.SourceURLEntry != nil {
 			p.guiState.SourceURLEntry.SetText(p.model.SourceURLs)
 		}
@@ -36,17 +36,49 @@ func (p *WizardPresenter) SyncModelToGUI() {
 			p.guiState.FinalOutboundSelect.Refresh()
 		}
 	})
+
+	// Пересоздаем вкладку Rules, если она уже создана (часть синхронизации модели с GUI)
+	// Это обновит чекбоксы и селекторы правил в соответствии с текущим состоянием модели
+	if p.createRulesTabFunc != nil && p.guiState.Tabs != nil {
+		// Проверяем, существует ли вкладка Rules
+		for _, tabItem := range p.guiState.Tabs.Items {
+			if tabItem.Text == "Rules" {
+				p.RefreshRulesTabAfterLoadState()
+				break
+			}
+		}
+	}
 }
 
 // SyncGUIToModel синхронизирует данные из GUI в модель.
+// Устанавливает флаг изменений, если данные реально изменились.
 func (p *WizardPresenter) SyncGUIToModel() {
+	changed := false
+
 	if p.guiState.SourceURLEntry != nil {
-		p.model.SourceURLs = p.guiState.SourceURLEntry.Text
+		newValue := p.guiState.SourceURLEntry.Text
+		if p.model.SourceURLs != newValue {
+			p.model.SourceURLs = newValue
+			changed = true
+		}
 	}
 	if p.guiState.ParserConfigEntry != nil {
-		p.model.ParserConfigJSON = p.guiState.ParserConfigEntry.Text
+		newValue := p.guiState.ParserConfigEntry.Text
+		if p.model.ParserConfigJSON != newValue {
+			p.model.ParserConfigJSON = newValue
+			changed = true
+		}
 	}
 	if p.guiState.FinalOutboundSelect != nil {
-		p.model.SelectedFinalOutbound = p.guiState.FinalOutboundSelect.Selected
+		newValue := p.guiState.FinalOutboundSelect.Selected
+		if p.model.SelectedFinalOutbound != newValue {
+			p.model.SelectedFinalOutbound = newValue
+			changed = true
+		}
+	}
+
+	// Устанавливаем флаг изменений, если данные изменились
+	if changed {
+		p.MarkAsChanged()
 	}
 }

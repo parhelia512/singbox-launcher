@@ -26,7 +26,7 @@ import (
 // createRulesTab is a function that creates the rules tab content.
 func (p *WizardPresenter) RefreshRulesTab(createRulesTab func(*WizardPresenter) fyne.CanvasObject) {
 	if p.guiState.Tabs == nil {
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "RefreshRulesTab: Tabs is nil")
+		debuglog.ErrorLog("RefreshRulesTab: Tabs is nil")
 		return
 	}
 
@@ -40,7 +40,7 @@ func (p *WizardPresenter) RefreshRulesTab(createRulesTab func(*WizardPresenter) 
 	}
 
 	if rulesTabItem == nil {
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "RefreshRulesTab: Rules tab not found")
+		debuglog.ErrorLog("RefreshRulesTab: Rules tab not found")
 		return
 	}
 
@@ -55,4 +55,16 @@ func (p *WizardPresenter) RefreshRulesTab(createRulesTab func(*WizardPresenter) 
 // OpenRuleDialogs returns the map of open rule dialogs.
 func (p *WizardPresenter) OpenRuleDialogs() map[int]fyne.Window {
 	return p.openRuleDialogs
+}
+
+// RefreshRulesTabAfterLoadState пересоздает вкладку Rules.
+// Использует функцию создания вкладки, установленную через SetCreateRulesTabFunc.
+// Выполняется в UI потоке через UpdateUI для безопасного обновления виджетов.
+func (p *WizardPresenter) RefreshRulesTabAfterLoadState() {
+	if p.createRulesTabFunc == nil {
+		return
+	}
+	p.UpdateUI(func() {
+		p.RefreshRulesTab(p.createRulesTabFunc)
+	})
 }

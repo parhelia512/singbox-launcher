@@ -6,7 +6,7 @@
 //   - CloneOutbound - создает глубокую копию OutboundConfig для безопасного изменения
 //
 // LoadConfigFromFile выполняет:
-//  1. Проверку размера файла config.json (не должен превышать MaxJSONConfigSize)
+//  1. Проверку размера файла config.json (не должен превышать parser.MaxConfigFileSize)
 //  2. Извлечение @ParserConfig блока из config.json через parser.ExtractParserConfig()
 //  3. Если @ParserConfig не найден в config.json, использует ParserConfig из template
 //  4. Извлечение source URLs из @ParserConfig (если есть)
@@ -39,7 +39,6 @@ import (
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/internal/debuglog"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
-	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
 // LoadConfigFromFile loads configuration data from existing config.json.
@@ -51,16 +50,16 @@ func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardte
 	fileInfo, err := os.Stat(configPath)
 	if err == nil {
 		// Validate file size before loading
-		if fileInfo.Size() > wizardutils.MaxJSONConfigSize {
-			debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: config.json file size (%d bytes) exceeds maximum (%d bytes)", fileInfo.Size(), wizardutils.MaxJSONConfigSize)
-			return false, "", "", fmt.Errorf("config.json file is too large (%d bytes, maximum %d bytes). Please check the file size and content", fileInfo.Size(), wizardutils.MaxJSONConfigSize)
+		if err := ValidateSize(fileInfo.Size(), parser.MaxConfigFileSize, "config.json file"); err != nil {
+			debuglog.ErrorLog("ConfigWizard: %v", err)
+			return false, "", "", fmt.Errorf("config.json file is too large (%d bytes, maximum %d bytes). Please check the file size and content", fileInfo.Size(), parser.MaxConfigFileSize)
 		}
 
 		// config.json exists - try to extract ParserConfig from it
 		parserConfig, err := parser.ExtractParserConfig(configPath)
 		if err == nil {
 			// Successfully extracted ParserConfig from config.json - use it fully
-			debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Using ParserConfig from config.json")
+			debuglog.InfoLog( "ConfigWizard: Using ParserConfig from config.json")
 
 			// Check and add/update required outbounds from template
 			if templateData != nil && templateData.ParserConfig != "" {
@@ -70,7 +69,7 @@ func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardte
 			// Serialize ParserConfig
 			parserConfigJSON, err := SerializeParserConfig(parserConfig)
 			if err != nil {
-				debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Failed to serialize ParserConfig: %v", err)
+				debuglog.ErrorLog( "ConfigWizard: Failed to serialize ParserConfig: %v", err)
 				return false, "", "", fmt.Errorf("failed to serialize ParserConfig: %w", err)
 			}
 
@@ -87,27 +86,27 @@ func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardte
 				sourceURLs = strings.Join(lines, "\n")
 			}
 
-			debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Successfully loaded config from file")
+			debuglog.InfoLog( "ConfigWizard: Successfully loaded config from file")
 			return true, parserConfigJSON, sourceURLs, nil
 		}
 		// If failed to extract ParserConfig from config.json, return error (presenter will show dialog)
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Failed to extract ParserConfig from config.json: %v", err)
+		debuglog.ErrorLog( "ConfigWizard: Failed to extract ParserConfig from config.json: %v", err)
 		return false, "", "", fmt.Errorf("error in @ParserConfig block in config.json:\n\n%v\n\nCheck JSON syntax in @ParserConfig block (e.g., trailing commas, invalid quotes, unclosed brackets). Default template will be used", err)
 	}
 
 	// Fallback: If config.json doesn't exist or doesn't contain ParserConfig, use template
 	if templateData != nil && templateData.ParserConfig != "" {
-		debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Using ParserConfig from template (config.json not found or invalid)")
+		debuglog.InfoLog("ConfigWizard: Using ParserConfig from template (config.json not found or invalid)")
 		// Parse ParserConfig from template
 		var templateParserConfig config.ParserConfig
 		if err := json.Unmarshal([]byte(templateData.ParserConfig), &templateParserConfig); err != nil {
-			debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Failed to parse ParserConfig from template: %v", err)
+			debuglog.ErrorLog( "ConfigWizard: Failed to parse ParserConfig from template: %v", err)
 			return false, "", "", nil
 		}
 
 		parserConfigJSON, err := SerializeParserConfig(&templateParserConfig)
 		if err != nil {
-			debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Failed to serialize ParserConfig: %v", err)
+			debuglog.ErrorLog( "ConfigWizard: Failed to serialize ParserConfig: %v", err)
 			return false, "", "", fmt.Errorf("failed to serialize ParserConfig: %w", err)
 		}
 
@@ -115,7 +114,7 @@ func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardte
 	}
 
 	// Config doesn't exist and no template - leave default values
-	debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: config.json not found and no template available, using default values")
+	debuglog.InfoLog("ConfigWizard: config.json not found and no template available, using default values")
 	return false, "", "", nil
 }
 
@@ -142,14 +141,14 @@ func LoadConfigFromFile(fileService FileServiceInterface, templateData *wizardte
 func EnsureRequiredOutbounds(parserConfig *config.ParserConfig, templateParserConfigJSON string) {
 	// Validate template JSON size
 	if err := ValidateJSONSize([]byte(templateParserConfigJSON)); err != nil {
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Template ParserConfig JSON size validation failed: %v", err)
+		debuglog.ErrorLog( "ConfigWizard: Template ParserConfig JSON size validation failed: %v", err)
 		return
 	}
 
 	// STEP 1: Parse template to get list of outbounds with wizard.required > 0
 	var templateParserConfig config.ParserConfig
 	if err := json.Unmarshal([]byte(templateParserConfigJSON), &templateParserConfig); err != nil {
-		debuglog.Log("ERROR", debuglog.LevelError, debuglog.UseGlobal, "ConfigWizard: Failed to parse template ParserConfig for required outbounds: %v", err)
+		debuglog.ErrorLog( "ConfigWizard: Failed to parse template ParserConfig for required outbounds: %v", err)
 		return
 	}
 
@@ -185,10 +184,10 @@ func EnsureRequiredOutbounds(parserConfig *config.ParserConfig, templateParserCo
 				// Outbound missing in config.json → add from template
 				cloned := CloneOutbound(&templateOutbound)
 				parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds, *cloned)
-				debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Added required outbound '%s' (required=1) from template", tag)
+				debuglog.InfoLog( "ConfigWizard: Added required outbound '%s' (required=1) from template", tag)
 			} else {
 				// Outbound present in config.json → keep existing version (don't touch)
-				debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Required outbound '%s' (required=1) already exists, keeping existing", tag)
+				debuglog.InfoLog( "ConfigWizard: Required outbound '%s' (required=1) already exists, keeping existing", tag)
 			}
 		} else if required > 1 {
 			// LOGIC for required > 1: always overwrite from template, regardless of presence in config.json
@@ -197,11 +196,11 @@ func EnsureRequiredOutbounds(parserConfig *config.ParserConfig, templateParserCo
 			if exists {
 				// Outbound exists in config.json → replace via pointer with version from template
 				*existingOutbound = *cloned
-				debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Replaced outbound '%s' (required=%d) with template version (always overwrite)", tag, required)
+				debuglog.InfoLog( "ConfigWizard: Replaced outbound '%s' (required=%d) with template version (always overwrite)", tag, required)
 			} else {
 				// Outbound missing in config.json → add from template
 				parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds, *cloned)
-				debuglog.Log("INFO", debuglog.LevelInfo, debuglog.UseGlobal, "ConfigWizard: Added required outbound '%s' (required=%d) from template", tag, required)
+				debuglog.InfoLog( "ConfigWizard: Added required outbound '%s' (required=%d) from template", tag, required)
 			}
 		}
 	}

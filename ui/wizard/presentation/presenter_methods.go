@@ -19,13 +19,14 @@
 package presentation
 
 import (
+	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
 // SetCheckURLState управляет состоянием кнопки Check и прогресс-бара.
 func (p *WizardPresenter) SetCheckURLState(statusText string, buttonText string, progress float64) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		if statusText != "" && p.guiState.URLStatusLabel != nil {
 			p.guiState.URLStatusLabel.SetText(statusText)
 		}
@@ -74,7 +75,7 @@ func (p *WizardPresenter) SetCheckURLState(statusText string, buttonText string,
 
 // SetSaveState управляет состоянием кнопки Save и прогресс-бара.
 func (p *WizardPresenter) SetSaveState(buttonText string, progress float64) {
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		progressVisible := false
 		if progress < 0 {
 			if p.guiState.SaveProgress != nil {
@@ -121,6 +122,14 @@ func (p *WizardPresenter) SetSaveState(buttonText string, progress float64) {
 	})
 }
 
+// CancelSaveOperation отменяет текущую операцию сохранения.
+// Устанавливает SaveInProgress в false, что позволяет горутине сохранения завершиться.
+func (p *WizardPresenter) CancelSaveOperation() {
+	p.UpdateUI(func() {
+		p.guiState.SaveInProgress = false
+	})
+}
+
 // RefreshOutboundOptions обновляет опции outbound для всех правил.
 func (p *WizardPresenter) RefreshOutboundOptions() {
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
@@ -146,11 +155,9 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 	wizardbusiness.EnsureFinalSelected(p.model, options)
 
 	p.guiState.UpdatingOutboundOptions = true
-	defer func() {
-		p.guiState.UpdatingOutboundOptions = false
-	}()
+	debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions set to true")
 
-	SafeFyneDo(p.guiState.Window, func() {
+	p.UpdateUI(func() {
 		for _, ruleWidget := range p.guiState.RuleOutboundSelects {
 			if ruleWidget.RuleState == nil {
 				continue
@@ -170,21 +177,24 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 			p.guiState.FinalOutboundSelect.SetSelected(p.model.SelectedFinalOutbound)
 			p.guiState.FinalOutboundSelect.Refresh()
 		}
+
+		// Reset flag AFTER all SetSelected() calls to prevent callbacks from firing
+		// This must be done inside UpdateUI() because UpdateUI() executes asynchronously via fyne.Do
+		p.guiState.UpdatingOutboundOptions = false
+		debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions reset to false")
+
+		// Reset hasChanges flag after all SetSelected() callbacks have completed
+		// This ensures that any callbacks that fired during initialization don't set the flag
+		p.hasChanges = false
+		debuglog.DebugLog("RefreshOutboundOptions: hasChanges reset to false")
 	})
 }
 
 // InitializeTemplateState инициализирует состояние шаблона.
+// Создаёт RuleState для каждого selectable rule из шаблона (если ещё не загружены из state.json).
 func (p *WizardPresenter) InitializeTemplateState() {
 	if p.model.TemplateData == nil {
 		return
-	}
-	if p.model.TemplateSectionSelections == nil {
-		p.model.TemplateSectionSelections = make(map[string]bool)
-	}
-	for _, key := range p.model.TemplateData.SectionOrder {
-		if _, ok := p.model.TemplateSectionSelections[key]; !ok {
-			p.model.TemplateSectionSelections[key] = true
-		}
 	}
 
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
@@ -233,7 +243,7 @@ func (p *WizardPresenter) SetTemplatePreviewText(text string) {
 
 	// For large texts (>50KB) show loading message before insertion
 	if len(text) > 50000 {
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
 			if p.guiState.TemplatePreviewStatusLabel != nil {
 				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
@@ -241,13 +251,13 @@ func (p *WizardPresenter) SetTemplatePreviewText(text string) {
 		})
 
 		go func() {
-			SafeFyneDo(p.guiState.Window, func() {
+			p.UpdateUI(func() {
 				p.guiState.TemplatePreviewEntry.SetText(text)
 				p.model.TemplatePreviewNeedsUpdate = false
 			})
 		}()
 	} else {
-		SafeFyneDo(p.guiState.Window, func() {
+		p.UpdateUI(func() {
 			p.guiState.TemplatePreviewEntry.SetText(text)
 			p.model.TemplatePreviewNeedsUpdate = false
 		})

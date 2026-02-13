@@ -4,8 +4,7 @@
 //
 // Файл saver.go содержит функции для сохранения конфигурации:
 //   - SaveConfigWithBackup - сохранение конфигурации с созданием бэкапа и генерацией случайного secret для Clash API
-//   - NextBackupPath - генерация пути для следующего бэкапа (config-old.json, config-old-1.json и т.д.)
-//   - FileServiceAdapter - адаптер для services.FileService, предоставляющий доступ к путям конфигурации
+//   - FileServiceAdapter - адаптер для services.FileService, предоставляющий доступ к путям и файловым операциям
 //
 // SaveConfigWithBackup выполняет:
 //  1. Валидацию JSON конфигурации (включая поддержку JSONC с комментариями)
@@ -107,35 +106,13 @@ func SaveConfigWithBackup(fileService FileServiceInterface, configText string) (
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return "", err
 	}
-	if info, err := os.Stat(configPath); err == nil && !info.IsDir() {
-		backup := NextBackupPath(configPath)
-		if err := os.Rename(configPath, backup); err != nil {
-			return "", err
-		}
-	} else if err != nil && !os.IsNotExist(err) {
+	if err := services.BackupFile(configPath); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(configPath, []byte(finalText), 0o644); err != nil {
 		return "", err
 	}
 	return configPath, nil
-}
-
-// NextBackupPath генерирует путь для следующего бэкапа файла.
-func NextBackupPath(path string) string {
-	dir := filepath.Dir(path)
-	ext := filepath.Ext(path)
-	base := strings.TrimSuffix(filepath.Base(path), ext)
-	candidate := filepath.Join(dir, fmt.Sprintf("%s-old%s", base, ext))
-	if _, err := os.Stat(candidate); os.IsNotExist(err) {
-		return candidate
-	}
-	for i := 1; ; i++ {
-		candidate = filepath.Join(dir, fmt.Sprintf("%s-old-%d%s", base, i, ext))
-		if _, err := os.Stat(candidate); os.IsNotExist(err) {
-			return candidate
-		}
-	}
 }
 
 func generateRandomSecret(length int) string {
@@ -152,15 +129,13 @@ func generateRandomSecret(length int) string {
 func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 	// Skip validation if sing-box path is not provided
 	if singBoxPath == "" {
-		debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
-			"Skipping sing-box validation: singBoxPath is empty")
+		debuglog.DebugLog("Skipping sing-box validation: singBoxPath is empty")
 		return nil
 	}
 
 	// Check if sing-box executable exists
 	if _, err := os.Stat(singBoxPath); os.IsNotExist(err) {
-		debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
-			"Skipping sing-box validation: executable not found at %s", singBoxPath)
+		debuglog.DebugLog("Skipping sing-box validation: executable not found at %s", singBoxPath)
 		return nil
 	}
 
@@ -175,8 +150,7 @@ func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	debuglog.Log("ConfigValidator", debuglog.LevelVerbose, debuglog.UseGlobal,
-		"Running validation: %s check -c %s", singBoxPath, configPath)
+	debuglog.DebugLog("Running validation: %s check -c %s", singBoxPath, configPath)
 
 	// Run validation
 	err := cmd.Run()
@@ -191,16 +165,14 @@ func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 			errorMsg = err.Error()
 		}
 
-		debuglog.Log("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
-			"Config validation failed: %v", err)
-		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError, debuglog.UseGlobal,
+		debuglog.ErrorLog("Config validation failed: %v", err)
+		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError,
 			"Validation error output", errorMsg, 500)
 
 		return fmt.Errorf("sing-box config validation failed: %s", errorMsg)
 	}
 
-	debuglog.Log("ConfigValidator", debuglog.LevelInfo, debuglog.UseGlobal,
-		"Config validation passed successfully")
+	debuglog.InfoLog("Config validation passed successfully")
 
 	return nil
 }

@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/process"
@@ -66,7 +66,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 
 	// Check capabilities on Linux before starting
 	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
-		log.Printf("startSingBox: Capabilities check failed: %s", suggestion)
+		debuglog.WarnLog("startSingBox: Capabilities check failed: %s", suggestion)
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
 			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Linux capabilities required\n\n%s", suggestion))
 		}
@@ -76,9 +76,9 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	// Reload Clash API configuration from config.json before starting
 	// This ensures we pick up any changes made via wizard or manual config edits
 	if ac.APIService != nil {
-		log.Println("startSingBox: Reloading Clash API configuration...")
+		debuglog.InfoLog("startSingBox: Reloading Clash API configuration...")
 		if err := ac.APIService.ReloadClashAPIConfig(); err != nil {
-			log.Printf("startSingBox: Warning: Failed to reload Clash API config: %v", err)
+			debuglog.WarnLog("startSingBox: Warning: Failed to reload Clash API config: %v", err)
 			// Continue anyway - API might not be configured or config might be invalid
 		}
 	}
@@ -87,12 +87,12 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	if runtime.GOOS == "windows" {
 		interfaceName, err := config.GetTunInterfaceName(ac.FileService.ConfigPath)
 		if err != nil {
-			log.Printf("startSingBox: Failed to get TUN interface name from config: %v", err)
+			debuglog.WarnLog("startSingBox: Failed to get TUN interface name from config: %v", err)
 			// Continue anyway - maybe config doesn't have TUN
 		} else if interfaceName != "" {
-			log.Printf("startSingBox: Checking for existing TUN interface '%s'...", interfaceName)
+			debuglog.DebugLog("startSingBox: Checking for existing TUN interface '%s'...", interfaceName)
 			if err := svc.removeTunInterface(interfaceName); err != nil {
-				log.Printf("startSingBox: Warning: Failed to remove TUN interface: %v", err)
+				debuglog.WarnLog("startSingBox: Warning: Failed to remove TUN interface: %v", err)
 				// Non-critical error - sing-box might handle existing interface
 			}
 		}
@@ -100,11 +100,11 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 
 	// Reset API cache before starting
 	if ac.UIService != nil && ac.UIService.ResetAPIStateFunc != nil {
-		log.Println("startSingBox: Resetting API state cache...")
+		debuglog.InfoLog("startSingBox: Resetting API state cache...")
 		ac.UIService.ResetAPIStateFunc()
 	}
 
-	log.Println("startSingBox: Starting Sing-Box...")
+	debuglog.InfoLog("startSingBox: Starting Sing-Box...")
 	ac.SingboxCmd = exec.Command(ac.FileService.SingboxPath, "run", "-c", filepath.Base(ac.FileService.ConfigPath))
 	platform.PrepareCommand(ac.SingboxCmd)
 	ac.SingboxCmd.Dir = platform.GetBinDir(ac.FileService.ExecDir)
@@ -118,22 +118,22 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		ac.SingboxCmd.Stdout = ac.FileService.ChildLogFile
 		ac.SingboxCmd.Stderr = ac.FileService.ChildLogFile
 	} else {
-		log.Println("startSingBox: Warning: sing-box log file not available, output will not be logged.")
+		debuglog.WarnLog("startSingBox: Warning: sing-box log file not available, output will not be logged.")
 	}
 	if err := ac.SingboxCmd.Start(); err != nil {
 		ac.ShowStartupError(fmt.Errorf("failed to start Sing-Box process: %w", err))
-		log.Printf("startSingBox: Failed to start Sing-Box: %v", err)
+		debuglog.ErrorLog("startSingBox: Failed to start Sing-Box: %v", err)
 		return
 	}
 	ac.RunningState.Set(true)
 	ac.StoppedByUser = false
 	// Add log with PID
-	log.Printf("startSingBox: Sing-Box started. PID=%d", ac.SingboxCmd.Process.Pid)
+	debuglog.DebugLog("startSingBox: Sing-Box started. PID=%d", ac.SingboxCmd.Process.Pid)
 
 	// Start auto-loading proxies after sing-box is running
 	go func() {
 		// Small delay to ensure API is ready
-		time.Sleep(2 * time.Second)
+		<-time.After(2 * time.Second)
 		ac.AutoLoadProxies()
 	}()
 
@@ -156,13 +156,13 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 	// GOLDEN STANDARD: Check order to prevent all race conditions
 	// 1. First PID (is this my process?)
 	if ac.SingboxCmd == nil || ac.SingboxCmd.Process == nil || ac.SingboxCmd.Process.Pid != monitoredPID {
-		log.Printf("monitorSingBox: Process was restarted (PID changed from %d). This monitor is obsolete. Exiting.", monitoredPID)
+		debuglog.DebugLog("monitorSingBox: Process was restarted (PID changed from %d). This monitor is obsolete. Exiting.", monitoredPID)
 		return
 	}
 
 	// 2. Then StoppedByUser (did user stop it?)
 	if ac.StoppedByUser {
-		log.Println("monitorSingBox: Sing-Box exited as requested by user.")
+		debuglog.InfoLog("monitorSingBox: Sing-Box exited as requested by user.")
 		ac.ConsecutiveCrashAttempts = 0
 		ac.RunningState.Set(false)
 		ac.StoppedByUser = false // Reset flag for next start
@@ -171,7 +171,7 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 
 	// 3. Then err == nil (exited normally?)
 	if err == nil {
-		log.Println("monitorSingBox: Sing-Box exited gracefully (exit code 0).")
+		debuglog.InfoLog("monitorSingBox: Sing-Box exited gracefully (exit code 0).")
 		ac.ConsecutiveCrashAttempts = 0
 		ac.RunningState.Set(false)
 		return
@@ -183,7 +183,7 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 	ac.ConsecutiveCrashAttempts++
 
 	if ac.ConsecutiveCrashAttempts > restartAttempts {
-		log.Printf("monitorSingBox: Maximum restart attempts (%d) reached. Stopping auto-restart.", restartAttempts)
+		debuglog.DebugLog("monitorSingBox: Maximum restart attempts (%d) reached. Stopping auto-restart.", restartAttempts)
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
 			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Sing-Box failed to restart after %d attempts. Check sing-box.log for details.", restartAttempts))
 		}
@@ -192,43 +192,43 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 	}
 
 	// Try to restart
-	log.Printf("monitorSingBox: Sing-Box crashed: %v, attempting auto-restart (attempt %d/%d)", err, ac.ConsecutiveCrashAttempts, restartAttempts)
+	debuglog.WarnLog("monitorSingBox: Sing-Box crashed: %v, attempting auto-restart (attempt %d/%d)", err, ac.ConsecutiveCrashAttempts, restartAttempts)
 	if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
 		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Crash", fmt.Sprintf("Sing-Box crashed, restarting... (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts))
 	}
 
 	// Wait 2 seconds before restart
 	ac.CmdMutex.Unlock()
-	time.Sleep(2 * time.Second)
+	<-time.After(2 * time.Second)
 	svc.Start(true) // skipRunningCheck = true для автоперезапуска
 	ac.CmdMutex.Lock()
 
 	if ac.RunningState.IsRunning() {
-		log.Println("monitorSingBox: Sing-Box restarted successfully.")
+		debuglog.InfoLog("monitorSingBox: Sing-Box restarted successfully.")
 		currentAttemptCount := ac.ConsecutiveCrashAttempts
 		go func() {
 			select {
 			case <-ac.ctx.Done():
-				log.Println("monitorSingBox: Stability check cancelled (context cancelled)")
+				debuglog.InfoLog("monitorSingBox: Stability check cancelled (context cancelled)")
 				return
 			case <-time.After(stabilityThreshold):
 				ac.CmdMutex.Lock()
 				defer ac.CmdMutex.Unlock()
 
 				if ac.RunningState.IsRunning() && ac.ConsecutiveCrashAttempts == currentAttemptCount {
-					log.Printf("monitorSingBox: Process has been stable for %v. Resetting crash counter from %d to 0.", stabilityThreshold, ac.ConsecutiveCrashAttempts)
+					debuglog.DebugLog("monitorSingBox: Process has been stable for %v. Resetting crash counter from %d to 0.", stabilityThreshold, ac.ConsecutiveCrashAttempts)
 					ac.ConsecutiveCrashAttempts = 0
 					// Обновляем UI, чтобы счетчик исчез из статуса на вкладке Core
 					if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
 						ac.UIService.UpdateCoreStatusFunc()
 					}
 				} else {
-					log.Printf("monitorSingBox: Stability timer expired, but conditions for reset not met (running: %v, current attempts: %d, attempts at timer start: %d).", ac.RunningState.IsRunning(), ac.ConsecutiveCrashAttempts, currentAttemptCount)
+					debuglog.DebugLog("monitorSingBox: Stability timer expired, but conditions for reset not met (running: %v, current attempts: %d, attempts at timer start: %d).", ac.RunningState.IsRunning(), ac.ConsecutiveCrashAttempts, currentAttemptCount)
 				}
 			}
 		}()
 	} else {
-		log.Printf("monitorSingBox: Restart attempt %d failed.", ac.ConsecutiveCrashAttempts)
+		debuglog.DebugLog("monitorSingBox: Restart attempt %d failed.", ac.ConsecutiveCrashAttempts)
 	}
 }
 
@@ -249,14 +249,14 @@ func (svc *ProcessService) Stop() {
 	}
 
 	if ac.SingboxCmd == nil || ac.SingboxCmd.Process == nil {
-		log.Println("StopSingBoxProcess: Inconsistent state detected. Correcting state.")
+		debuglog.InfoLog("StopSingBoxProcess: Inconsistent state detected. Correcting state.")
 		ac.RunningState.Set(false)
 		ac.StoppedByUser = false
 		ac.CmdMutex.Unlock()
 		return
 	}
 
-	log.Println("stopSingBox: Attempting graceful shutdown...")
+	debuglog.InfoLog("stopSingBox: Attempting graceful shutdown...")
 	processToStop := ac.SingboxCmd.Process
 
 	// Разблокируем мьютекс перед отправкой сигнала, чтобы не блокировать
@@ -270,23 +270,23 @@ func (svc *ProcessService) Stop() {
 	}
 
 	if err != nil {
-		log.Printf("stopSingBox: Graceful signal failed: %v. Forcing kill.", err)
+		debuglog.WarnLog("stopSingBox: Graceful signal failed: %v. Forcing kill.", err)
 		if killErr := processToStop.Kill(); killErr != nil {
-			log.Printf("stopSingBox: Failed to kill Sing-Box process: %v", killErr)
+			debuglog.ErrorLog("stopSingBox: Failed to kill Sing-Box process: %v", killErr)
 		}
 	} else {
 		// Start watchdog timer that will kill the process if it doesn't close itself
-		log.Println("stopSingBox: Signal sent, starting watchdog timer...")
+		debuglog.InfoLog("stopSingBox: Signal sent, starting watchdog timer...")
 		go func(pid int) {
-			time.Sleep(gracefulShutdownTimeout)
+			<-time.After(gracefulShutdownTimeout)
 			pInfo, found, err := process.FindProcess(pid)
 			if err == nil && found {
 				_ = pInfo // pInfo is the process info; we only need to know it exists
-				log.Printf("stopSingBox watchdog: Process %d still running after timeout. Forcing kill.", pid)
+				debuglog.DebugLog("stopSingBox watchdog: Process %d still running after timeout. Forcing kill.", pid)
 				// Reliably kill the process and its child processes
 				_ = platform.KillProcessByPID(pid)
 			} else if err != nil {
-				log.Printf("stopSingBox watchdog: error checking process %d: %v", pid, err)
+				debuglog.DebugLog("stopSingBox watchdog: error checking process %d: %v", pid, err)
 			}
 		}(processToStop.Pid)
 	}
@@ -300,25 +300,64 @@ func (svc *ProcessService) CheckIfRunningAtStart() {
 
 // checkAndShowSingBoxRunningWarning checks if sing-box is running and shows warning dialog if found.
 // Returns true if process was found and warning was shown, false otherwise.
-func (svc *ProcessService) checkAndShowSingBoxRunningWarning(context string) bool {
-	ac := svc.ac
+func (svc *ProcessService) checkAndShowSingBoxRunningWarning(ctx string) bool {
 	found, foundPID := svc.isSingBoxProcessRunning()
 	if found {
-		log.Printf("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", context, foundPID)
-		ShowSingBoxAlreadyRunningWarningUtil(ac)
+		debuglog.DebugLog("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", ctx, foundPID)
+		if svc.ac.hasUI() {
+			dialogs.ShowProcessKillConfirmation(svc.ac.UIService.MainWindow, func() {
+				processName := platform.GetProcessNameForCheck()
+				_ = platform.KillProcess(processName)
+				svc.ac.RunningState.Set(false)
+			})
+		}
 		return true
 	}
-	log.Printf("%s: No sing-box process found", context)
+	debuglog.DebugLog("%s: No sing-box process found", ctx)
 	return false
+}
+
+// getTrackedPID safely gets the PID of the tracked sing-box process.
+func (svc *ProcessService) getTrackedPID() int {
+	svc.ac.CmdMutex.Lock()
+	defer svc.ac.CmdMutex.Unlock()
+	if svc.ac.SingboxCmd != nil && svc.ac.SingboxCmd.Process != nil {
+		return svc.ac.SingboxCmd.Process.Pid
+	}
+	return -1
+}
+
+// parseCSVLine parses a CSV line, handling quoted fields.
+func parseCSVLine(line string) []string {
+	var parts []string
+	var current strings.Builder
+	inQuotes := false
+
+	for _, r := range line {
+		switch r {
+		case '"':
+			inQuotes = !inQuotes
+		case ',':
+			if !inQuotes {
+				parts = append(parts, current.String())
+				current.Reset()
+			} else {
+				current.WriteRune(r)
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+	if current.Len() > 0 || len(parts) > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
 }
 
 // isSingBoxProcessRunning checks if sing-box process is running on the system.
 // Returns (isRunning, pid) tuple.
-// Uses getOurPID for thread-safe PID retrieval (with mutex protection).
 func (svc *ProcessService) isSingBoxProcessRunning() (bool, int) {
-	ac := svc.ac
-	// Use getOurPID for thread-safe access (same as original implementation)
-	ourPID := getOurPID(ac)
+	ourPID := svc.getTrackedPID()
 
 	if runtime.GOOS == "windows" {
 		// Use tasklist on Windows for better reliability
@@ -327,7 +366,7 @@ func (svc *ProcessService) isSingBoxProcessRunning() (bool, int) {
 		platform.PrepareCommand(cmd)
 		output, err := cmd.Output()
 		if err != nil {
-			log.Printf("isSingBoxProcessRunning: tasklist failed: %v", err)
+			debuglog.WarnLog("isSingBoxProcessRunning: tasklist failed: %v", err)
 			// Fallback to ps library
 			return svc.isSingBoxProcessRunningWithPS(ourPID)
 		}
@@ -346,16 +385,16 @@ func (svc *ProcessService) isSingBoxProcessRunning() (bool, int) {
 				if strings.EqualFold(name, processName) {
 					if pid, err := strconv.Atoi(pidStr); err == nil {
 						isOurProcess := (ourPID != -1 && pid == ourPID)
-						log.Printf("isSingBoxProcessRunning: Found process: PID=%d, name='%s' (our tracked PID=%d, isOurProcess=%v)",
+						debuglog.DebugLog("isSingBoxProcessRunning: Found process: PID=%d, name='%s' (our tracked PID=%d, isOurProcess=%v)",
 							pid, name, ourPID, isOurProcess)
 						return true, pid
 					} else {
-						log.Printf("isSingBoxProcessRunning: Failed to parse PID '%s': %v", pidStr, err)
+						debuglog.DebugLog("isSingBoxProcessRunning: Failed to parse PID '%s': %v", pidStr, err)
 					}
 				}
 			}
 		}
-		log.Printf("isSingBoxProcessRunning: tasklist found processes but none matched '%s'", processName)
+		debuglog.DebugLog("isSingBoxProcessRunning: tasklist found processes but none matched '%s'", processName)
 		return false, -1
 	}
 
@@ -367,7 +406,7 @@ func (svc *ProcessService) isSingBoxProcessRunning() (bool, int) {
 func (svc *ProcessService) isSingBoxProcessRunningWithPS(ourPID int) (bool, int) {
 	processes, err := process.GetProcesses()
 	if err != nil {
-		log.Printf("isSingBoxProcessRunningWithPS: error listing processes: %v", err)
+		debuglog.WarnLog("isSingBoxProcessRunningWithPS: error listing processes: %v", err)
 		return false, -1
 	}
 	processName := platform.GetProcessNameForCheck()
@@ -377,11 +416,11 @@ func (svc *ProcessService) isSingBoxProcessRunningWithPS(ourPID int) (bool, int)
 		if strings.EqualFold(execName, processName) {
 			foundPID := p.PID
 			isOurProcess := (ourPID != -1 && foundPID == ourPID)
-			log.Printf("isSingBoxProcessRunningWithPS: Found process: PID=%d, name='%s' (our tracked PID=%d, isOurProcess=%v)", foundPID, execName, ourPID, isOurProcess)
+			debuglog.DebugLog("isSingBoxProcessRunningWithPS: Found process: PID=%d, name='%s' (our tracked PID=%d, isOurProcess=%v)", foundPID, execName, ourPID, isOurProcess)
 			return true, foundPID
 		}
 	}
-	log.Printf("isSingBoxProcessRunningWithPS: No sing-box process found (checked %d processes)", len(processes))
+	debuglog.DebugLog("isSingBoxProcessRunningWithPS: No sing-box process found (checked %d processes)", len(processes))
 	return false, -1
 }
 
@@ -417,16 +456,16 @@ func (svc *ProcessService) removeTunInterface(interfaceName string) error {
 	// Check if interface exists
 	exists, err := svc.checkTunInterfaceExists(interfaceName)
 	if err != nil {
-		log.Printf("removeTunInterface: Failed to check interface existence: %v", err)
+		debuglog.WarnLog("removeTunInterface: Failed to check interface existence: %v", err)
 		// Continue anyway - try to remove it
 	}
 
 	if !exists {
-		log.Printf("removeTunInterface: Interface '%s' does not exist, nothing to remove", interfaceName)
+		debuglog.DebugLog("removeTunInterface: Interface '%s' does not exist, nothing to remove", interfaceName)
 		return nil
 	}
 
-	log.Printf("removeTunInterface: Removing existing TUN interface '%s'...", interfaceName)
+	debuglog.DebugLog("removeTunInterface: Removing existing TUN interface '%s'...", interfaceName)
 
 	// Remove the interface using netsh
 	cmd := exec.Command("netsh", "interface", "delete", "interface", fmt.Sprintf("name=%s", interfaceName))
@@ -435,12 +474,12 @@ func (svc *ProcessService) removeTunInterface(interfaceName string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Interface might be in use or already deleted
-		log.Printf("removeTunInterface: Failed to remove interface '%s': %v, output: %s",
+		debuglog.WarnLog("removeTunInterface: Failed to remove interface '%s': %v, output: %s",
 			interfaceName, err, string(output))
 		// This is not a critical error - sing-box might handle it
 		return fmt.Errorf("failed to remove interface: %w", err)
 	}
 
-	log.Printf("removeTunInterface: Successfully removed TUN interface '%s'", interfaceName)
+	debuglog.DebugLog("removeTunInterface: Successfully removed TUN interface '%s'", interfaceName)
 	return nil
 }

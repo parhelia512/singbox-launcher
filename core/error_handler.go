@@ -2,39 +2,26 @@ package core
 
 import (
 	"fmt"
-	"log"
 
+	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 )
 
-// ShowConfigError shows a config error banner in the UI
-func (ac *AppController) ShowConfigError(message string) {
-	if ac.UIService != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Configuration Error: %s", message))
+// showErrorUI logs the error and shows it in the UI if available.
+// category is used as a log prefix (e.g. "StartupError", "ParserError").
+func (ac *AppController) showErrorUI(category string, err error) {
+	debuglog.ErrorLog("%s: %v", category, err)
+	if ac.hasUI() {
+		dialogs.ShowError(ac.UIService.MainWindow, err)
 	}
-	log.Printf("ConfigError: %s", message)
 }
 
-// ShowStartupError shows an error when sing-box fails to start
+// ShowStartupError shows an error when sing-box fails to start.
 func (ac *AppController) ShowStartupError(err error) {
-	if ac.UIService != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Failed to start sing-box:\n\n%s\n\nPlease check:\n1. config.json is valid\n2. sing-box executable exists\n3. Check logs for details", err.Error()))
-	}
-	log.Printf("StartupError: %v", err)
+	ac.showErrorUI("StartupError", fmt.Errorf("Failed to start sing-box:\n\n%s\n\nPlease check:\n1. config.json is valid\n2. sing-box executable exists\n3. Check logs for details", err.Error()))
 }
 
-// ShowParserError shows an error when parser fails
+// ShowParserError shows an error when parser fails.
 func (ac *AppController) ShowParserError(err error) {
-	if ac.UIService != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Parser failed:\n\n%s\n\nPlease check:\n1. Subscription URL is valid\n2. Network connection\n3. Check parser.log for details", err.Error()))
-	}
-	log.Printf("ParserError: %v", err)
-}
-
-// ShowConfigValidationError shows an error when config validation fails
-func (ac *AppController) ShowConfigValidationError(err error) {
-	if ac.UIService != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Config validation failed:\n\n%s\n\nPlease check config.json syntax and required fields.", err.Error()))
-	}
-	log.Printf("ConfigValidationError: %v", err)
+	ac.showErrorUI("ParserError", fmt.Errorf("Parser failed:\n\n%s\n\nPlease check:\n1. Subscription URL is valid\n2. Network connection\n3. Check parser.log for details", err.Error()))
 }

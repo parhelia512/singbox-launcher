@@ -5,14 +5,12 @@ package platform
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"singbox-launcher/internal/constants"
+	"singbox-launcher/internal/debuglog"
 )
 
 // GetExecutableNames returns platform-specific executable names
@@ -55,20 +53,6 @@ func SendCtrlBreak(pid int) error {
 func PrepareCommand(cmd *exec.Cmd) {
 	// No special attributes needed for Linux
 	// Capabilities should be set on the sing-box binary itself
-}
-
-// GetRequiredFiles returns platform-specific required files
-func GetRequiredFiles(execDir string) []struct {
-	Name string
-	Path string
-} {
-	return []struct {
-		Name string
-		Path string
-	}{
-		{"Sing-Box", filepath.Join(execDir, constants.BinDirName, constants.SingBoxExecName)},
-		{"Config.json", filepath.Join(execDir, constants.BinDirName, constants.ConfigFileName)},
-	}
 }
 
 // GetProcessNameForCheck returns the process name to check for running instances
@@ -136,16 +120,16 @@ func CheckAndSuggestCapabilities(singboxPath string) string {
 // GetSystemSOCKSProxy returns system SOCKS proxy settings if enabled
 // On Linux, this is not currently implemented
 func GetSystemSOCKSProxy() (host string, port int, enabled bool, err error) {
-	log.Printf("platform: GetSystemSOCKSProxy is not implemented on Linux")
+	debuglog.DebugLog("platform: GetSystemSOCKSProxy is not implemented on Linux")
 	return "", 0, false, fmt.Errorf("GetSystemSOCKSProxy is not implemented on Linux")
 }
 
 // SetupDockReopenHandler is a no-op on Linux (Dock is macOS-specific)
 func SetupDockReopenHandler(showWindowCallback func()) {
-	log.Printf("platform: SetupDockReopenHandler is not implemented on Linux (Dock is macOS-specific)")
+	debuglog.DebugLog("platform: SetupDockReopenHandler is not implemented on Linux (Dock is macOS-specific)")
 }
 
 // CleanupDockReopenHandler is a no-op on Linux (Dock is macOS-specific)
 func CleanupDockReopenHandler() {
-	log.Printf("platform: CleanupDockReopenHandler is not implemented on Linux (Dock is macOS-specific)")
+	debuglog.DebugLog("platform: CleanupDockReopenHandler is not implemented on Linux (Dock is macOS-specific)")
 }

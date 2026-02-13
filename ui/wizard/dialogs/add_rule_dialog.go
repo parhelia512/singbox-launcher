@@ -44,12 +44,17 @@ import (
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
-	wizardtabs "singbox-launcher/ui/wizard/tabs"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
 
+// CreateRulesTabFunc is a function type for creating the rules tab.
+// This is used to avoid circular import between dialogs and tabs packages.
+type CreateRulesTabFunc func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject
+
 // ShowAddRuleDialog opens a dialog for adding or editing a custom rule.
-func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int) {
+// createRulesTab is a function that creates the rules tab content (used for RefreshRulesTab).
+// This parameter is required to avoid circular import between dialogs and tabs packages.
+func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int, createRulesTab CreateRulesTabFunc) {
 	guiState := presenter.GUIState()
 	model := presenter.Model()
 
@@ -196,50 +201,55 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 
 		// Load IP, domain (list/regex), process, or custom JSON
+		ruleData := editRule.Rule.Rule
 		hasIP := false
 		hasDomain := false
 		hasDomainRegex := false
 		hasProc := false
-		if ipVal, ok := editRule.Rule.Raw["ip_cidr"]; ok {
-			hasIP = true
-			ruleType = RuleTypeIP
-			if ips := ExtractStringArray(ipVal); len(ips) > 0 {
-				ipEntry.SetText(strings.Join(ips, "\n"))
-			}
-		} else if drVal, ok := editRule.Rule.Raw["domain_regex"]; ok {
-			hasDomainRegex = true
-			ruleType = RuleTypeDomain
-			if s, ok := drVal.(string); ok {
-				domainRegexInitial = s
-				domainRegexInitialSet = true
-			}
-		} else if domainVal, ok := editRule.Rule.Raw["domain"]; ok {
-			hasDomain = true
-			ruleType = RuleTypeDomain
-			if domains := ExtractStringArray(domainVal); len(domains) > 0 {
-				urlEntry.SetText(strings.Join(domains, "\n"))
-			}
-		} else if procVal, ok := editRule.Rule.Raw[ProcessKey]; ok {
-			hasProc = true
-			ruleType = RuleTypeProcess
-			if procs := ExtractStringArray(procVal); len(procs) > 0 {
-				processesSelected = dedupeProcessStrings(procs)
-				sortProcessStrings(processesSelected)
+		if ruleData != nil {
+			if ipVal, ok := ruleData["ip_cidr"]; ok {
+				hasIP = true
+				ruleType = RuleTypeIP
+				if ips := ExtractStringArray(ipVal); len(ips) > 0 {
+					ipEntry.SetText(strings.Join(ips, "\n"))
+				}
+			} else if drVal, ok := ruleData["domain_regex"]; ok {
+				hasDomainRegex = true
+				ruleType = RuleTypeDomain
+				if s, ok := drVal.(string); ok {
+					domainRegexInitial = s
+					domainRegexInitialSet = true
+				}
+			} else if domainVal, ok := ruleData["domain"]; ok {
+				hasDomain = true
+				ruleType = RuleTypeDomain
+				if domains := ExtractStringArray(domainVal); len(domains) > 0 {
+					urlEntry.SetText(strings.Join(domains, "\n"))
+				}
+			} else if procVal, ok := ruleData[ProcessKey]; ok {
+				hasProc = true
+				ruleType = RuleTypeProcess
+				if procs := ExtractStringArray(procVal); len(procs) > 0 {
+					processesSelected = dedupeProcessStrings(procs)
+					sortProcessStrings(processesSelected)
+				}
 			}
 		}
 
 		if !hasIP && !hasDomain && !hasDomainRegex && !hasProc {
-			// Custom rule: use Raw (minus outbound) as JSON content
+			// Custom rule: use Rule data (minus outbound) as JSON content
 			ruleType = RuleTypeCustom
-			temp := make(map[string]interface{})
-			for k, v := range editRule.Rule.Raw {
-				if k == "outbound" {
-					continue
+			if ruleData != nil {
+				temp := make(map[string]interface{})
+				for k, v := range ruleData {
+					if k == "outbound" {
+						continue
+					}
+					temp[k] = v
 				}
-				temp[k] = v
-			}
-			if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
-				customEntry.SetText(string(b))
+				if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
+					customEntry.SetText(string(b))
+				}
 			}
 		}
 	}
@@ -461,7 +471,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		// Save or update rule
 		if isEdit {
 			editRule.Rule.Label = label
-			editRule.Rule.Raw = ruleRaw
+			editRule.Rule.Rule = ruleRaw
 			editRule.Rule.HasOutbound = true
 			editRule.Rule.DefaultOutbound = selectedOutbound
 			editRule.SelectedOutbound = selectedOutbound
@@ -469,7 +479,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			newRule := &wizardmodels.RuleState{
 				Rule: wizardtemplate.TemplateSelectableRule{
 					Label:           label,
-					Raw:             ruleRaw,
+					Rule:            ruleRaw,
 					HasOutbound:     true,
 					DefaultOutbound: selectedOutbound,
 					IsDefault:       true,
@@ -485,11 +495,12 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 
 		// Set flag for preview recalculation
 		model.TemplatePreviewNeedsUpdate = true
+		// Mark as changed
+		presenter.MarkAsChanged()
 		// Refresh rules tab
-		refreshWrapper := func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
-			return wizardtabs.CreateRulesTab(p, ShowAddRuleDialog)
+		if createRulesTab != nil {
+			presenter.RefreshRulesTab(createRulesTab)
 		}
-		presenter.RefreshRulesTab(refreshWrapper)
 		delete(openDialogs, dialogKey)
 		updateRuleDialogOverlay()
 		dialogWindow.Close()

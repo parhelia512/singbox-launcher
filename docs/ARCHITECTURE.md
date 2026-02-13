@@ -71,8 +71,18 @@ singbox-launcher/
 │   ├── wintun_downloader.go   # Загрузка wintun.dll
 │   │   │   - DownloadWintunDLL()                     # Загрузка wintun.dll
 │   │   │
+│   ├── tray_menu.go           # Меню системного трея
+│   │   │   - CreateTrayMenu()                # Создание меню трея
+│   │   │   - addHideDockMenuItem()           # Скрытие Dock (macOS)
+│   │   │
+│   ├── auto_update.go         # Автообновление конфигурации
+│   │   │   - startAutoUpdateLoop()           # Цикл автообновления
+│   │   │   - shouldAutoUpdate()              # Проверка необходимости обновления
+│   │   │   - attemptAutoUpdateWithRetries()  # Обновление с ретраями
+│   │   │   - resumeAutoUpdate()              # Возобновление автообновления
+│   │   │
 │   ├── error_handler.go       # Обработка ошибок
-│   │   │   - (утилиты обработки ошибок)
+│   │   │   - showErrorUI()                   # Единый метод отображения ошибок
 │   │   │
 │   ├── network_utils.go       # Сетевые утилиты
 │   │   │   - CreateHTTPClient()                     # Создание HTTP клиента
@@ -107,6 +117,8 @@ singbox-launcher/
 │   │       │   - OpenLogFileWithRotation()          # Открытие лог-файла с ротацией
 │   │       │   - CheckAndRotateLogFile()            # Проверка и ротация лог-файла
 │   │       │   - GetMainLogFile()                    # Получение основного лог-файла
+│   │       │   - BackupPath()                        # Путь для бэкапа файла (.old)
+│   │       │   - BackupFile()                        # Создание бэкапа с ротацией (макс 1 старый)
 │   │       │
 │   └── config/                # Работа с конфигурацией
 │       ├── models.go           # Модели данных конфигурации
@@ -135,7 +147,7 @@ singbox-launcher/
 │       │   │   - UpdateConfigFromSubscriptions()        # Обновление из подписок
 │       │   │   - writeToConfig()                        # Запись в config.json
 │       │   │
-│       ├── parser/             # Парсинг @ParserConfig блока
+│       ├── parser/             # Парсинг ParserConfig блока
 │       │   ├── factory.go      # Фабрика ParserConfig
 │       │   │   │   - ExtractParserConfig()                # Извлечение ParserConfig
 │       │   │   │   - NormalizeParserConfig()               # Нормализация конфигурации
@@ -220,6 +232,17 @@ singbox-launcher/
 │       │   │   │   - GetEffectiveOutbound()             # Получение эффективного outbound
 │       │   │   │   - EnsureDefaultOutbound()            # Установка дефолтного outbound
 │       │   │   │
+│       │   ├── wizard_state_file.go # Модель состояния визарда
+│       │   │   │   - WizardStateFile struct                  # Сериализуемое состояние визарда (version 2)
+│       │   │   │   - PersistedSelectableRuleState struct     # Упрощённое состояние правила (label, enabled, selected_outbound)
+│       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила
+│       │   │   │   - WizardStateMetadata struct              # Метаданные состояния
+│       │   │   │   - ValidateStateID()                       # Валидация ID состояния
+│       │   │   │   - MigrateSelectableRuleStates()           # Миграция v1 → v2 selectable rules
+│       │   │   │   - MigrateCustomRules()                    # Миграция v1 → v2 custom rules
+│       │   │   │   - NewWizardStateFile()                    # Фабрика для создания WizardStateFile из компонентов
+│       │   │   │   - StateFileName const                     # Имя файла состояния
+│       │   │   │
 │       │   └── wizard_model.go  # Модель + константы
 │       │       │   - DefaultOutboundTag                 # Дефолтный outbound
 │       │       │   - RejectActionName                   # Действие reject
@@ -229,10 +252,12 @@ singbox-launcher/
 │       │   │   │   - WizardPresenter struct             # Презентер визарда
 │       │   │   │   - NewWizardPresenter()               # Создание презентера
 │       │   │   │   - SafeFyneDo()                       # Безопасный вызов Fyne из горутин
+│       │   │   │   - SetCreateRulesTabFunc()            # Установка функции создания вкладки Rules (DI)
+│       │   │   │   - createRulesTabFunc                 # Функция создания вкладки Rules (хранится для синхронизации)
 │       │   │   │
 │       │   ├── gui_state.go    # GUIState
 │       │   │   │   - GUIState struct                    # Состояние GUI (только виджеты)
-│       │   │   │   - RuleWidget struct                  # Виджет правила
+│       │   │   │   - RuleWidget struct                  # Виджет правила (Select, Checkbox, RuleState)
 │       │   │   │
 │       │   ├── presenter_methods.go # Методы управления UI
 │       │   │   │   - SetCheckURLState()                 # Состояние кнопки Check
@@ -250,10 +275,31 @@ singbox-launcher/
 │       │   │   │   - UpdateTemplatePreviewAsync()       # Обновление preview
 │       │   │   │
 │       │   ├── presenter_save.go # Сохранение конфигурации
-│       │   │   │   - SaveConfig()                       # Сохранение конфигурации
+│       │   │   │   - SaveConfig()                       # Сохранение конфигурации (основная функция)
+│       │   │   │   - validateSaveInput()               # Валидация входных данных
+│       │   │   │   - checkSaveOperationState()         # Проверка состояния операции
+│       │   │   │   - executeSaveOperation()            # Выполнение операции сохранения
+│       │   │   │   - finalizeSaveOperation()           # Завершение операции
+│       │   │   │   - waitForParsingIfNeeded()          # Ожидание парсинга при необходимости
+│       │   │   │   - buildConfigForSave()              # Построение конфигурации
+│       │   │   │   - saveConfigFile()                  # Сохранение файла с бэкапом
+│       │   │   │   - validateConfigFile()              # Валидация конфига через sing-box
+│       │   │   │   - saveStateAndShowSuccessDialog()   # Сохранение state и показ диалога
+│       │   │   │   - showSaveSuccessDialog()           # Диалог успешного сохранения
+│       │   │   │   - completeSaveOperation()           # Завершение операции с задержкой
+│       │   │   │
+│       │   ├── presenter_state.go # Управление состояниями визарда
+│       │   │   │   - CreateStateFromModel()             # Создание состояния из модели
+│       │   │   │   - SaveCurrentState()                 # Сохранение текущего состояния
+│       │   │   │   - SaveStateAs()                      # Сохранение состояния под ID
+│       │   │   │   - LoadState()                       # Загрузка состояния в модель
+│       │   │   │   - HasUnsavedChanges()                # Проверка несохранённых изменений
+│       │   │   │   - MarkAsChanged()                    # Установка флага изменений
+│       │   │   │   - MarkAsSaved()                      # Сброс флага изменений
 │       │   │   │
 │       │   ├── presenter_rules.go # Работа с правилами
 │       │   │   │   - RefreshRulesTab()                  # Обновление таба правил
+│       │   │   │   - RefreshRulesTabAfterLoadState()    # Пересоздание вкладки Rules после LoadState (в UI-потоке)
 │       │   │   │   - OpenRuleDialogs()                  # Открытые диалоги
 │       │   │   │
 │       │   ├── presenter_ui_updater.go # Реализация UIUpdater
@@ -269,8 +315,18 @@ singbox-launcher/
 │       │   │   │   - createSourceTab()                       # Создание вкладки Sources & ParserConfig
 │       │   │   │
 │       │   ├── rules_tab.go    # Вкладка правил
-│       │   │   │   - createTemplateTab()                     # Создание вкладки правил
-│       │   │   │   - createRulesScroll()                     # Создание списка правил
+│       │   │   │   - CreateRulesTab()                        # Создание вкладки правил (основная функция)
+│       │   │   │   - createSelectableRulesUI()               # UI для selectable rules из шаблона
+│       │   │   │   - createCustomRulesUI()                  # UI для пользовательских правил
+│       │   │   │   - createFinalOutboundSelect()           # Селектор финального outbound
+│       │   │   │   - createOutboundSelectorForSelectableRule() # Селектор outbound для правила
+│       │   │   │   - createSelectableRuleCheckbox()         # Checkbox для selectable rule
+│       │   │   │   - createOutboundSelectorForCustomRule()  # Селектор outbound для custom rule
+│       │   │   │   - createCustomRuleActionButtons()        # Кнопки редактирования/удаления
+│       │   │   │   - deleteCustomRule()                     # Удаление пользовательского правила
+│       │   │   │   - createAddRuleButton()                  # Кнопка добавления правила
+│       │   │   │   - buildRulesTabContainer()               # Финальный контейнер таба
+│       │   │   │   - CreateRulesScroll()                    # Создание прокручиваемого списка правил
 │       │   │   │
 │       │   └── preview_tab.go  # Вкладка превью
 │       │       │   - createPreviewTab()                      # Создание вкладки превью
@@ -279,6 +335,12 @@ singbox-launcher/
 │       │   ├── add_rule_dialog.go  # Диалог добавления правила
 │       │   │   │   - ShowAddRuleDialog()                     # Показать диалог добавления правила
 │       │   │   │
+│       │   ├── load_state_dialog.go # Диалог загрузки состояния
+│       │   │   │   - ShowLoadStateDialog()                   # Показать диалог загрузки состояния
+│       │   │   │
+│       │   ├── save_state_dialog.go # Диалог сохранения состояния
+│       │   │   │   - ShowSaveStateDialog()                   # Показать диалог сохранения состояния
+│       │   │   │
 │       │   └── rule_dialog.go      # Утилиты для диалогов
 │       │       │   - extractStringArray()                    # Извлечение массива строк
 │       │       │   - parseLines()                            # Парсинг строк
@@ -286,8 +348,26 @@ singbox-launcher/
 │       ├── business/           # Бизнес-логика (без GUI зависимостей)
 │       │   ├── parser.go       # Парсинг URL и конфигурации
 │       │   │   │   - ParseAndPreview()                       # Парсинг и превью
-│       │   │   │   - CheckURL()                              # Проверка URL
-│       │   │   │   - ApplyURLToParserConfig()                # Применение URL
+│       │   │   │   - CheckURL()                              # Проверка URL (основная функция)
+│       │   │   │   - initializeCheckURLUI()                 # Инициализация UI для проверки
+│       │   │   │   - processAllInputLines()                 # Обработка всех входных строк
+│       │   │   │   - processInputLine()                     # Обработка одной строки
+│       │   │   │   - processSubscriptionURL()               # Обработка subscription URL
+│       │   │   │   - parseSubscriptionContent()            # Парсинг содержимого подписки
+│       │   │   │   - processDirectLink()                    # Обработка прямой ссылки
+│       │   │   │   - buildAndDisplayCheckResult()           # Построение и отображение результата
+│       │   │   │   - buildErrorResult()                     # Сообщение об ошибке
+│       │   │   │   - buildSuccessResult()                    # Сообщение об успехе
+│       │   │   │   - ApplyURLToParserConfig()                # Применение URL (основная функция)
+│       │   │   │   - validateApplyURLInput()                # Валидация входных данных
+│       │   │   │   - parseParserConfigForApply()            # Парсинг ParserConfig
+│       │   │   │   - classifyInputLines()                   # Классификация строк на подписки/connections
+│       │   │   │   - preserveExistingProperties()           # Сохранение существующих свойств
+│       │   │   │   - createSubscriptionProxies()            # Создание ProxySource для подписок
+│       │   │   │   - restoreTagPrefixAndPostfix()           # Восстановление тегов
+│       │   │   │   - connectionsMatch()                    # Сравнение connections
+│       │   │   │   - matchOrCreateConnectionProxy()          # Сопоставление или создание connection proxy
+│       │   │   │   - updateAndSerializeParserConfig()       # Обновление и сериализация
 │       │   │   │
 │       │   ├── generator.go    # Генерация конфигурации
 │       │   │   │   - BuildTemplateConfig()                   # Построение конфигурации
@@ -320,6 +400,16 @@ singbox-launcher/
 │       │   │   │   - EnsureDefaultAvailableOutbounds()         # Обеспечение дефолтных
 │       │   │   │   - EnsureFinalSelected()                     # Обеспечение выбранного final
 │       │   │   │
+│       │   ├── state_store.go  # Управление состояниями визарда
+│       │   │   │   - NewStateStore()                           # Создание StateStore
+│       │   │   │   - SaveWizardState()                         # Сохранение состояния по ID
+│       │   │   │   - SaveCurrentState()                        # Сохранение текущего состояния
+│       │   │   │   - LoadWizardState()                         # Загрузка состояния по ID
+│       │   │   │   - LoadCurrentState()                        # Загрузка текущего состояния
+│       │   │   │   - ListWizardStates()                        # Список всех состояний
+│       │   │   │   - ValidateStateID()                         # Валидация ID состояния
+│       │   │   │   - StateStore struct                         # Хранилище состояний
+│       │   │   │
 │       │   ├── ui_updater.go   # Интерфейс UIUpdater
 │       │   │   │   - UIUpdater interface                       # Интерфейс обновления GUI
 │       │   │   │
@@ -331,11 +421,21 @@ singbox-launcher/
 │       │       │   - TemplateLoader interface                  # Интерфейс TemplateLoader
 │       │       │   - DefaultTemplateLoader                     # Реализация по умолчанию
 │       │       │
-│       ├── template/            # Работа с шаблонами
-│       │   └── loader.go        # Загрузка шаблонов
-│       │       │   - LoadTemplateData()                        # Загрузка данных шаблона
-│       │       │   - GetTemplateURL()                          # Получение URL шаблона
-│       │       │   - TemplateData struct                       # Структура данных шаблона
+│       ├── template/            # Работа с шаблонами конфигурации
+│       │   ├── loader.go        # Загрузка единого JSON-шаблона
+│       │   │   │   - LoadTemplateData()                        # Загрузка и разбор шаблона
+│       │   │   │   - GetTemplateFileName()                     # Имя файла шаблона (wizard_template.json)
+│       │   │   │   - GetTemplateURL()                          # URL для загрузки шаблона
+│       │   │   │   - TemplateData struct                       # Данные шаблона для визарда
+│       │   │   │   - TemplateSelectableRule struct             # Правило маршрутизации из шаблона
+│       │   │   │   - UnifiedTemplate struct                    # Структура JSON-шаблона
+│       │   │   │   - UnifiedSelectableRule struct              # Правило в шаблоне
+│       │   │   │   - UnifiedTemplateParam struct               # Платформенный параметр
+│       │   │   │
+│       │   └── rule_utils.go    # Утилиты для работы с правилами
+│       │       │   - HasOutbound()                             # Проверка наличия outbound
+│       │       │   - GetDefaultOutbound()                      # Извлечение outbound по умолчанию
+│       │       │   - CloneRuleRaw()                            # Глубокое копирование правила
 │       │       │
 │       └── utils/              # Утилиты
 │           ├── comparison.go    # Сравнение структур
@@ -471,13 +571,13 @@ singbox-launcher/
 - `UpdateConfigFromSubscriptions()` - обновление config.json из подписок
 - `writeToConfig()` - запись конфигурации в файл
 
-**parser/** - Работа с @ParserConfig блоком
+**parser/** - Работа с ParserConfig блоком
 - `factory.go`:
   - `ExtractParserConfig()` - извлечение ParserConfig из config.json
   - `NormalizeParserConfig()` - нормализация конфигурации
   - `LogDuplicateTagStatistics()` - логирование статистики дубликатов
 - `migrator.go`:
-  - Миграция версий @ParserConfig (v1 → v2 → v3 → v4)
+  - Миграция версий ParserConfig (v1 → v2 → v3 → v4)
 - `block_extractor.go`:
   - `ExtractParserConfigBlock()` - извлечение блока из JSON
 
@@ -575,6 +675,15 @@ singbox-launcher/
 - `rule_state_utils.go`:
   - `GetEffectiveOutbound()` - получение эффективного outbound для правила
   - `EnsureDefaultOutbound()` - установка дефолтного outbound
+- `wizard_state_file.go`:
+  - `WizardStateFile` struct - сериализуемое состояние визарда (version 2, метаданные, ParserConfig, ConfigParams, правила)
+  - `PersistedSelectableRuleState` struct - упрощённое состояние правила из шаблона (только label, enabled, selected_outbound)
+  - `PersistedCustomRule` struct - полное определение пользовательского правила (label, type, rule, enabled и т.д.)
+  - `WizardStateMetadata` struct - метаданные состояния для списка
+  - `ValidateStateID()` - валидация ID состояния
+  - `MigrateSelectableRuleStates()` - миграция selectable_rule_states из формата v1 (вложенный rule) в v2 (плоский)
+  - `MigrateCustomRules()` - миграция custom_rules из формата v1 (rule.raw) в v2 (rule на верхнем уровне)
+  - `StateFileName` const - имя файла текущего состояния
 - `wizard_model.go`:
   - `WizardModel` - основная модель данных
   - `DefaultOutboundTag`, `RejectActionName`, `RejectActionMethod` - константы для правил
@@ -586,7 +695,7 @@ singbox-launcher/
   - Методы доступа: `Model()`, `GUIState()`, `ConfigServiceAdapter()`, `Controller()`
 - `gui_state.go`:
   - `GUIState` struct - состояние GUI (только Fyne виджеты: Entry, Label, Button, Select и т.д.)
-  - `RuleWidget` struct - связь между виджетом Select и правилом из модели
+  - `RuleWidget` struct - связь между виджетом Select, Checkbox и правилом из модели (для обновления UI после LoadState)
 - `presenter_methods.go`:
   - `SetCheckURLState()` - управление состоянием кнопки Check и прогресс-бара
   - `SetSaveState()` - управление состоянием кнопки Save и прогресс-бара
@@ -594,15 +703,46 @@ singbox-launcher/
   - `InitializeTemplateState()` - инициализация состояния шаблона
   - `SetTemplatePreviewText()` - установка текста preview
 - `presenter_sync.go`:
-  - `SyncModelToGUI()` - синхронизация данных из модели в GUI
+  - `SyncModelToGUI()` - синхронизация данных из модели в GUI (обновляет текстовые поля, селекторы, пересоздаёт вкладку Rules при необходимости)
   - `SyncGUIToModel()` - синхронизация данных из GUI в модель
 - `presenter_async.go`:
   - `TriggerParseForPreview()` - запуск парсинга конфигурации для preview асинхронно
   - `UpdateTemplatePreviewAsync()` - обновление preview шаблона асинхронно
 - `presenter_save.go`:
-  - `SaveConfig()` - сохранение конфигурации с прогресс-баром и проверками
+  - `SaveConfig()` - сохранение конфигурации с прогресс-баром и проверками (основная функция)
+  - `validateSaveInput()` - валидация входных данных перед сохранением
+  - `checkSaveOperationState()` - проверка состояния операции сохранения
+  - `executeSaveOperation()` - выполнение операции сохранения в отдельной горутине
+  - `finalizeSaveOperation()` - завершение операции и восстановление UI
+  - `waitForParsingIfNeeded()` - ожидание завершения парсинга, если он необходим
+  - `buildConfigForSave()` - построение конфигурации из шаблона и модели
+  - `saveConfigFile()` - сохранение конфигурации в файл с созданием бэкапа
+  - `validateConfigFile()` - валидация сохраненного конфига с помощью sing-box
+  - `saveStateAndShowSuccessDialog()` - сохранение state.json и показ диалога успешного сохранения
+  - `showSaveSuccessDialog()` - показ диалога успешного сохранения с результатами валидации
+  - `completeSaveOperation()` - завершение операции сохранения с небольшой задержкой (основная функция)
+  - `validateSaveInput()` - валидация входных данных перед сохранением
+  - `checkSaveOperationState()` - проверка состояния операции сохранения
+  - `executeSaveOperation()` - выполнение операции сохранения в отдельной горутине
+  - `finalizeSaveOperation()` - завершение операции и восстановление UI
+  - `waitForParsingIfNeeded()` - ожидание завершения парсинга, если он необходим
+  - `buildConfigForSave()` - построение конфигурации из шаблона и модели
+  - `saveConfigFile()` - сохранение конфигурации в файл с созданием бэкапа
+  - `validateConfigFile()` - валидация сохраненного конфига с помощью sing-box
+  - `saveStateAndShowSuccessDialog()` - сохранение state.json и показ диалога успешного сохранения
+  - `showSaveSuccessDialog()` - показ диалога успешного сохранения с результатами валидации
+  - `completeSaveOperation()` - завершение операции сохранения с небольшой задержкой
+- `presenter_state.go`:
+  - `CreateStateFromModel()` - создание WizardStateFile из текущей модели
+  - `SaveCurrentState()` - сохранение текущего состояния в state.json
+  - `SaveStateAs()` - сохранение состояния под новым ID
+  - `LoadState()` - загрузка состояния из файла в модель
+  - `HasUnsavedChanges()` - проверка наличия несохранённых изменений
+  - `MarkAsChanged()` - установка флага изменений
+  - `MarkAsSaved()` - сброс флага изменений
 - `presenter_rules.go`:
-  - `RefreshRulesTab()` - обновление содержимого таба Rules
+  - `RefreshRulesTab()` - обновление содержимого таба Rules (принимает функцию создания вкладки)
+  - `RefreshRulesTabAfterLoadState()` - пересоздание вкладки Rules после LoadState (использует сохранённую функцию через DI)
   - `OpenRuleDialogs()` - возврат карты открытых диалогов правил
 - `presenter_ui_updater.go`:
   - Реализация интерфейса `UIUpdater` для обновления GUI из бизнес-логики
@@ -610,6 +750,7 @@ singbox-launcher/
 - `presenter.go`:
   - `WizardPresenter` struct - структура презентера
   - `NewWizardPresenter()` - создание презентера
+  - `SetCreateRulesTabFunc()` - установка функции создания вкладки Rules через DI (для пересоздания после LoadState)
   - `SafeFyneDo()` - безопасный вызов Fyne функций из других горутин (утилита для всех методов презентера)
 
 **tabs/** - UI вкладок
@@ -627,6 +768,22 @@ singbox-launcher/
 **dialogs/** - Диалоги
 - `add_rule_dialog.go`:
   - `ShowAddRuleDialog()` - диалог добавления правила
+- `load_state_dialog.go`:
+  - `ShowLoadStateDialog()` - диалог загрузки состояния визарда
+  - Отображение списка сохранённых состояний с метаданными
+  - Загрузка выбранного состояния через презентер
+- `save_state_dialog.go`:
+  - `ShowSaveStateDialog()` - диалог сохранения состояния визарда
+  - Ввод ID и комментария для нового состояния
+  - Сохранение состояния через презентер
+- `get_free_dialog.go`:
+  - `ShowGetFreeVPNDialog()` - диалог загрузки конфигурации из get_free.json
+  - `downloadGetFreeJSON()` - скачивание get_free.json с GitHub
+  - `loadGetFreeJSON()` - загрузка и парсинг get_free.json
+  - `convertGetFreeDataToStateFile()` - преобразование в WizardStateFile
+  - Работа с упрощенным форматом: parser_config, selectable_rules (без дефолтов)
+  - Использует фабрику `wizardmodels.NewWizardStateFile()` для инкапсуляции логики
+  - Применяет конфигурацию через `presenter.LoadState()` (та же логика, что и для state.json)
 - `rule_dialog.go`:
   - `extractStringArray()` - извлечение массива строк
   - `parseLines()` - парсинг строк
@@ -634,8 +791,27 @@ singbox-launcher/
 **business/** - Бизнес-логика (без GUI зависимостей)
 - `parser.go`:
   - `ParseAndPreview()` - парсинг URL и генерация outbounds через ConfigService
-  - `CheckURL()` - проверка URL подписки или прямой ссылки
-  - `ApplyURLToParserConfig()` - применение URL к ParserConfig
+  - `CheckURL()` - проверка URL подписки или прямой ссылки (основная функция)
+    - `initializeCheckURLUI()` - инициализация UI для проверки URL
+    - `processAllInputLines()` - обработка всех входных строк
+    - `updateCheckProgress()` - обновление прогресса проверки
+    - `processInputLine()` - обработка одной входной строки
+    - `processSubscriptionURL()` - обработка subscription URL (загрузка и парсинг)
+    - `parseSubscriptionContent()` - парсинг содержимого подписки и подсчет валидных ссылок
+    - `processDirectLink()` - обработка прямой ссылки (валидация и парсинг)
+    - `buildAndDisplayCheckResult()` - построение и отображение результата проверки
+    - `buildErrorResult()` - построение сообщения об ошибке
+    - `buildSuccessResult()` - построение сообщения об успешной проверке
+  - `ApplyURLToParserConfig()` - применение URL к ParserConfig (основная функция)
+    - `validateApplyURLInput()` - проверка входных данных перед применением URL
+    - `parseParserConfigForApply()` - парсинг ParserConfig из JSON строки
+    - `classifyInputLines()` - классификация входных строк на подписки и прямые ссылки
+    - `preserveExistingProperties()` - сохранение существующих свойств из текущего ParserConfig
+    - `createSubscriptionProxies()` - создание ProxySource для каждой подписки
+    - `restoreTagPrefixAndPostfix()` - восстановление tag_prefix и tag_postfix из сохраненных свойств
+    - `connectionsMatch()` - проверка совпадения двух массивов connections (порядок не важен)
+    - `matchOrCreateConnectionProxy()` - сопоставление connections с существующим ProxySource или создание нового
+    - `updateAndSerializeParserConfig()` - обновление ParserConfig и сериализация его
   - Все функции работают с `WizardModel` и используют `UIUpdater` для обновления GUI
 - `generator.go`:
   - `BuildTemplateConfig()` - построение финальной конфигурации из шаблона и модели
@@ -653,9 +829,18 @@ singbox-launcher/
   - `EnsureRequiredOutbounds()` - обеспечение наличия требуемых outbounds из template
   - `CloneOutbound()` - создание глубокой копии OutboundConfig
 - `saver.go`:
-  - `SaveConfigWithBackup()` - сохранение конфигурации с созданием бэкапа и генерацией secret для Clash API
-  - `NextBackupPath()` - генерация пути для следующего бэкапа
+  - `SaveConfigWithBackup()` - сохранение конфигурации с бэкапом (через services.BackupFile) и генерацией secret для Clash API
   - `FileServiceAdapter` - адаптер для services.FileService
+- `state_store.go`:
+  - `NewStateStore()` - создание хранилища состояний
+  - `SaveWizardState()` - сохранение состояния по ID в файл
+  - `SaveCurrentState()` - сохранение текущего состояния в state.json
+  - `LoadWizardState()` - загрузка состояния по ID из файла
+  - `LoadCurrentState()` - загрузка текущего состояния из state.json
+  - `ListWizardStates()` - получение списка всех сохранённых состояний
+  - `ValidateStateID()` - валидация ID состояния
+  - `StateStore` struct - хранилище состояний визарда
+  - Состояния хранятся в `<execDir>/bin/wizard_states/`
 - `outbound.go`:
   - `GetAvailableOutbounds()` - получение списка доступных outbound тегов из модели
   - `EnsureDefaultAvailableOutbounds()` - обеспечение наличия обязательных outbounds (direct-out, reject, drop)
@@ -669,14 +854,20 @@ singbox-launcher/
   - `TemplateLoader` interface - интерфейс для загрузки TemplateData
   - `DefaultTemplateLoader` - реализация по умолчанию
 
-**template/** - Работа с шаблонами конфигурации
+**template/** - Работа с единым шаблоном конфигурации
 - `loader.go`:
-  - `LoadTemplateData()` - загрузка шаблона из файла и парсинг его частей
-  - `GetTemplateFileName()` - возврат имени файла шаблона для текущей платформы
+  - `LoadTemplateData()` - загрузка единого JSON-шаблона (`wizard_template.json`), парсинг секций, применение `params` по текущей платформе, фильтрация `selectable_rules` по `platforms`
+  - `GetTemplateFileName()` - возврат имени файла шаблона (`wizard_template.json`, единый для всех платформ)
   - `GetTemplateURL()` - возврат URL для загрузки шаблона с GitHub
-  - `TemplateData` struct - структура данных шаблона (ParserConfig, секции, правила, defaultFinal)
-  - `TemplateSelectableRule` struct - структура правила, которое может быть выбрано в визарде
-  - Извлечение специальных блоков: @ParserConfig, @SelectableRule, @PARSER_OUTBOUNDS_BLOCK
+  - `UnifiedTemplate` struct - структура JSON-шаблона (`parser_config`, `config`, `selectable_rules`, `params`)
+  - `UnifiedSelectableRule` struct - правило в шаблоне (label, description, default, platforms, rule_set, rule/rules)
+  - `UnifiedTemplateParam` struct - платформенный параметр (name, platforms, mode, value)
+  - `TemplateData` struct - данные шаблона, подготовленные для визарда (ParserConfig, Config, ConfigOrder, SelectableRules, DefaultFinal)
+  - `TemplateSelectableRule` struct - правило маршрутизации для визарда (Label, Description, IsDefault, Platforms, RuleSets, Rule/Rules)
+- `rule_utils.go`:
+  - `HasOutbound()` - проверка наличия поля outbound в правиле
+  - `GetDefaultOutbound()` - извлечение outbound по умолчанию из правила
+  - `CloneRuleRaw()` - глубокое копирование правила (map[string]interface{})
 
 **utils/** - Утилиты
 - `comparison.go`:
@@ -799,7 +990,8 @@ singbox-launcher/
 │  │  FileService:                                        │   │
 │  │  • Управление путями к файлам                        │   │
 │  │  • Открытие/закрытие лог-файлов                      │   │
-│  │  • Ротация логов                                     │   │
+│  │  • Ротация логов (макс 1 старый файл)                │   │
+│  │  • Бэкап файлов (BackupFile, BackupPath)             │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
@@ -841,9 +1033,9 @@ singbox-launcher/
 │  │  • Запись конфигурации                               │   │
 │  │                                                      │   │
 │  │  parser/:                                            │   │
-│  │  • Извлечение @ParserConfig блока                    │   │
+│  │  • Извлечение ParserConfig блока из config.json      │   │
 │  │  • Нормализация конфигурации                         │   │
-│  │  • Миграция версий                                   │   │
+│  │  • Миграция версий (v1 → v4)                         │   │
 │  │                                                      │   │
 │  │  subscription/:                                      │   │
 │  │  • Загрузка подписок по HTTP                         │   │
@@ -881,6 +1073,7 @@ singbox-launcher/
 │  │  models/:                                            │   │
 │  │  • WizardModel - чистые бизнес-данные                │   │
 │  │  • RuleState - состояние правил маршрутизации        │   │
+│  │  • WizardStateFile - сериализуемое состояние визарда │   │
 │  │  • Константы для правил и outbounds                  │   │
 │  │                                                      │   │
 │  │  presentation/:                                      │   │
@@ -889,6 +1082,8 @@ singbox-launcher/
 │  │  • Синхронизация данных (Model ↔ GUI)                │   │
 │  │  • Асинхронные операции (парсинг, preview)           │   │
 │  │  • Сохранение конфигурации                           │   │
+│  │  • Управление состояниями (сохранение/загрузка)      │   │
+│  │  • Отслеживание несохранённых изменений              │   │
 │  │  • Реализация UIUpdater для бизнес-логики            │   │
 │  │                                                      │   │
 │  │  business/:                                          │   │
@@ -898,6 +1093,7 @@ singbox-launcher/
 │  │  • Загрузка конфигурации (loader.go)                 │   │
 │  │  • Сохранение конфигурации (saver.go)                │   │
 │  │  • Работа с outbounds (outbound.go)                  │   │
+│  │  • Управление состояниями (state_store.go)           │   │
 │  │  • Интерфейсы: UIUpdater, ConfigService, TemplateLoader│ │
 │  │                                                      │   │
 │  │  tabs/:                                              │   │
@@ -906,11 +1102,14 @@ singbox-launcher/
 │  │                                                      │   │
 │  │  dialogs/:                                           │   │
 │  │  • Диалоги визарда (добавление/редактирование правил)│   │
+│  │  • Диалоги сохранения/загрузки состояний             │   │
 │  │  • Взаимодействие через Presenter                    │   │
 │  │                                                      │   │
 │  │  template/:                                          │   │
-│  │  • Загрузка и парсинг шаблонов конфигурации          │   │
-│  │  • Извлечение @ParserConfig, @SelectableRule блоков  │   │
+│  │  • Загрузка единого JSON-шаблона (wizard_template.json) │  │
+│  │  • Парсинг секций: parser_config, config, selectable_rules, params │
+│  │  • Применение params по платформе (runtime.GOOS)     │   │
+│  │  • Фильтрация selectable_rules по platforms          │   │
 │  │                                                      │   │
 │  │  utils/:                                             │   │
 │  │  • Утилиты и константы (сравнение, лимиты, таймауты) │   │
@@ -953,19 +1152,41 @@ UI (core_dashboard_tab.go)
   └─> wizard.ShowConfigWizard()
       ├─> wizard/models: NewWizardModel()
       ├─> wizard/presentation: NewGUIState(), NewWizardPresenter()
-      ├─> wizard/template/loader.go: LoadTemplateData()
+      ├─> wizard/template/loader.go: LoadTemplateData()  # единый JSON-шаблон
       ├─> wizard/tabs/source_tab.go: CreateSourceTab(presenter)
       ├─> wizard/tabs/rules_tab.go: CreateRulesTab(presenter)
       ├─> wizard/tabs/preview_tab.go: CreatePreviewTab(presenter)
       │
       ├─> wizard/business/loader.go: LoadConfigFromFile()
+      ├─> wizard/presentation/presenter_state.go: LoadState()
+      │   ├─> wizard/business/state_store.go: LoadCurrentState()
+      │   └─> wizard/presentation/presenter_sync.go: SyncModelToGUI()
+      │       └─> wizard/presentation/presenter_rules.go: RefreshRulesTabAfterLoadState() - пересоздание вкладки Rules (DI)
+      ├─> wizard/dialogs/get_free_dialog.go: ShowGetFreeVPNDialog()
+      │   ├─> downloadGetFreeJSON() - скачивание get_free.json с GitHub
+      │   ├─> loadGetFreeJSON() - загрузка и парсинг get_free.json
+      │   ├─> convertGetFreeDataToStateFile() - преобразование в WizardStateFile
+      │   │   └─> wizard/models/wizard_state_file.go: NewWizardStateFile() - фабрика
+      │   └─> presenter.LoadState() - применение конфигурации (та же логика, что и для state.json)
+      │       └─> SyncModelToGUI() → RefreshRulesTabAfterLoadState() - обновление UI после загрузки
       ├─> wizard/presentation/presenter_async.go: TriggerParseForPreview()
       │   └─> wizard/business/parser.go: ParseAndPreview()
       ├─> wizard/presentation/presenter_async.go: UpdateTemplatePreviewAsync()
       │   └─> wizard/business/generator.go: BuildTemplateConfig()
       ├─> wizard/presentation/presenter_save.go: SaveConfig()
-      │   ├─> wizard/business/generator.go: BuildTemplateConfig()
-      │   └─> wizard/business/saver.go: SaveConfigWithBackup()
+      │   ├─> validateSaveInput() / checkSaveOperationState()
+      │   ├─> executeSaveOperation()
+      │   │   ├─> waitForParsingIfNeeded()
+      │   │   ├─> buildConfigForSave()
+      │   │   │   └─> wizard/business/generator.go: BuildTemplateConfig()
+      │   │   ├─> saveConfigFile()
+      │   │   │   └─> wizard/business/saver.go: SaveConfigWithBackup()
+      │   │   ├─> validateConfigFile()
+      │   │   │   └─> wizard/business/saver.go: ValidateConfigWithSingBox()
+      │   │   └─> saveStateAndShowSuccessDialog()
+      │   │       ├─> wizard/presentation/presenter_state.go: SaveCurrentState()
+      │   │       │   └─> wizard/business/state_store.go: SaveCurrentState()
+      │   │       └─> showSaveSuccessDialog()
 ```
 
 ## Принципы организации кода
@@ -1006,7 +1227,7 @@ UI (core_dashboard_tab.go)
 
 ### 6. Комментарии
 
-- Все комментарии на английском языке
+- Комментарии на русском языке (Go-style, объясняют "зачем", а не "что")
 - Документация для экспортируемых функций
 - Описание сложной логики
 - Self-documenting code предпочтительнее комментариев

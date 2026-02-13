@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image/color"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -23,6 +22,9 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/platform"
+	"singbox-launcher/ui/components"
 	"singbox-launcher/ui/wizard"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
@@ -146,7 +148,7 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 					if progress >= 100 {
 						// Completed - hide after a short delay
 						go func() {
-							time.Sleep(1 * time.Second)
+							<-time.After(1 * time.Second)
 							fyne.Do(func() {
 								tab.parserProgressBar.Hide()
 								tab.parserStatusLabel.Hide()
@@ -176,6 +178,9 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 	// Запускаем автообновление версии
 	tab.startAutoUpdate()
 
+	// Регистрируем callback для показа попапа обновления
+	tab.controller.UIService.ShowUpdatePopupFunc = tab.showUpdatePopup
+
 	return content
 }
 
@@ -188,12 +193,12 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 	tab.statusLabel.Importance = widget.MediumImportance
 
 	startButton := widget.NewButton("Start", func() {
-		core.StartSingBoxProcess(tab.controller)
+		core.StartSingBoxProcess()
 		// Status will be updated automatically via UpdateCoreStatusFunc
 	})
 
 	stopButton := widget.NewButton("Stop", func() {
-		core.StopSingBoxProcess(tab.controller)
+		core.StopSingBoxProcess()
 		// Status will be updated automatically via UpdateCoreStatusFunc
 	})
 
@@ -223,7 +228,7 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	// Используем Button вместо Label для возможности клика
 	title := widget.NewButton("Config", func() {
-		log.Println("CoreDashboard: Config title clicked, reading config...")
+		debuglog.DebugLog("CoreDashboard: Config title clicked, reading config...")
 		tab.readConfigOnDemand()
 	})
 	// Делаем кнопку похожей на Label (без рамки)
@@ -231,7 +236,7 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 
 	// Используем Button для configStatusLabel, чтобы сделать его кликабельным
 	tab.configStatusLabel = widget.NewButton("Checking config...", func() {
-		log.Println("CoreDashboard: Config status label clicked, reading config...")
+		debuglog.DebugLog("CoreDashboard: Config status label clicked, reading config...")
 		tab.readConfigOnDemand()
 	})
 	tab.configStatusLabel.Importance = widget.LowImportance
@@ -256,14 +261,15 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		tab.parserStatusLabel.SetText("Starting...")
 
 		// Запускаем парсер в отдельной горутине
-		go core.RunParserProcess(tab.controller)
+		go core.RunParserProcess()
 	})
 	tab.updateConfigButton.Importance = widget.MediumImportance
 
 	tab.wizardButton = widget.NewButton("⚙️ Wizard", func() {
 		// Get parent window from AppController
-		parentWindow := tab.controller.GetMainWindow()
-		wizard.ShowConfigWizard(parentWindow, tab.controller)
+		ac := core.GetController()
+		parentWindow := ac.GetMainWindow()
+		wizard.ShowConfigWizard(parentWindow)
 	})
 	tab.wizardButton.Importance = widget.MediumImportance
 
@@ -512,12 +518,12 @@ func (tab *CoreDashboardTab) readConfigOnDemand() {
 	// Читаем конфиг
 	config, err := parser.ExtractParserConfig(tab.controller.FileService.ConfigPath)
 	if err != nil {
-		log.Printf("CoreDashboard: Failed to read config on demand: %v", err)
+		debuglog.ErrorLog("CoreDashboard: Failed to read config on demand: %v", err)
 		// Можно показать сообщение пользователю через dialog
 		return
 	}
 
-	log.Printf("CoreDashboard: Config read successfully on demand (version %d, %d proxy sources, %d outbounds)",
+	debuglog.InfoLog("CoreDashboard: Config read successfully on demand (version %d, %d proxy sources, %d outbounds)",
 		config.ParserConfig.Version,
 		len(config.ParserConfig.Proxies),
 		len(config.ParserConfig.Outbounds))
@@ -855,7 +861,7 @@ func (tab *CoreDashboardTab) startAutoUpdate() {
 					// Устанавливаем успех после небольшой задержки
 					// (в реальности нужно отслеживать через канал, но для простоты используем задержку)
 					go func() {
-						time.Sleep(2 * time.Second)
+						<-time.After(2 * time.Second)
 						tab.lastUpdateSuccess = true // Упрощенная логика
 					}()
 				case <-tab.stopAutoUpdate:
@@ -967,4 +973,49 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 			})
 		}
 	}()
+}
+
+// showUpdatePopup показывает попап с информацией об обновлении
+func (tab *CoreDashboardTab) showUpdatePopup(currentVersion, latestVersion string) {
+	if tab.controller == nil || tab.controller.UIService == nil || tab.controller.UIService.MainWindow == nil {
+		debuglog.WarnLog("showUpdatePopup: UIService or MainWindow not available")
+		return
+	}
+
+	// Устанавливаем флаг, что попап был показан
+	tab.controller.SetUpdatePopupShown(true)
+
+	// Создаем содержимое попапа
+	fyne.Do(func() {
+		downloadURL := "https://github.com/Leadaxe/singbox-launcher/releases/latest"
+
+		// Создаем ссылку на скачивание
+		downloadLink := widget.NewHyperlink("Download from GitHub", nil)
+		if err := downloadLink.SetURLFromString(downloadURL); err != nil {
+			debuglog.ErrorLog("showUpdatePopup: Failed to set URL: %v", err)
+		}
+		downloadLink.OnTapped = func() {
+			if err := platform.OpenURL(downloadURL); err != nil {
+				debuglog.ErrorLog("showUpdatePopup: Failed to open download URL: %v", err)
+				dialogs.ShowError(tab.controller.UIService.MainWindow, fmt.Errorf("Failed to open link: %v", err))
+			}
+		}
+
+		// Создаем контейнер с информацией
+		mainContent := container.NewVBox(
+			widget.NewLabel("A new version of the application is available"),
+			widget.NewLabel(""),
+			widget.NewLabel(fmt.Sprintf("Current version: %s", currentVersion)),
+			widget.NewLabel(fmt.Sprintf("New version: %s", latestVersion)),
+			widget.NewLabel(""),
+			downloadLink,
+		)
+
+		// Используем components.NewCustom для создания диалога
+		// Передаем nil для кнопок, чтобы не было кнопки "Скачать", только "Закрыть"
+		d := components.NewCustom("Update Available", mainContent, nil, "Close", tab.controller.UIService.MainWindow)
+
+		// Показываем диалог
+		d.Show()
+	})
 }
