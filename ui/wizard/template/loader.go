@@ -130,10 +130,10 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 
 	// Десериализация корневой структуры шаблона
 	var root struct {
-		ParserConfig    json.RawMessage  `json:"parser_config"`
-		Config          json.RawMessage  `json:"config"`
+		ParserConfig    json.RawMessage      `json:"parser_config"`
+		Config          json.RawMessage      `json:"config"`
 		SelectableRules []jsonSelectableRule `json:"selectable_rules"`
-		Params          []templateParam  `json:"params"`
+		Params          []templateParam      `json:"params"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, fmt.Errorf("невалидный JSON в %s: %w", TemplateFileName, err)
