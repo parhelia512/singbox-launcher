@@ -56,3 +56,15 @@ func (p *WizardPresenter) RefreshRulesTab(createRulesTab func(*WizardPresenter) 
 func (p *WizardPresenter) OpenRuleDialogs() map[int]fyne.Window {
 	return p.openRuleDialogs
 }
+
+// RefreshRulesTabAfterLoadState пересоздает вкладку Rules.
+// Использует функцию создания вкладки, установленную через SetCreateRulesTabFunc.
+// Выполняется в UI потоке через UpdateUI для безопасного обновления виджетов.
+func (p *WizardPresenter) RefreshRulesTabAfterLoadState() {
+	if p.createRulesTabFunc == nil {
+		return
+	}
+	p.UpdateUI(func() {
+		p.RefreshRulesTab(p.createRulesTabFunc)
+	})
+}

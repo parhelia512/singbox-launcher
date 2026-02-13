@@ -278,6 +278,9 @@ func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *w
 		wizarddialogs.ShowAddRuleDialog(p, editRule, ruleIndex, createRulesTabWrapper)
 	}
 
+	// Устанавливаем функцию создания вкладки Rules в презентер для возможности пересоздания после LoadState
+	presenter.SetCreateRulesTabFunc(createRulesTabWrapper)
+
 	if templateTab := wizardtabs.CreateRulesTab(presenter, showAddRuleDialogWrapper); templateTab != nil {
 		rulesTabItem = container.NewTabItem("Rules", templateTab)
 		previewTabItem = container.NewTabItem("Preview", wizardtabs.CreatePreviewTab(presenter))

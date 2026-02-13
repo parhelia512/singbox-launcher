@@ -195,8 +195,9 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	p.model.PreviewNeedsParse = true
 
 	// Синхронизация GUI (шаг 8)
+	// SyncModelToGUI() также пересоздаст вкладку Rules, если она уже создана
 	p.SyncModelToGUI()
-	
+
 	// Обновляем опции outbound для правил (включая селекторы)
 	p.RefreshOutboundOptions()
 
@@ -230,7 +231,7 @@ func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStat
 // Правила из шаблона без сохранённого состояния получают значения по умолчанию.
 func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmodels.PersistedSelectableRuleState) {
 	debuglog.DebugLog("restoreSelectableRuleStates: restoring %d rules", len(persistedRules))
-	
+
 	// Создаём индекс сохранённых состояний по label
 	savedByLabel := make(map[string]wizardmodels.PersistedSelectableRuleState)
 	for _, pr := range persistedRules {
@@ -240,8 +241,6 @@ func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmod
 
 	// Для каждого правила из шаблона ищем сохранённое состояние
 	templateRules := p.model.TemplateData.SelectableRules
-	debuglog.DebugLog("restoreSelectableRuleStates: template has %d rules", len(templateRules))
-	
 	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(templateRules))
 	for i := range templateRules {
 		rule := &templateRules[i]
@@ -253,12 +252,11 @@ func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmod
 			// Восстанавливаем выбор пользователя
 			rs.Enabled = saved.Enabled
 			rs.SelectedOutbound = saved.SelectedOutbound
-			debuglog.DebugLog("restoreSelectableRuleStates: matched rule label=%s, applied enabled=%v, selected_outbound=%s", rule.Label, saved.Enabled, saved.SelectedOutbound)
+			debuglog.DebugLog("restoreSelectableRuleStates: matched rule label=%s, enabled=%v, selected_outbound=%s", rule.Label, saved.Enabled, saved.SelectedOutbound)
 		} else {
 			// Новое правило — используем default из шаблона
 			rs.Enabled = rule.IsDefault
 			rs.SelectedOutbound = rule.DefaultOutbound
-			debuglog.DebugLog("restoreSelectableRuleStates: no match for label=%s, using default enabled=%v, selected_outbound=%s", rule.Label, rule.IsDefault, rule.DefaultOutbound)
 		}
 
 		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, rs)

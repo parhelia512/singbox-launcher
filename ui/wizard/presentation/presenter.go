@@ -36,11 +36,12 @@ import (
 
 // WizardPresenter связывает GUI и бизнес-логику визарда.
 type WizardPresenter struct {
-	model           *wizardmodels.WizardModel
-	guiState        *GUIState
-	templateLoader  wizardbusiness.TemplateLoader
-	openRuleDialogs map[int]fyne.Window
-	hasChanges      bool // Отслеживает наличие несохранённых изменений
+	model              *wizardmodels.WizardModel
+	guiState           *GUIState
+	templateLoader     wizardbusiness.TemplateLoader
+	openRuleDialogs    map[int]fyne.Window
+	hasChanges         bool                                     // Отслеживает наличие несохранённых изменений
+	createRulesTabFunc func(*WizardPresenter) fyne.CanvasObject // Функция для создания вкладки Rules (устанавливается при инициализации)
 }
 
 // NewWizardPresenter создает новый презентер визарда.
@@ -63,6 +64,12 @@ func (p *WizardPresenter) Model() *wizardmodels.WizardModel {
 // GUIState возвращает GUI-состояние визарда.
 func (p *WizardPresenter) GUIState() *GUIState {
 	return p.guiState
+}
+
+// SetCreateRulesTabFunc устанавливает функцию для создания вкладки Rules.
+// Вызывается при инициализации визарда для возможности пересоздания вкладки после LoadState.
+func (p *WizardPresenter) SetCreateRulesTabFunc(createRulesTab func(*WizardPresenter) fyne.CanvasObject) {
+	p.createRulesTabFunc = createRulesTab
 }
 
 // ConfigServiceAdapter возвращает адаптер ConfigService.

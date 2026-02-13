@@ -82,6 +82,9 @@ func createTemplateNotFoundMessage() fyne.CanvasObject {
 func initializeRulesTabState(presenter *wizardpresentation.WizardPresenter, model *wizardmodels.WizardModel, guiState *wizardpresentation.GUIState) {
 	presenter.InitializeTemplateState()
 
+	// Очищаем старые виджеты перед созданием новых (важно при пересоздании вкладки)
+	guiState.RuleOutboundSelects = make([]*wizardpresentation.RuleWidget, 0)
+
 	// Set flag to block callbacks during initialization
 	guiState.UpdatingOutboundOptions = true
 	debuglog.DebugLog("rules_tab: UpdatingOutboundOptions set to true before creating widgets")
@@ -194,6 +197,7 @@ func createSelectableRuleCheckbox(
 		}
 	})
 	checkbox.SetChecked(ruleState.Enabled)
+	checkbox.Refresh() // Обновляем визуальное состояние чекбокса
 	return checkbox
 }
 
