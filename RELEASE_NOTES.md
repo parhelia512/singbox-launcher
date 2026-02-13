@@ -17,6 +17,7 @@
 - **Unified config template** — single `config_template.json` for all platforms, JSON structure with `params` for platform-specific settings, no more comment-based directives
 - **Logging centralization** — unified `debuglog.*` API, env-controlled log level
 - **Singleton Controller** — simplified `core.*` API, removed parameter passing
+- **Rules tab UI fix** — checkboxes and selectors now update correctly after loading state (DI-based refresh)
 - **CI/CD** — Go build cache, golangci-lint v2.8.0, faster builds
 
 </details>
@@ -36,6 +37,7 @@
 - **Единый шаблон конфигурации** — один `config_template.json` для всех платформ, JSON-структура с `params` для платформо-зависимых настроек, без директив в комментариях
 - **Централизация логирования** — единый API `debuglog.*`, управление уровнем через переменную окружения
 - **Singleton Controller** — упрощён API `core.*`, убрана передача параметров
+- **Исправление UI вкладки Rules** — чекбоксы и селекторы теперь корректно обновляются после загрузки состояния (обновление через DI)
 - **CI/CD** — кэш сборки Go, golangci-lint v2.8.0, ускорение билдов
 
 </details>

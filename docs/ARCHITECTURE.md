@@ -252,10 +252,12 @@ singbox-launcher/
 │       │   │   │   - WizardPresenter struct             # Презентер визарда
 │       │   │   │   - NewWizardPresenter()               # Создание презентера
 │       │   │   │   - SafeFyneDo()                       # Безопасный вызов Fyne из горутин
+│       │   │   │   - SetCreateRulesTabFunc()            # Установка функции создания вкладки Rules (DI)
+│       │   │   │   - createRulesTabFunc                 # Функция создания вкладки Rules (хранится для синхронизации)
 │       │   │   │
 │       │   ├── gui_state.go    # GUIState
 │       │   │   │   - GUIState struct                    # Состояние GUI (только виджеты)
-│       │   │   │   - RuleWidget struct                  # Виджет правила
+│       │   │   │   - RuleWidget struct                  # Виджет правила (Select, Checkbox, RuleState)
 │       │   │   │
 │       │   ├── presenter_methods.go # Методы управления UI
 │       │   │   │   - SetCheckURLState()                 # Состояние кнопки Check
@@ -297,6 +299,7 @@ singbox-launcher/
 │       │   │   │
 │       │   ├── presenter_rules.go # Работа с правилами
 │       │   │   │   - RefreshRulesTab()                  # Обновление таба правил
+│       │   │   │   - RefreshRulesTabAfterLoadState()    # Пересоздание вкладки Rules после LoadState (в UI-потоке)
 │       │   │   │   - OpenRuleDialogs()                  # Открытые диалоги
 │       │   │   │
 │       │   ├── presenter_ui_updater.go # Реализация UIUpdater
@@ -692,7 +695,7 @@ singbox-launcher/
   - Методы доступа: `Model()`, `GUIState()`, `ConfigServiceAdapter()`, `Controller()`
 - `gui_state.go`:
   - `GUIState` struct - состояние GUI (только Fyne виджеты: Entry, Label, Button, Select и т.д.)
-  - `RuleWidget` struct - связь между виджетом Select и правилом из модели
+  - `RuleWidget` struct - связь между виджетом Select, Checkbox и правилом из модели (для обновления UI после LoadState)
 - `presenter_methods.go`:
   - `SetCheckURLState()` - управление состоянием кнопки Check и прогресс-бара
   - `SetSaveState()` - управление состоянием кнопки Save и прогресс-бара
@@ -700,7 +703,7 @@ singbox-launcher/
   - `InitializeTemplateState()` - инициализация состояния шаблона
   - `SetTemplatePreviewText()` - установка текста preview
 - `presenter_sync.go`:
-  - `SyncModelToGUI()` - синхронизация данных из модели в GUI
+  - `SyncModelToGUI()` - синхронизация данных из модели в GUI (обновляет текстовые поля, селекторы, пересоздаёт вкладку Rules при необходимости)
   - `SyncGUIToModel()` - синхронизация данных из GUI в модель
 - `presenter_async.go`:
   - `TriggerParseForPreview()` - запуск парсинга конфигурации для preview асинхронно
@@ -738,7 +741,8 @@ singbox-launcher/
   - `MarkAsChanged()` - установка флага изменений
   - `MarkAsSaved()` - сброс флага изменений
 - `presenter_rules.go`:
-  - `RefreshRulesTab()` - обновление содержимого таба Rules
+  - `RefreshRulesTab()` - обновление содержимого таба Rules (принимает функцию создания вкладки)
+  - `RefreshRulesTabAfterLoadState()` - пересоздание вкладки Rules после LoadState (использует сохранённую функцию через DI)
   - `OpenRuleDialogs()` - возврат карты открытых диалогов правил
 - `presenter_ui_updater.go`:
   - Реализация интерфейса `UIUpdater` для обновления GUI из бизнес-логики
@@ -746,6 +750,7 @@ singbox-launcher/
 - `presenter.go`:
   - `WizardPresenter` struct - структура презентера
   - `NewWizardPresenter()` - создание презентера
+  - `SetCreateRulesTabFunc()` - установка функции создания вкладки Rules через DI (для пересоздания после LoadState)
   - `SafeFyneDo()` - безопасный вызов Fyne функций из других горутин (утилита для всех методов презентера)
 
 **tabs/** - UI вкладок
@@ -1154,13 +1159,16 @@ UI (core_dashboard_tab.go)
       │
       ├─> wizard/business/loader.go: LoadConfigFromFile()
       ├─> wizard/presentation/presenter_state.go: LoadState()
-      │   └─> wizard/business/state_store.go: LoadCurrentState()
+      │   ├─> wizard/business/state_store.go: LoadCurrentState()
+      │   └─> wizard/presentation/presenter_sync.go: SyncModelToGUI()
+      │       └─> wizard/presentation/presenter_rules.go: RefreshRulesTabAfterLoadState() - пересоздание вкладки Rules (DI)
       ├─> wizard/dialogs/get_free_dialog.go: ShowGetFreeVPNDialog()
       │   ├─> downloadGetFreeJSON() - скачивание get_free.json с GitHub
       │   ├─> loadGetFreeJSON() - загрузка и парсинг get_free.json
       │   ├─> convertGetFreeDataToStateFile() - преобразование в WizardStateFile
       │   │   └─> wizard/models/wizard_state_file.go: NewWizardStateFile() - фабрика
       │   └─> presenter.LoadState() - применение конфигурации (та же логика, что и для state.json)
+      │       └─> SyncModelToGUI() → RefreshRulesTabAfterLoadState() - обновление UI после загрузки
       ├─> wizard/presentation/presenter_async.go: TriggerParseForPreview()
       │   └─> wizard/business/parser.go: ParseAndPreview()
       ├─> wizard/presentation/presenter_async.go: UpdateTemplatePreviewAsync()
