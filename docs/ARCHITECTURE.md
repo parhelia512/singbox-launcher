@@ -71,8 +71,18 @@ singbox-launcher/
 │   ├── wintun_downloader.go   # Загрузка wintun.dll
 │   │   │   - DownloadWintunDLL()                     # Загрузка wintun.dll
 │   │   │
+│   ├── tray_menu.go           # Меню системного трея
+│   │   │   - CreateTrayMenu()                # Создание меню трея
+│   │   │   - addHideDockMenuItem()           # Скрытие Dock (macOS)
+│   │   │
+│   ├── auto_update.go         # Автообновление конфигурации
+│   │   │   - startAutoUpdateLoop()           # Цикл автообновления
+│   │   │   - shouldAutoUpdate()              # Проверка необходимости обновления
+│   │   │   - attemptAutoUpdateWithRetries()  # Обновление с ретраями
+│   │   │   - resumeAutoUpdate()              # Возобновление автообновления
+│   │   │
 │   ├── error_handler.go       # Обработка ошибок
-│   │   │   - (утилиты обработки ошибок)
+│   │   │   - showErrorUI()                   # Единый метод отображения ошибок
 │   │   │
 │   ├── network_utils.go       # Сетевые утилиты
 │   │   │   - CreateHTTPClient()                     # Создание HTTP клиента
@@ -107,6 +117,8 @@ singbox-launcher/
 │   │       │   - OpenLogFileWithRotation()          # Открытие лог-файла с ротацией
 │   │       │   - CheckAndRotateLogFile()            # Проверка и ротация лог-файла
 │   │       │   - GetMainLogFile()                    # Получение основного лог-файла
+│   │       │   - BackupPath()                        # Путь для бэкапа файла (.old)
+│   │       │   - BackupFile()                        # Создание бэкапа с ротацией (макс 1 старый)
 │   │       │
 │   └── config/                # Работа с конфигурацией
 │       ├── models.go           # Модели данных конфигурации
@@ -135,7 +147,7 @@ singbox-launcher/
 │       │   │   - UpdateConfigFromSubscriptions()        # Обновление из подписок
 │       │   │   - writeToConfig()                        # Запись в config.json
 │       │   │
-│       ├── parser/             # Парсинг @ParserConfig блока
+│       ├── parser/             # Парсинг ParserConfig блока
 │       │   ├── factory.go      # Фабрика ParserConfig
 │       │   │   │   - ExtractParserConfig()                # Извлечение ParserConfig
 │       │   │   │   - NormalizeParserConfig()               # Нормализация конфигурации
@@ -221,12 +233,14 @@ singbox-launcher/
 │       │   │   │   - EnsureDefaultOutbound()            # Установка дефолтного outbound
 │       │   │   │
 │       │   ├── wizard_state_file.go # Модель состояния визарда
-│       │   │   │   - WizardStateFile struct             # Сериализуемое состояние визарда
-│       │   │   │   - PersistedRuleState struct          # Сериализуемое состояние правила
-│       │   │   │   - PersistedTemplateSelectableRule struct # Сериализуемое правило шаблона
-│       │   │   │   - WizardStateMetadata struct         # Метаданные состояния
-│       │   │   │   - ValidateStateID()                  # Валидация ID состояния
-│       │   │   │   - StateFileName const                # Имя файла состояния
+│       │   │   │   - WizardStateFile struct                  # Сериализуемое состояние визарда (version 2)
+│       │   │   │   - PersistedSelectableRuleState struct     # Упрощённое состояние правила (label, enabled, selected_outbound)
+│       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила
+│       │   │   │   - WizardStateMetadata struct              # Метаданные состояния
+│       │   │   │   - ValidateStateID()                       # Валидация ID состояния
+│       │   │   │   - MigrateSelectableRuleStates()           # Миграция v1 → v2 selectable rules
+│       │   │   │   - MigrateCustomRules()                    # Миграция v1 → v2 custom rules
+│       │   │   │   - StateFileName const                     # Имя файла состояния
 │       │   │   │
 │       │   └── wizard_model.go  # Модель + константы
 │       │       │   - DefaultOutboundTag                 # Дефолтный outbound
@@ -403,11 +417,21 @@ singbox-launcher/
 │       │       │   - TemplateLoader interface                  # Интерфейс TemplateLoader
 │       │       │   - DefaultTemplateLoader                     # Реализация по умолчанию
 │       │       │
-│       ├── template/            # Работа с шаблонами
-│       │   └── loader.go        # Загрузка шаблонов
-│       │       │   - LoadTemplateData()                        # Загрузка данных шаблона
-│       │       │   - GetTemplateURL()                          # Получение URL шаблона
-│       │       │   - TemplateData struct                       # Структура данных шаблона
+│       ├── template/            # Работа с шаблонами конфигурации
+│       │   ├── loader.go        # Загрузка единого JSON-шаблона
+│       │   │   │   - LoadTemplateData()                        # Загрузка и разбор шаблона
+│       │   │   │   - GetTemplateFileName()                     # Имя файла шаблона (config_template.json)
+│       │   │   │   - GetTemplateURL()                          # URL для загрузки шаблона
+│       │   │   │   - TemplateData struct                       # Данные шаблона для визарда
+│       │   │   │   - TemplateSelectableRule struct             # Правило маршрутизации из шаблона
+│       │   │   │   - UnifiedTemplate struct                    # Структура JSON-шаблона
+│       │   │   │   - UnifiedSelectableRule struct              # Правило в шаблоне
+│       │   │   │   - UnifiedTemplateParam struct               # Платформенный параметр
+│       │   │   │
+│       │   └── rule_utils.go    # Утилиты для работы с правилами
+│       │       │   - HasOutbound()                             # Проверка наличия outbound
+│       │       │   - GetDefaultOutbound()                      # Извлечение outbound по умолчанию
+│       │       │   - CloneRuleRaw()                            # Глубокое копирование правила
 │       │       │
 │       └── utils/              # Утилиты
 │           ├── comparison.go    # Сравнение структур
@@ -543,13 +567,13 @@ singbox-launcher/
 - `UpdateConfigFromSubscriptions()` - обновление config.json из подписок
 - `writeToConfig()` - запись конфигурации в файл
 
-**parser/** - Работа с @ParserConfig блоком
+**parser/** - Работа с ParserConfig блоком
 - `factory.go`:
   - `ExtractParserConfig()` - извлечение ParserConfig из config.json
   - `NormalizeParserConfig()` - нормализация конфигурации
   - `LogDuplicateTagStatistics()` - логирование статистики дубликатов
 - `migrator.go`:
-  - Миграция версий @ParserConfig (v1 → v2 → v3 → v4)
+  - Миграция версий ParserConfig (v1 → v2 → v3 → v4)
 - `block_extractor.go`:
   - `ExtractParserConfigBlock()` - извлечение блока из JSON
 
@@ -648,11 +672,13 @@ singbox-launcher/
   - `GetEffectiveOutbound()` - получение эффективного outbound для правила
   - `EnsureDefaultOutbound()` - установка дефолтного outbound
 - `wizard_state_file.go`:
-  - `WizardStateFile` struct - сериализуемое состояние визарда (метаданные, ParserConfig, ConfigParams, правила)
-  - `PersistedRuleState` struct - сериализуемое состояние правила
-  - `PersistedTemplateSelectableRule` struct - сериализуемое правило из шаблона
+  - `WizardStateFile` struct - сериализуемое состояние визарда (version 2, метаданные, ParserConfig, ConfigParams, правила)
+  - `PersistedSelectableRuleState` struct - упрощённое состояние правила из шаблона (только label, enabled, selected_outbound)
+  - `PersistedCustomRule` struct - полное определение пользовательского правила (label, type, rule, enabled и т.д.)
   - `WizardStateMetadata` struct - метаданные состояния для списка
   - `ValidateStateID()` - валидация ID состояния
+  - `MigrateSelectableRuleStates()` - миграция selectable_rule_states из формата v1 (вложенный rule) в v2 (плоский)
+  - `MigrateCustomRules()` - миграция custom_rules из формата v1 (rule.raw) в v2 (rule на верхнем уровне)
   - `StateFileName` const - имя файла текущего состояния
 - `wizard_model.go`:
   - `WizardModel` - основная модель данных
@@ -789,8 +815,7 @@ singbox-launcher/
   - `EnsureRequiredOutbounds()` - обеспечение наличия требуемых outbounds из template
   - `CloneOutbound()` - создание глубокой копии OutboundConfig
 - `saver.go`:
-  - `SaveConfigWithBackup()` - сохранение конфигурации с созданием бэкапа и генерацией secret для Clash API
-  - `NextBackupPath()` - генерация пути для следующего бэкапа
+  - `SaveConfigWithBackup()` - сохранение конфигурации с бэкапом (через services.BackupFile) и генерацией secret для Clash API
   - `FileServiceAdapter` - адаптер для services.FileService
 - `state_store.go`:
   - `NewStateStore()` - создание хранилища состояний
@@ -815,14 +840,20 @@ singbox-launcher/
   - `TemplateLoader` interface - интерфейс для загрузки TemplateData
   - `DefaultTemplateLoader` - реализация по умолчанию
 
-**template/** - Работа с шаблонами конфигурации
+**template/** - Работа с единым шаблоном конфигурации
 - `loader.go`:
-  - `LoadTemplateData()` - загрузка шаблона из файла и парсинг его частей
-  - `GetTemplateFileName()` - возврат имени файла шаблона для текущей платформы
+  - `LoadTemplateData()` - загрузка единого JSON-шаблона (`config_template.json`), парсинг секций, применение `params` по текущей платформе, фильтрация `selectable_rules` по `platforms`
+  - `GetTemplateFileName()` - возврат имени файла шаблона (`config_template.json`, единый для всех платформ)
   - `GetTemplateURL()` - возврат URL для загрузки шаблона с GitHub
-  - `TemplateData` struct - структура данных шаблона (ParserConfig, секции, правила, defaultFinal)
-  - `TemplateSelectableRule` struct - структура правила, которое может быть выбрано в визарде
-  - Извлечение специальных блоков: @ParserConfig, @SelectableRule, @PARSER_OUTBOUNDS_BLOCK
+  - `UnifiedTemplate` struct - структура JSON-шаблона (`parser_config`, `config`, `selectable_rules`, `params`)
+  - `UnifiedSelectableRule` struct - правило в шаблоне (label, description, default, platforms, rule_set, rule/rules)
+  - `UnifiedTemplateParam` struct - платформенный параметр (name, platforms, mode, value)
+  - `TemplateData` struct - данные шаблона, подготовленные для визарда (ParserConfig, Config, ConfigOrder, SelectableRules, DefaultFinal)
+  - `TemplateSelectableRule` struct - правило маршрутизации для визарда (Label, Description, IsDefault, Platforms, RuleSets, Rule/Rules)
+- `rule_utils.go`:
+  - `HasOutbound()` - проверка наличия поля outbound в правиле
+  - `GetDefaultOutbound()` - извлечение outbound по умолчанию из правила
+  - `CloneRuleRaw()` - глубокое копирование правила (map[string]interface{})
 
 **utils/** - Утилиты
 - `comparison.go`:
@@ -945,7 +976,8 @@ singbox-launcher/
 │  │  FileService:                                        │   │
 │  │  • Управление путями к файлам                        │   │
 │  │  • Открытие/закрытие лог-файлов                      │   │
-│  │  • Ротация логов                                     │   │
+│  │  • Ротация логов (макс 1 старый файл)                │   │
+│  │  • Бэкап файлов (BackupFile, BackupPath)             │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
@@ -987,9 +1019,9 @@ singbox-launcher/
 │  │  • Запись конфигурации                               │   │
 │  │                                                      │   │
 │  │  parser/:                                            │   │
-│  │  • Извлечение @ParserConfig блока                    │   │
+│  │  • Извлечение ParserConfig блока из config.json      │   │
 │  │  • Нормализация конфигурации                         │   │
-│  │  • Миграция версий                                   │   │
+│  │  • Миграция версий (v1 → v4)                         │   │
 │  │                                                      │   │
 │  │  subscription/:                                      │   │
 │  │  • Загрузка подписок по HTTP                         │   │
@@ -1060,8 +1092,10 @@ singbox-launcher/
 │  │  • Взаимодействие через Presenter                    │   │
 │  │                                                      │   │
 │  │  template/:                                          │   │
-│  │  • Загрузка и парсинг шаблонов конфигурации          │   │
-│  │  • Извлечение @ParserConfig, @SelectableRule блоков  │   │
+│  │  • Загрузка единого JSON-шаблона (config_template.json) │  │
+│  │  • Парсинг секций: parser_config, config, selectable_rules, params │
+│  │  • Применение params по платформе (runtime.GOOS)     │   │
+│  │  • Фильтрация selectable_rules по platforms          │   │
 │  │                                                      │   │
 │  │  utils/:                                             │   │
 │  │  • Утилиты и константы (сравнение, лимиты, таймауты) │   │
@@ -1104,7 +1138,7 @@ UI (core_dashboard_tab.go)
   └─> wizard.ShowConfigWizard()
       ├─> wizard/models: NewWizardModel()
       ├─> wizard/presentation: NewGUIState(), NewWizardPresenter()
-      ├─> wizard/template/loader.go: LoadTemplateData()
+      ├─> wizard/template/loader.go: LoadTemplateData()  # единый JSON-шаблон
       ├─> wizard/tabs/source_tab.go: CreateSourceTab(presenter)
       ├─> wizard/tabs/rules_tab.go: CreateRulesTab(presenter)
       ├─> wizard/tabs/preview_tab.go: CreatePreviewTab(presenter)
@@ -1170,7 +1204,7 @@ UI (core_dashboard_tab.go)
 
 ### 6. Комментарии
 
-- Все комментарии на английском языке
+- Комментарии на русском языке (Go-style, объясняют "зачем", а не "что")
 - Документация для экспортируемых функций
 - Описание сложной логики
 - Self-documenting code предпочтительнее комментариев
