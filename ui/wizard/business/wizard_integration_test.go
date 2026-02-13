@@ -154,7 +154,7 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 }
 
 // findProjectRoot walks up the directory tree to find project root.
-// Returns path to directory containing go.mod and bin/config_template.json
+// Returns path to directory containing go.mod and bin/wizard_template.json
 func findProjectRoot(t *testing.T) string {
 	t.Helper()
 
@@ -163,11 +163,11 @@ func findProjectRoot(t *testing.T) string {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 
-	// Walk up until we find bin/config_template.json and go.mod
+	// Walk up until we find bin/wizard_template.json and go.mod
 	dir := wd
 	for i := 0; i < 10; i++ {
 		goModPath := filepath.Join(dir, "go.mod")
-		templatePath := filepath.Join(dir, "bin", "config_template.json")
+		templatePath := filepath.Join(dir, "bin", "wizard_template.json")
 
 		if fileExists(goModPath) && fileExists(templatePath) {
 			return dir
@@ -180,7 +180,7 @@ func findProjectRoot(t *testing.T) string {
 		dir = parent
 	}
 
-	t.Fatalf("Project root not found from wd=%s (expected go.mod and bin/config_template.json)", wd)
+	t.Fatalf("Project root not found from wd=%s (expected go.mod and bin/wizard_template.json)", wd)
 	return ""
 }
 

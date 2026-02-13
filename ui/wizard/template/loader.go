@@ -1,6 +1,6 @@
 // Package template содержит функциональность загрузки и парсинга шаблонов конфигурации.
 //
-// Файл loader.go загружает единый шаблон конфигурации (config_template.json) и преобразует
+// Файл loader.go загружает единый шаблон конфигурации (wizard_template.json) и преобразует
 // его в TemplateData для использования визардом.
 //
 // Шаблон содержит 4 секции:
@@ -34,7 +34,7 @@ import (
 )
 
 // TemplateFileName — единственный файл шаблона для всех платформ.
-const TemplateFileName = "config_template.json"
+const TemplateFileName = "wizard_template.json"
 
 // TemplateData — данные шаблона, подготовленные для визарда.
 type TemplateData struct {
