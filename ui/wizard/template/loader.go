@@ -38,7 +38,13 @@ const TemplateFileName = "wizard_template.json"
 
 // TemplateData — данные шаблона, подготовленные для визарда.
 type TemplateData struct {
-	// ParserConfig — JSON-текст блока parser_config для отображения и редактирования в визарде.
+	// ParserConfig — JSON-текст блока parser_config (обернут в ParserConfig) для отображения и редактирования в визарде.
+	//
+	// Хранится как строка по следующим причинам:
+	//   - Используется в UI (текстовое поле) — нужна строка для отображения и редактирования
+	//   - Используется в бизнес-логике — парсится в структуру config.ParserConfig при необходимости
+	//   - Хранение строки эффективнее, чем сериализация структуры каждый раз для UI
+	//   - Строка уже содержит валидный JSON с оберткой {"ParserConfig": {...}}, готовый для парсинга
 	ParserConfig string
 
 	// Config — секции основного конфига (после применения params), сохраняя порядок из шаблона.
@@ -139,14 +145,20 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 		return nil, fmt.Errorf("невалидный JSON в %s: %w", TemplateFileName, err)
 	}
 
-	// 1. ParserConfig → сериализуем в строку для модели
+	// 1. ParserConfig → оборачиваем содержимое parser_config в объект ParserConfig и форматируем
 	parserConfigStr := ""
 	if len(root.ParserConfig) > 0 {
+		// Оборачиваем содержимое parser_config в объект ParserConfig для совместимости с config.ParserConfig
+		// Форматируем для удобного отображения в UI
 		var buf bytes.Buffer
-		if err := json.Indent(&buf, root.ParserConfig, "", "  "); err == nil {
+		buf.WriteString("{\n  \"ParserConfig\": ")
+		if err := json.Indent(&buf, root.ParserConfig, "  ", "  "); err == nil {
+			// Успешно отформатировали содержимое
+			buf.WriteString("\n}")
 			parserConfigStr = buf.String()
 		} else {
-			parserConfigStr = string(root.ParserConfig)
+			// Fallback: просто оборачиваем без форматирования
+			parserConfigStr = fmt.Sprintf("{\n  \"ParserConfig\": %s\n}", string(root.ParserConfig))
 		}
 	}
 	debuglog.DebugLog("TemplateLoader: ParserConfig длина: %d", len(parserConfigStr))

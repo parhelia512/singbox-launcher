@@ -1,81 +1,79 @@
 {
   "parser_config": {
-    "ParserConfig": {
-      "version": 4,
-      "proxies": [{ "source": "https://your-subscription-url-here" }],
-      "outbounds": [
-        {
-          "tag": "auto-proxy-out",
-          "wizard": { "required": 1 },
-          "type": "urltest",
-          "options": {
-            "url": "https://cp.cloudflare.com/generate_204",
-            "interval": "5m",
-            "tolerance": 100,
-            "interrupt_exist_connections": true
-          },
-          "filters": { "tag": "!/(🇷🇺)/i" },
-          "comment": "Proxy automated group for everything that should go through VPN"
+    "version": 4,
+    "proxies": [{ "source": "https://your-subscription-url-here" }],
+    "outbounds": [
+      {
+        "tag": "auto-proxy-out",
+        "wizard": { "required": 1 },
+        "type": "urltest",
+        "options": {
+          "url": "https://cp.cloudflare.com/generate_204",
+          "interval": "5m",
+          "tolerance": 100,
+          "interrupt_exist_connections": true
         },
-        {
-          "tag": "proxy-out",
-          "wizard": { "required": 1 },
-          "type": "selector",
-          "options": { "interrupt_exist_connections": true, "default": "auto-proxy-out" },
-          "filters": { "tag": "!/(🇷🇺)/i" },
-          "addOutbounds": ["direct-out", "auto-proxy-out"],
-          "comment": "Proxy group for everything that should go through VPN"
+        "filters": { "tag": "!/(🇷🇺)/i" },
+        "comment": "Proxy automated group for everything that should go through VPN"
+      },
+      {
+        "tag": "proxy-out",
+        "wizard": { "required": 1 },
+        "type": "selector",
+        "options": { "interrupt_exist_connections": true, "default": "auto-proxy-out" },
+        "filters": { "tag": "!/(🇷🇺)/i" },
+        "addOutbounds": ["direct-out", "auto-proxy-out"],
+        "comment": "Proxy group for everything that should go through VPN"
+      },
+      {
+        "tag": "ru VPN 🇷🇺",
+        "type": "selector",
+        "options": {
+          "default": "direct-out",
+          "interrupt_exist_connections": true
         },
-        {
-          "tag": "ru VPN 🇷🇺",
-          "type": "selector",
-          "options": {
-            "default": "direct-out",
-            "interrupt_exist_connections": true
-          },
-          "filters": { "tag": "/(🇷🇺)/i" },
-          "addOutbounds": ["direct-out"],
-          "comment": "Proxy group for russian VPN"
+        "filters": { "tag": "/(🇷🇺)/i" },
+        "addOutbounds": ["direct-out"],
+        "comment": "Proxy group for russian VPN"
+      },
+      {
+        "tag": "vpn ①",
+        "type": "selector",
+        "options": {
+          "default": "proxy-out",
+          "interrupt_exist_connections": true
         },
-        {
-          "tag": "vpn ①",
-          "type": "selector",
-          "options": {
-            "default": "proxy-out",
-            "interrupt_exist_connections": true
-          },
-          "addOutbounds": ["direct-out", "proxy-out"],
-          "comment": "Proxy group 1"
+        "addOutbounds": ["direct-out", "proxy-out"],
+        "comment": "Proxy group 1"
+      },
+      {
+        "tag": "vpn ②",
+        "type": "selector",
+        "options": {
+          "default": "proxy-out",
+          "interrupt_exist_connections": true
         },
-        {
-          "tag": "vpn ②",
-          "type": "selector",
-          "options": {
-            "default": "proxy-out",
-            "interrupt_exist_connections": true
-          },
-          "addOutbounds": ["direct-out", "proxy-out"],
-          "comment": "Proxy group 2"
+        "addOutbounds": ["direct-out", "proxy-out"],
+        "comment": "Proxy group 2"
+      },
+      {
+        "tag": "go-any-way-githubusercontent",
+        "wizard": { "hide": true, "required": 2 },
+        "type": "urltest",
+        "options": {
+          "url": "https://raw.githubusercontent.com/github/gitignore/main/Global/GPG.gitignore",
+          "interval": "1h",
+          "idle_timeout": "1h",
+          "tolerance": 1000,
+          "interrupt_exist_connections": true
         },
-        {
-          "tag": "go-any-way-githubusercontent",
-          "wizard": { "hide": true, "required": 2 },
-          "type": "urltest",
-          "options": {
-            "url": "https://raw.githubusercontent.com/github/gitignore/main/Global/GPG.gitignore",
-            "interval": "1h",
-            "idle_timeout": "1h",
-            "tolerance": 1000,
-            "interrupt_exist_connections": true
-          },
-          "addOutbounds": ["direct-out"],
-          "comment": "find any way"
-        }
-      ],
-      "parser": {
-        "reload": "1h",
-        "last_updated": "2026-01-30T12:00:00Z"
+        "addOutbounds": ["direct-out"],
+        "comment": "find any way"
       }
+    ],
+    "parser": {
+      "reload": "1h",
+      "last_updated": "2026-01-30T12:00:00Z"
     }
   },
 
