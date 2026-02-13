@@ -66,6 +66,11 @@ type AppController struct {
 	// --- Context for goroutine cancellation ---
 	ctx        context.Context    // Context for cancellation
 	cancelFunc context.CancelFunc // Cancel function for stopping goroutines
+
+	// --- Update popup state ---
+	StartInTray      bool         // Флаг запуска с параметром -tray
+	updatePopupShown bool         // Флаг, что попап обновления уже был показан в этой сессии
+	updatePopupMutex sync.RWMutex // Мьютекс для защиты updatePopupShown
 }
 
 // RunningState - structure for tracking the VPN's running state.
@@ -109,6 +114,34 @@ func GetController() *AppController {
 	return instance
 }
 
+// SetStartInTray сохраняет флаг запуска с параметром -tray
+func (ac *AppController) SetStartInTray(startInTray bool) {
+	ac.updatePopupMutex.Lock()
+	defer ac.updatePopupMutex.Unlock()
+	ac.StartInTray = startInTray
+}
+
+// WasStartedInTray возвращает, был ли запуск с параметром -tray
+func (ac *AppController) WasStartedInTray() bool {
+	ac.updatePopupMutex.RLock()
+	defer ac.updatePopupMutex.RUnlock()
+	return ac.StartInTray
+}
+
+// setUpdatePopupShown устанавливает флаг, что попап обновления был показан
+func (ac *AppController) setUpdatePopupShown(shown bool) {
+	ac.updatePopupMutex.Lock()
+	defer ac.updatePopupMutex.Unlock()
+	ac.updatePopupShown = shown
+}
+
+// isUpdatePopupShown возвращает, был ли попап обновления показан
+func (ac *AppController) isUpdatePopupShown() bool {
+	ac.updatePopupMutex.RLock()
+	defer ac.updatePopupMutex.RUnlock()
+	return ac.updatePopupShown
+}
+
 // NewAppController creates and initializes a new AppController instance.
 // This function should be called only once at application startup (typically in main.go).
 // It sets the global singleton instance that can be accessed via GetController().
@@ -145,6 +178,11 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.ConsecutiveCrashAttempts = 0
 	ac.ProcessService = NewProcessService(ac)
 	ac.ConfigService = NewConfigService(ac)
+
+	// Устанавливаем callback для проверки обновлений при открытии окна
+	ac.UIService.OnWindowShown = func() {
+		ac.ShowUpdatePopupIfNeeded()
+	}
 
 	// Initialize APIService
 	apiService, err := services.NewAPIService(

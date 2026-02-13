@@ -14,7 +14,11 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
@@ -142,7 +146,8 @@ func (ac *AppController) SetCachedLauncherVersion(version string) {
 }
 
 // CheckLauncherVersionOnStartup выполняет разовую проверку версии launcher при старте
-func (ac *AppController) CheckLauncherVersionOnStartup() {
+// startInTray: если true, запуск был с параметром -tray (попап не показывается сразу)
+func (ac *AppController) CheckLauncherVersionOnStartup(startInTray bool) {
 	// Проверяем, не идет ли уже проверка
 	if ac.StateService == nil {
 		return
@@ -169,6 +174,12 @@ func (ac *AppController) CheckLauncherVersionOnStartup() {
 		// Сохраняем в кеш
 		ac.SetCachedLauncherVersion(latest)
 		debuglog.InfoLog("CheckLauncherVersionOnStartup: Successfully cached launcher version %s", latest)
+
+		// Если запуск БЕЗ -tray, показываем попап сразу (если есть обновление)
+		// Если запуск С -tray, попап будет показан при первом открытии окна
+		if !startInTray {
+			ac.ShowUpdatePopupIfAvailable(true)
+		}
 	}()
 }
 
@@ -497,4 +508,138 @@ func CompareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+// ShowUpdatePopupIfAvailable проверяет наличие обновления и показывает попап
+// showImmediately: если true, показывает сразу; если false, только если запуск был с -tray
+func (ac *AppController) ShowUpdatePopupIfAvailable(showImmediately bool) {
+	// Проверяем, не был ли попап уже показан
+	if ac.isUpdatePopupShown() {
+		debuglog.DebugLog("ShowUpdatePopupIfAvailable: Update popup already shown, skipping")
+		return
+	}
+
+	// Получаем текущую версию
+	currentVersion := constants.AppVersion
+	currentVersionClean := strings.TrimPrefix(currentVersion, "v")
+
+	// Получаем последнюю версию из кеша
+	latestVersion := ac.GetCachedLauncherVersion()
+	if latestVersion == "" {
+		debuglog.DebugLog("ShowUpdatePopupIfAvailable: No cached version available, skipping popup")
+		return
+	}
+	latestVersionClean := strings.TrimPrefix(latestVersion, "v")
+
+	// Сравниваем версии
+	compareResult := CompareVersions(currentVersionClean, latestVersionClean)
+	if compareResult >= 0 {
+		// Нет обновления или текущая версия новее
+		debuglog.DebugLog("ShowUpdatePopupIfAvailable: No update available (current: %s, latest: %s)", currentVersion, latestVersion)
+		return
+	}
+
+	// Есть обновление - показываем попап
+	debuglog.InfoLog("ShowUpdatePopupIfAvailable: Update available (current: %s, latest: %s), showing popup", currentVersion, latestVersion)
+	ac.showUpdatePopup(currentVersion, latestVersion)
+}
+
+// ShowUpdatePopupIfNeeded проверяет и показывает попап при открытии окна
+// Вызывается из OnWindowShown callback
+func (ac *AppController) ShowUpdatePopupIfNeeded() {
+	// Показывать только если:
+	// 1. Запуск был с -tray
+	// 2. Попап еще не показывался в этой сессии
+	// 3. Есть обновление
+	if !ac.WasStartedInTray() {
+		debuglog.DebugLog("ShowUpdatePopupIfNeeded: Not started in tray, skipping")
+		return
+	}
+
+	if ac.isUpdatePopupShown() {
+		debuglog.DebugLog("ShowUpdatePopupIfNeeded: Update popup already shown, skipping")
+		return
+	}
+
+	// Проверяем наличие обновления
+	ac.ShowUpdatePopupIfAvailable(false)
+}
+
+// showUpdatePopup показывает попап с информацией об обновлении
+func (ac *AppController) showUpdatePopup(currentVersion, latestVersion string) {
+	if ac.UIService == nil || ac.UIService.MainWindow == nil {
+		debuglog.WarnLog("showUpdatePopup: UIService or MainWindow not available")
+		return
+	}
+
+	// Устанавливаем флаг, что попап был показан
+	ac.setUpdatePopupShown(true)
+
+	// Создаем содержимое попапа
+	fyne.Do(func() {
+		downloadURL := "https://github.com/Leadaxe/singbox-launcher/releases/latest"
+
+		// Создаем ссылку на скачивание
+		downloadLink := widget.NewHyperlink("Скачать с GitHub", nil)
+		if err := downloadLink.SetURLFromString(downloadURL); err != nil {
+			debuglog.ErrorLog("showUpdatePopup: Failed to set URL: %v", err)
+		}
+		downloadLink.OnTapped = func() {
+			if err := platform.OpenURL(downloadURL); err != nil {
+				debuglog.ErrorLog("showUpdatePopup: Failed to open download URL: %v", err)
+				dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Не удалось открыть ссылку: %v", err))
+			}
+		}
+
+		// Создаем кнопку "Скачать"
+		var d dialog.Dialog
+		downloadButton := widget.NewButton("Скачать", func() {
+			if err := platform.OpenURL(downloadURL); err != nil {
+				debuglog.ErrorLog("showUpdatePopup: Failed to open download URL: %v", err)
+				dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Не удалось открыть ссылку: %v", err))
+			} else {
+				if d != nil {
+					d.Hide()
+				}
+			}
+		})
+
+		// Создаем кнопку "Закрыть"
+		closeButton := widget.NewButton("Закрыть", func() {
+			if d != nil {
+				d.Hide()
+			}
+		})
+
+		// Создаем контейнер с информацией
+		mainContent := container.NewVBox(
+			widget.NewLabel("Доступна новая версия приложения"),
+			widget.NewLabel(""),
+			widget.NewLabel(fmt.Sprintf("Текущая версия: %s", currentVersion)),
+			widget.NewLabel(fmt.Sprintf("Новая версия: %s", latestVersion)),
+			widget.NewLabel(""),
+			downloadLink,
+		)
+
+		// Создаем контейнер с кнопками
+		buttonsContainer := container.NewHBox(
+			downloadButton,
+			closeButton,
+		)
+
+		// Создаем финальный контейнер с Border layout
+		content := container.NewBorder(
+			nil,            // top
+			buttonsContainer, // bottom
+			nil,            // left
+			nil,            // right
+			mainContent,    // center
+		)
+
+		// Создаем диалог
+		d = dialog.NewCustomWithoutButtons("Доступно обновление", content, ac.UIService.MainWindow)
+
+		// Показываем диалог
+		d.Show()
+	})
 }
