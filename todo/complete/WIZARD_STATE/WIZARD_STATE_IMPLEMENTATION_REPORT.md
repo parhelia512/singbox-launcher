@@ -197,7 +197,9 @@
 
 1. ✅ Загрузка шаблона (TemplateData) — шаблон уже загружен при инициализации
 2. ✅ Восстановление `parser_config` — копирование из файла состояния
-3. ✅ Извлечение `SourceURLs` — из `parser_config.ParserConfig.proxies`
+3. ✅ Извлечение `SourceURLs` — из `parser_config.proxies`
+
+**⚠️ TODO:** Текущая реализация использует `parser_config.ParserConfig.proxies`. После упрощения структуры будет `parser_config.proxies`. Задача не выполнена.
 4. ✅ Восстановление `config_params` — маппинг `route.final` → `SelectedFinalOutbound`
 5. ✅ Инициализация `TemplateSectionSelections` — все секции = `true`
 6. ✅ Восстановление `SelectableRuleStates` — загрузка из файла
