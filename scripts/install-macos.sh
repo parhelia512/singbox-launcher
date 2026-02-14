@@ -8,24 +8,63 @@ echo "--------------------------------------------------------------"
 echo " "
 set -euo pipefail
 
-VERSION="${1:-0.6.2}"
-TARGET_RAW="${2:-auto}"
 REPO="Leadaxe/singbox-launcher"
+
+# Parse arguments: first arg can be version or target, second arg is target (only if first is version)
+ARG1="${1:-}"
+ARG2="${2:-}"
+
+# If first argument is "auto" or "catalina", treat it as target (ignore second arg)
+if [[ "$ARG1" == "auto" || "$ARG1" == "catalina" ]]; then
+  TARGET="$(echo "$ARG1" | tr '[:upper:]' '[:lower:]')"
+  VERSION=""
+else
+  # First argument is version (or empty for auto-detect), second is target
+  VERSION="$ARG1"
+  TARGET="$(echo "${ARG2:-auto}" | tr '[:upper:]' '[:lower:]')"
+  # Validate target
+  if [[ "$TARGET" != "auto" && "$TARGET" != "catalina" ]]; then
+    echo "Unknown target: $TARGET"
+    echo "Usage: $0 [version] [auto|catalina]"
+    echo "  If version is not specified, latest version will be used automatically"
+    exit 1
+  fi
+fi
+
+if [[ -z "$VERSION" ]]; then
+  echo "Detecting latest version..."
+  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if [[ -z "$VERSION" ]]; then
+    echo "Error: Could not detect latest version. Please specify version manually."
+    echo "Usage: $0 [version] [auto|catalina]"
+    exit 1
+  fi
+  echo "Latest version: ${VERSION#v}"
+fi
+
+if [[ ! "$VERSION" =~ ^v ]]; then
+  VERSION="v${VERSION}"
+fi
+
 ASSET_DEFAULT="singbox-launcher-${VERSION}-macos.zip"
 ASSET_CATALINA="singbox-launcher-${VERSION}-macos-catalina.zip"
 
-INSTALL_DIR="${HOME}/Applications/Singbox-Launcher"
+INSTALL_DIR="/Applications"
 APP_NAME="singbox-launcher.app"
 BIN_REL="Contents/MacOS/singbox-launcher"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing: $1"; exit 1; }; }
-need curl; need unzip; need xattr; need chmod; need open; need mktemp; need find; need sw_vers
+need curl; need unzip; need xattr; need chmod; need open; need mktemp; need find; need sw_vers; need grep; need sed
 
-# Normalize target
-TARGET="$(echo "$TARGET_RAW" | tr '[:upper:]' '[:lower:]')"
-if [[ "$TARGET" != "auto" && "$TARGET" != "catalina" ]]; then
-  echo "Unknown target: $TARGET_RAW"
-  echo "Usage: $0 [version] [auto|catalina]"
+# Check write permissions to /Applications
+if [[ ! -w "$INSTALL_DIR" ]]; then
+  echo "Error: No write permission to $INSTALL_DIR"
+  echo "You may need to run this script with sudo, or install to ${HOME}/Applications/ instead."
+  echo ""
+  echo "To install with sudo:"
+  echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/install-macos.sh | sudo bash"
+  echo ""
+  echo "Or modify INSTALL_DIR in the script to use ${HOME}/Applications/"
   exit 1
 fi
 
@@ -39,25 +78,21 @@ if [[ "$TARGET" == "auto" ]]; then
   fi
 fi
 
-# Choose asset URL (prefer catalina when requested/detected and available)
-ASSET="$ASSET_DEFAULT"
 if [[ "$TARGET" == "catalina" || "$IS_CATALINA" == "true" ]]; then
   URL_CATALINA="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_CATALINA}"
   if curl -fsI "$URL_CATALINA" >/dev/null 2>&1; then
     ASSET="$ASSET_CATALINA"
     URL="$URL_CATALINA"
   else
-    echo "Catalina-targeted asset not found for ${VERSION}, falling back to universal macOS asset"
+    echo "Catalina asset not found, using universal build"
+    ASSET="$ASSET_DEFAULT"
     URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_DEFAULT}"
   fi
 else
+  ASSET="$ASSET_DEFAULT"
   URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_DEFAULT}"
 fi
 
-echo "Selected asset: $ASSET"
-echo "Download URL: $URL"
-
-# Inform user about Catalina compatibility when appropriate
 if [[ "$ASSET" == "$ASSET_CATALINA" ]]; then
   echo "Note: Catalina build is best-effort compatibility."
   echo "If the app does not start, please update macOS or use the universal build." 
@@ -69,7 +104,12 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$INSTALL_DIR"
 
 echo "Downloading ${ASSET}..."
-curl -fL "$URL" -o "$tmp/$ASSET"
+if ! curl -fL "$URL" -o "$tmp/$ASSET"; then
+  echo "Error: Failed to download ${ASSET}"
+  echo "The version ${VERSION} may not exist or the asset is not available."
+  echo "Please check available releases at: https://github.com/${REPO}/releases"
+  exit 1
+fi
 
 echo "Unpacking..."
 unzip -q "$tmp/$ASSET" -d "$tmp/unpacked"
@@ -105,25 +145,47 @@ target="${INSTALL_DIR}/${APP_NAME}"
 config_path="${target}/Contents/MacOS/bin/config.json"
 config_backup="${tmp}/config.json.backup"
 
-# Backup config if exists
+# Backup config if exists and move old app to Trash
 if [[ -d "$target" ]]; then
-  echo "Removing existing installation..."
+  echo "Moving existing installation to Trash..."
   if [[ -f "$config_path" ]]; then
     echo "Backing up config.json..."
     cp "$config_path" "$config_backup"
   fi
-  rm -rf "$target"
+  # Move to Trash using AppleScript
+  osascript -e "tell application \"Finder\" to move POSIX file \"$target\" to trash" 2>/dev/null || {
+    # Fallback if osascript fails
+    echo "Warning: Could not move to Trash, removing directly..."
+    rm -rf "$target"
+  }
 fi
 
 echo "Installing..."
 cp -R "$app_path" "$target"
 
-# Restore config if it was backed up
+# Ask user if they want to restore config (default: no)
+# Only ask if running in interactive mode
 if [[ -f "$config_backup" ]]; then
-  echo "Restoring config.json..."
-  mkdir -p "$(dirname "$config_path")"
-  cp "$config_backup" "$config_path"
-  echo "Config restored successfully"
+  if [[ -t 0 ]]; then
+    # Interactive mode - ask user
+    echo ""
+    echo "Found existing config.json from previous installation."
+    echo -n "Restore previous config.json? [y/N]: "
+    read -r restore_config
+    restore_config="$(echo "$restore_config" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$restore_config" == "y" || "$restore_config" == "yes" ]]; then
+      echo "Restoring config.json..."
+      mkdir -p "$(dirname "$config_path")"
+      cp "$config_backup" "$config_path"
+      echo "Config restored successfully"
+    else
+      echo "Skipping config restoration (using default config)"
+    fi
+  else
+    # Non-interactive mode - skip restoration
+    echo "Found existing config.json from previous installation."
+    echo "Skipping config restoration in non-interactive mode (using default config)"
+  fi
 fi
 
 echo "Fixing macOS attributes and permissions..."

@@ -146,14 +146,18 @@ There are two ways to install on macOS:
 The easiest way to install is using the installation script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- 0.6.2
+curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash
 ```
 
-Replace `0.6.2` with the version you want to install (or omit for the default version).
+The script will automatically detect and install the latest version. You can also specify a version explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- v0.8.0
+```
 
 The script will:
 - Download the release archive
-- Extract and install to `~/Applications/Singbox-Launcher/`
+- Extract and install to `/Applications/`
 - Fix macOS quarantine attributes and permissions automatically
 - Ensure compatibility with Apple Silicon and all macOS versions
 - Launch the application automatically
