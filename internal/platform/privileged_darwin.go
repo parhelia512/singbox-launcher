@@ -12,11 +12,12 @@ package platform
 #include <unistd.h>
 
 // We use AuthorizationExecuteWithPrivileges (deprecated but still supported) to prompt for password and run sing-box for TUN.
-// If the child prints a decimal PID on the first line of stdout, *outPid is set; otherwise *outPid stays 0.
+// If the child prints decimal PIDs on the first two lines of stdout (script PID, then sing-box PID), they are set; otherwise 0.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-static int runWithPrivileges(const char *path, char **args, int argCount, pid_t *outPid) {
-	*outPid = 0;
+static int runWithPrivileges(const char *path, char **args, int argCount, pid_t *outScriptPid, pid_t *outSingboxPid) {
+	*outScriptPid = 0;
+	*outSingboxPid = 0;
 	AuthorizationRef authRef = NULL;
 	OSStatus status = AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment,
 		kAuthorizationFlagInteractionAllowed | kAuthorizationFlagExtendRights,
@@ -39,7 +40,12 @@ static int runWithPrivileges(const char *path, char **args, int argCount, pid_t 
 		if (fgets(buf, (int)sizeof(buf), pipe)) {
 			long p = strtol(buf, NULL, 10);
 			if (p > 0)
-				*outPid = (pid_t)p;
+				*outScriptPid = (pid_t)p;
+		}
+		if (fgets(buf, (int)sizeof(buf), pipe)) {
+			long p = strtol(buf, NULL, 10);
+			if (p > 0)
+				*outSingboxPid = (pid_t)p;
 		}
 		fclose(pipe);
 	}
@@ -57,10 +63,10 @@ import (
 
 // RunWithPrivileges runs the given tool with elevated privileges using the macOS
 // Security framework. The user is prompted for their password. It returns as soon
-// as the child is started; if the child prints a decimal PID on the first line of
-// stdout, that PID is returned (e.g. start script does "echo $$"). Otherwise 0.
+// as the child is started; if the child prints two decimal PIDs on the first two
+// lines of stdout (script PID, then sing-box PID), they are returned. Otherwise 0, 0.
 // Used to start sing-box with TUN or to kill the privileged process.
-func RunWithPrivileges(toolPath string, args []string) (pid int, err error) {
+func RunWithPrivileges(toolPath string, args []string) (scriptPID, singboxPID int, err error) {
 	cPath := C.CString(toolPath)
 	defer C.free(unsafe.Pointer(cPath))
 
@@ -78,12 +84,12 @@ func RunWithPrivileges(toolPath string, args []string) (pid int, err error) {
 	cArgs = append(cArgs, nil)
 	cArgsPtr := &cArgs[0]
 
-	var cPid C.pid_t
-	code := C.runWithPrivileges(cPath, cArgsPtr, C.int(len(args)), &cPid)
+	var cScriptPid, cSingboxPid C.pid_t
+	code := C.runWithPrivileges(cPath, cArgsPtr, C.int(len(args)), &cScriptPid, &cSingboxPid)
 	if code != 0 {
-		return 0, fmt.Errorf("privileged execution failed with status %d (authorization may have been cancelled)", code)
+		return 0, 0, fmt.Errorf("privileged execution failed with status %d (authorization may have been cancelled)", code)
 	}
-	return int(cPid), nil
+	return int(cScriptPid), int(cSingboxPid), nil
 }
 
 // WaitForPrivilegedExit waits for the process pid to exit (reaps it to avoid zombie). Darwin only.

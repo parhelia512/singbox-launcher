@@ -150,9 +150,8 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 }
 
 // startSingBoxPrivileged starts sing-box with elevated privileges on macOS (for TUN).
-// The script writes its own PID ($$) then runs sing-box in foreground; we run the script
-// in a goroutine so the launcher doesn't block. On Stop we kill the script's process group
-// so both the script and sing-box exit.
+// The script echoes its PID and sing-box's PID to stdout, runs sing-box in a subshell in background, then wait.
+// On Stop we kill both PIDs explicitly (no process group).
 func (svc *ProcessService) startSingBoxPrivileged() error {
 	ac := svc.ac
 	binDir := platform.GetBinDir(ac.FileService.ExecDir)
@@ -165,22 +164,26 @@ func (svc *ProcessService) startSingBoxPrivileged() error {
 	scriptPath := filepath.Join(binDir, "start-singbox-privileged.sh")
 	pidFilePath := filepath.Join(binDir, "singbox.pid")
 
-	// Script: print PID on first line (so RunWithPrivileges can return it), redirect stdout so pipe closes, then run sing-box in foreground
+	// Script: echo script PID, run sing-box in subshell (redirect to log so nothing goes to pipe), echo sing-box PID, then exec and wait
 	scriptBody := fmt.Sprintf(`#!/bin/sh
 echo $$
+cd %s
+%s run -c %s >> %s 2>&1 &
+echo $!
 exec 1>>%s 2>&1
-cd %s && %s run -c %s >> %s 2>&1
-`, strconv.Quote(logPath), strconv.Quote(binDir), strconv.Quote(ac.FileService.SingboxPath), strconv.Quote(configName), strconv.Quote(logPath))
+wait
+`, strconv.Quote(binDir), strconv.Quote(ac.FileService.SingboxPath), strconv.Quote(configName), strconv.Quote(logPath), strconv.Quote(logPath))
 	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0700); err != nil {
 		return fmt.Errorf("failed to write script %s: %w", scriptPath, err)
 	}
 
 	debuglog.InfoLog("startSingBox: Starting Sing-Box with elevated privileges (TUN)...")
-	pidCh := make(chan int, 1)
+	type privilegedPids struct{ Script, Singbox int }
+	pidCh := make(chan privilegedPids, 1)
 	go func() {
-		scriptPID, runErr := platform.RunWithPrivileges("/bin/sh", []string{scriptPath})
+		scriptPID, singboxPID, runErr := platform.RunWithPrivileges("/bin/sh", []string{scriptPath})
 		if runErr != nil {
-			pidCh <- 0
+			pidCh <- privilegedPids{0, 0}
 			ac.CmdMutex.Lock()
 			if ac.SingboxPrivilegedMode {
 				ac.CmdMutex.Unlock()
@@ -190,7 +193,7 @@ cd %s && %s run -c %s >> %s 2>&1
 			debuglog.WarnLog("startSingBox: privileged run failed: %v", runErr)
 			return
 		}
-		pidCh <- scriptPID
+		pidCh <- privilegedPids{scriptPID, singboxPID}
 		if scriptPID <= 0 {
 			return
 		}
@@ -198,18 +201,19 @@ cd %s && %s run -c %s >> %s 2>&1
 		ac.SingboxCmd = nil
 		ac.SingboxPrivilegedMode = true
 		ac.SingboxPrivilegedPID = scriptPID
+		ac.SingboxPrivilegedSingboxPID = singboxPID
 		ac.SingboxPrivilegedPIDFile = pidFilePath
 		ac.RunningState.Set(true)
 		ac.StoppedByUser = false
 		ac.CmdMutex.Unlock()
-		_ = os.WriteFile(pidFilePath, []byte(strconv.Itoa(scriptPID)), 0644)
-		debuglog.DebugLog("startSingBox: Sing-Box started with privileges (script PID=%d).", scriptPID)
+		_ = os.WriteFile(pidFilePath, []byte(fmt.Sprintf("%d\n%d", scriptPID, singboxPID)), 0644)
+		debuglog.DebugLog("startSingBox: Sing-Box started with privileges (script PID=%d, sing-box PID=%d).", scriptPID, singboxPID)
 		platform.WaitForPrivilegedExit(scriptPID)
 		svc.onPrivilegedScriptExited()
 	}()
 
-	scriptPID := <-pidCh
-	if scriptPID <= 0 {
+	pids := <-pidCh
+	if pids.Script <= 0 {
 		return fmt.Errorf("privileged start failed or cancelled (no PID)")
 	}
 
@@ -220,8 +224,8 @@ cd %s && %s run -c %s >> %s 2>&1
 	return nil
 }
 
-// onPrivilegedScriptExited is called when the privileged script process exits (RunWithPrivileges returned).
-// The script runs sing-box in foreground, so when the script exits, sing-box has exited too.
+// onPrivilegedScriptExited is called when the privileged script process exits (Wait4 returned).
+// The script waits on sing-box, so when the script exits, sing-box has exited too.
 func (svc *ProcessService) onPrivilegedScriptExited() {
 	ac := svc.ac
 	ac.CmdMutex.Lock()
@@ -231,6 +235,7 @@ func (svc *ProcessService) onPrivilegedScriptExited() {
 	}
 	ac.SingboxPrivilegedMode = false
 	ac.SingboxPrivilegedPID = 0
+	ac.SingboxPrivilegedSingboxPID = 0
 	ac.SingboxPrivilegedPIDFile = ""
 	ac.RunningState.Set(false)
 	if ac.StoppedByUser {
@@ -384,19 +389,25 @@ func (svc *ProcessService) Stop() {
 		return
 	}
 
-	// Privileged mode (macOS TUN): kill script's process group (script + sing-box) via RunWithPrivileges
+	// Privileged mode (macOS TUN): kill both script and sing-box by PID via RunWithPrivileges
 	if ac.SingboxPrivilegedMode && ac.SingboxPrivilegedPID != 0 && ac.SingboxPrivilegedPIDFile != "" {
 		pidFile := ac.SingboxPrivilegedPIDFile
 		scriptPID := ac.SingboxPrivilegedPID
+		singboxPID := ac.SingboxPrivilegedSingboxPID
 		ac.CmdMutex.Unlock()
-		debuglog.InfoLog("stopSingBox: Stopping privileged Sing-Box (script PID %d, killing process group)...", scriptPID)
-		killScript := fmt.Sprintf("kill -TERM -%d 2>/dev/null; rm -f %s", scriptPID, strconv.Quote(pidFile))
-		if _, err := platform.RunWithPrivileges("/bin/sh", []string{"-c", killScript}); err != nil {
+		debuglog.InfoLog("stopSingBox: Stopping privileged Sing-Box (script PID %d, sing-box PID %d)...", scriptPID, singboxPID)
+		killScript := fmt.Sprintf("kill -TERM %d 2>/dev/null", scriptPID)
+		if singboxPID > 0 {
+			killScript += fmt.Sprintf("; kill -TERM %d 2>/dev/null", singboxPID)
+		}
+		killScript += fmt.Sprintf("; rm -f %s", strconv.Quote(pidFile))
+		if _, _, err := platform.RunWithPrivileges("/bin/sh", []string{"-c", killScript}); err != nil {
 			debuglog.WarnLog("stopSingBox: Privileged kill failed (process may have already exited): %v", err)
 		}
 		ac.CmdMutex.Lock()
 		ac.SingboxPrivilegedMode = false
 		ac.SingboxPrivilegedPID = 0
+		ac.SingboxPrivilegedSingboxPID = 0
 		ac.SingboxPrivilegedPIDFile = ""
 		ac.RunningState.Set(false)
 		ac.StoppedByUser = false

@@ -54,9 +54,10 @@ type AppController struct {
 
 	// --- Process State ---
 	SingboxCmd               *exec.Cmd
-	SingboxPrivilegedMode    bool   // true when sing-box was started with RunWithPrivileges (macOS TUN)
-	SingboxPrivilegedPID     int    // PID of the privileged sing-box process
-	SingboxPrivilegedPIDFile string // temp file path holding the PID (for privileged kill)
+	SingboxPrivilegedMode        bool   // true when sing-box was started with RunWithPrivileges (macOS TUN)
+	SingboxPrivilegedPID         int    // PID of the start script (for wait/exit handling)
+	SingboxPrivilegedSingboxPID  int    // PID of the sing-box process (for privileged kill)
+	SingboxPrivilegedPIDFile     string // temp file path holding both PIDs (for diagnostics)
 	CmdMutex                 sync.Mutex
 	ParserMutex              sync.Mutex // Mutex for ParserRunning
 	ParserRunning            bool
