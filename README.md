@@ -143,24 +143,31 @@ There are two ways to install on macOS:
 
 **⚠️ Important**: If you encounter compatibility issues (e.g., "This app cannot be used with this version of macOS" on Apple Silicon or macOS Sequoia), use the installation script instead of manual installation.
 
-The easiest way to install is using the installation script:
+**Quick Install (Latest Version):**
+
+1. Open Terminal (Press `Cmd + Space`, type "Terminal", press Enter)
+2. Copy and paste this command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash
 ```
 
-The script will automatically detect and install the latest version. You can also specify a version explicitly:
+3. Press Enter and follow the prompts (if asked about restoring config, press Enter to skip)
+
+The script will automatically:
+- Detect and download the latest version
+- Install to `/Applications/`
+- Fix macOS quarantine attributes and permissions
+- Ensure compatibility with Apple Silicon and all macOS versions
+- Open Finder to show the installed app
+
+**Install Specific Version:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- v0.8.0
 ```
 
-The script will:
-- Download the release archive
-- Extract and install to `/Applications/`
-- Fix macOS quarantine attributes and permissions automatically
-- Ensure compatibility with Apple Silicon and all macOS versions
-- Launch the application automatically
+Replace `v0.8.0` with the version you want to install.
 
 #### Option 2: Manual Installation
 
