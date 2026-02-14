@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+import urllib.request
+import urllib.error
+import ssl
+import json
+import sys
+from datetime import datetime
+
+def format_number(n):
+    return f"{n:,}"
+
+def format_date(date_str):
+    try:
+        dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        return dt.strftime('%Y-%m-%d %H:%M')
+    except:
+        return date_str
+
+def main():
+    url = "https://api.github.com/repos/Leadaxe/singbox-launcher/releases"
+    
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("User-Agent", "singbox-launcher/1.0")
+    
+    # Create SSL context that doesn't verify certificates (for sandbox environments)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
+            releases = json.loads(response.read().decode())
+    except urllib.error.URLError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not releases:
+        print("No releases found")
+        return
+    
+    # Process releases
+    release_stats = []
+    total_downloads = 0
+    
+    for release in releases:
+        tag = release.get('tag_name', 'N/A')
+        published = release.get('published_at', 'N/A')
+        assets = release.get('assets', [])
+        
+        # Calculate total downloads for this release
+        release_total = sum(asset.get('download_count', 0) for asset in assets)
+        total_downloads += release_total
+        
+        # Count assets
+        win_count = sum(1 for a in assets if 'win' in a.get('name', '').lower())
+        mac_count = sum(1 for a in assets if 'macos' in a.get('name', '').lower())
+        
+        release_stats.append({
+            'version': tag,
+            'date': format_date(published),
+            'downloads': release_total,
+            'assets_count': len(assets),
+            'win': win_count > 0,
+            'mac': mac_count > 0
+        })
+    
+    # Sort by version (newest first)
+    release_stats.sort(key=lambda x: x['version'], reverse=True)
+    
+    # Print table
+    print("=" * 90)
+    print("📊 Download Statistics for Leadaxe/singbox-launcher")
+    print("=" * 90)
+    print()
+    
+    # Table header
+    print(f"{'Version':<12} {'Release Date':<18} {'Downloads':>12} {'Assets':>8} {'Platforms':<15}")
+    print("-" * 90)
+    
+    # Table rows
+    for stat in release_stats:
+        platforms = []
+        if stat['win']:
+            platforms.append("Windows")
+        if stat['mac']:
+            platforms.append("macOS")
+        platform_str = ", ".join(platforms) if platforms else "N/A"
+        
+        print(f"{stat['version']:<12} {stat['date']:<18} {format_number(stat['downloads']):>12} "
+              f"{stat['assets_count']:>8} {platform_str:<15}")
+    
+    print("-" * 90)
+    print(f"{'TOTAL':<12} {'':<18} {format_number(total_downloads):>12} {'':>8} {'':<15}")
+    print("=" * 90)
+    print()
+    
+    # Summary
+    print("📈 Summary:")
+    print(f"   Total releases: {len(releases)}")
+    print(f"   Total downloads: {format_number(total_downloads)}")
+    print(f"   Average downloads per release: {format_number(total_downloads // len(releases) if releases else 0)}")
+    print()
+    
+    # Top 5 releases
+    top_releases = sorted(release_stats, key=lambda x: x['downloads'], reverse=True)[:5]
+    print("🏆 Top 5 Releases by Downloads:")
+    for i, stat in enumerate(top_releases, 1):
+        print(f"   {i}. {stat['version']}: {format_number(stat['downloads'])} downloads")
+    print()
+
+if __name__ == "__main__":
+    main()
+
