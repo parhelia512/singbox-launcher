@@ -21,6 +21,7 @@ package tabs
 
 import (
 	"fmt"
+	"runtime"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -66,7 +67,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 	presenter.RefreshOutboundOptions()
 
 	// Build final container
-	return buildRulesTabContainer(rulesScroll, finalSelect)
+	return buildRulesTabContainer(presenter, rulesScroll, finalSelect)
 }
 
 // createTemplateNotFoundMessage создает сообщение об отсутствии шаблона.
@@ -441,16 +442,31 @@ func createFinalOutboundSelect(
 }
 
 // buildRulesTabContainer создает финальный контейнер таба правил.
-func buildRulesTabContainer(rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
+func buildRulesTabContainer(presenter *wizardpresentation.WizardPresenter, rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
+	model := presenter.Model()
+	row := container.NewHBox(
+		widget.NewLabel("Final outbound:"),
+		finalSelect,
+		layout.NewSpacer(),
+	)
+	if runtime.GOOS == "darwin" {
+		tunCheck := widget.NewCheck("TUN", func(checked bool) {
+			model.EnableTunForMacOS = checked
+			model.TemplatePreviewNeedsUpdate = true
+			presenter.MarkAsChanged()
+		})
+		tunCheck.SetChecked(model.EnableTunForMacOS)
+		helpBtn := widget.NewButton("?", func() {
+			dialog.ShowInformation("TUN", "Enabling TUN will require entering your password when starting or stopping the VPN.", presenter.GUIState().Window)
+		})
+		row.Add(tunCheck)
+		row.Add(helpBtn)
+	}
 	return container.NewVBox(
 		widget.NewLabel("Selectable rules"),
 		rulesScroll,
 		widget.NewSeparator(),
-		container.NewHBox(
-			widget.NewLabel("Final outbound:"),
-			finalSelect,
-			layout.NewSpacer(),
-		),
+		row,
 	)
 }
 

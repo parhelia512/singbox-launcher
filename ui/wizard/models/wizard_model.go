@@ -56,9 +56,10 @@ type WizardModel struct {
 	TemplateData *wizardtemplate.TemplateData
 
 	// Правила
-	SelectableRuleStates  []*RuleState
-	CustomRules           []*RuleState
-	SelectedFinalOutbound string
+	SelectableRuleStates   []*RuleState
+	CustomRules            []*RuleState
+	SelectedFinalOutbound  string
+	EnableTunForMacOS      bool // на darwin при сборке конфига: true — добавлять TUN inbound (требует пароль при Start/Stop)
 
 	// Флаги состояния бизнес-операций
 	PreviewNeedsParse           bool
@@ -74,6 +75,7 @@ type WizardModel struct {
 func NewWizardModel() *WizardModel {
 	return &WizardModel{
 		PreviewNeedsParse:    true,
+		EnableTunForMacOS:    true,
 		SelectableRuleStates: make([]*RuleState, 0),
 		CustomRules:          make([]*RuleState, 0),
 		GeneratedOutbounds:   make([]string, 0),

@@ -118,8 +118,8 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	if runtime.GOOS == "darwin" {
 		hasTun, err := config.ConfigHasTun(ac.FileService.ConfigPath)
 		if err != nil {
-			debuglog.WarnLog("startSingBox: Could not check TUN in config: %v; using privileged start.", err)
-			hasTun = true
+			debuglog.WarnLog("startSingBox: Could not check TUN in config: %v; assuming no TUN (no password).", err)
+			hasTun = false
 		}
 		if hasTun {
 			if err := svc.startSingBoxPrivileged(); err != nil {

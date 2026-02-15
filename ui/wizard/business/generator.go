@@ -19,12 +19,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
 	wizardmodels "singbox-launcher/ui/wizard/models"
+	wizardtemplate "singbox-launcher/ui/wizard/template"
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
@@ -95,8 +97,16 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 	start := time.Now()
 	var sections []string
 
-	for _, key := range model.TemplateData.ConfigOrder {
-		raw, ok := model.TemplateData.Config[key]
+	config, order := model.TemplateData.Config, model.TemplateData.ConfigOrder
+	if runtime.GOOS == "darwin" && len(model.TemplateData.RawConfig) > 0 && len(model.TemplateData.Params) > 0 {
+		effective, ord, err := wizardtemplate.GetEffectiveConfig(model.TemplateData.RawConfig, model.TemplateData.Params, runtime.GOOS, model.EnableTunForMacOS)
+		if err == nil {
+			config, order = effective, ord
+		}
+	}
+
+	for _, key := range order {
+		raw, ok := config[key]
 		if !ok {
 			continue
 		}
@@ -134,6 +144,9 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 	start := time.Now()
 	defer func() { timing.LogTiming("build outbounds", time.Since(start)) }()
 
+	var staticOutbounds []json.RawMessage
+	_ = json.Unmarshal(templateOutbounds, &staticOutbounds)
+
 	indent := Indent(2)
 	var builder strings.Builder
 	builder.WriteString("[\n")
@@ -150,18 +163,19 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 			builder.WriteString(IndentMultiline(cleaned, indent))
 			if idx < len(model.GeneratedOutbounds)-1 {
 				builder.WriteString(",")
+			} else if len(staticOutbounds) > 0 {
+				// Запятая после последнего динамического, чтобы после пропуска комментария парсер видел: value, value
+				builder.WriteString(",")
 			}
 			builder.WriteString("\n")
 		}
 	}
 	builder.WriteString(indent + "/** @ParserEND */")
 
-	// 2. Статические outbounds: запятая только если есть и динамические, и статические
-	var staticOutbounds []json.RawMessage
-	if err := json.Unmarshal(templateOutbounds, &staticOutbounds); err == nil && len(staticOutbounds) > 0 {
-		needComma := len(model.GeneratedOutbounds) > 0
+	// 2. Статические outbounds: запятую перед первым не пишем — она уже после последнего динамического
+	if len(staticOutbounds) > 0 {
 		for i, item := range staticOutbounds {
-			if needComma || i > 0 {
+			if i > 0 {
 				builder.WriteString(",\n")
 			} else {
 				builder.WriteString("\n")
