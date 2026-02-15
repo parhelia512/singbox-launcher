@@ -26,7 +26,7 @@ name: CI/CD
 #
 # Result:
 # - Version/tag generated automatically:
-#   v.dev.<branch>.<sha7>
+#   git describe --tags --exclude='*-prerelease' + -prerelease (e.g. v0.8.0-16-gc185054-prerelease)
 # - Tag is created and pushed by workflow
 # - GitHub Pre-release is created (draft)
 # - prerelease = true
@@ -73,11 +73,10 @@ on:
         default: false
         type: boolean
       target:
-        description: "Which build to run: all|win7|win64"
+        description: "Targets to build (space-separated): macOS, Win64, Win7. Empty = all. Example: macOS Win64"
         required: false
-        default: "all"
-        type: choice
-        options: [ all, win7, win64 ]
+        default: ""
+        type: string
 
 # Default permission: read-only. Release job overrides to contents: write.
 permissions:
@@ -119,14 +118,10 @@ jobs:
           fi
 
           RUN_MODE="${{ github.event.inputs.run_mode }}"
-          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-
-          BRANCH_RAW="${GITHUB_REF_NAME}"
-          BRANCH_SANITIZED="$(echo "$BRANCH_RAW" | tr '/ ' '--' | sed -E 's/[^A-Za-z0-9._-]+/-/g')"
-
-          DEV_TAG="v.dev.${BRANCH_SANITIZED}.${SHORT_SHA}"
 
           if [[ "$RUN_MODE" == "prerelease" ]]; then
+            DESCRIBE_RAW="$(git describe --tags --always --exclude='*-prerelease')"
+            DEV_TAG="${DESCRIBE_RAW}-prerelease"
             echo "version=$DEV_TAG" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
             echo "channel=prerelease" >> "$GITHUB_OUTPUT"
@@ -134,6 +129,9 @@ jobs:
             echo "Version: $DEV_TAG"
             echo "Channel: prerelease"
           else
+            SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+            BRANCH_RAW="${GITHUB_REF_NAME}"
+            BRANCH_SANITIZED="$(echo "$BRANCH_RAW" | tr '/ ' '--' | sed -E 's/[^A-Za-z0-9._-]+/-/g')"
             VERSION="dev.${BRANCH_SANITIZED}.${SHORT_SHA}"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
@@ -263,23 +261,14 @@ jobs:
 
           echo "✅ go.mod and go.sum are tidy"
 
-  build:
-    name: Build ${{ matrix.goos }}
+  build-darwin:
+    name: Build macOS
     if: startsWith(github.ref, 'refs/tags/v') ||
         (github.event_name == 'workflow_dispatch' &&
-          ( (github.event.inputs.run_mode == 'build' || github.event.inputs.run_mode == 'prerelease') && (github.event.inputs.target == 'all' || github.event.inputs.target == 'win64') ))
+          (github.event.inputs.run_mode == 'build' || github.event.inputs.run_mode == 'prerelease') &&
+          (github.event.inputs.target == '' || contains(github.event.inputs.target, 'macOS')))
     needs: meta
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            goos: darwin
-            goarch: universal
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
+    runs-on: macos-latest
 
     steps:
       - name: Checkout code
@@ -303,22 +292,13 @@ jobs:
         run: go mod download
 
       - name: Verify C compiler (macOS)
-        if: matrix.goos == 'darwin'
         shell: bash
         continue-on-error: true
         run: |
           clang --version || echo "Warning: clang check failed, but continuing..."
           xcrun --show-sdk-path || echo "Warning: xcrun check failed, but continuing..."
 
-      - name: Verify C compiler (Windows)
-        if: matrix.goos == 'windows'
-        shell: cmd
-        continue-on-error: true
-        run: |
-          gcc --version || echo GCC check failed, but continuing...
-
       - name: Build macOS .app bundle (Universal)
-        if: matrix.goos == 'darwin'
         shell: bash
         env:
           CGO_ENABLED: 1
@@ -331,7 +311,6 @@ jobs:
           mv -f singbox-launcher.app dist/
 
       - name: Build macOS .app bundle (Catalina target, Intel-only)
-        if: matrix.goos == 'darwin' && matrix.os == 'macos-latest'
         shell: bash
         env:
           CGO_ENABLED: 1
@@ -341,15 +320,13 @@ jobs:
           chmod +x build/build_darwin.sh
           build/build_darwin.sh catalina
           mkdir -p dist
-          # Rename to avoid clobbering universal build
           if [ -d "singbox-launcher.app" ]; then
             mv -f singbox-launcher.app dist/singbox-launcher-macos-catalina.app
           else
             echo "Warning: catalina build did not produce singbox-launcher.app"
           fi
 
-      - name: Upload Catalina artifacts (macOS)
-        if: matrix.goos == 'darwin' && matrix.os == 'macos-latest'
+      - name: Upload Catalina artifacts
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-macos-catalina
@@ -358,15 +335,56 @@ jobs:
             dist/singbox-launcher-macos-catalina.zip
           retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 1 || 30 }}
 
-      - name: Install rsrc (Windows)
-        if: matrix.goos == 'windows'
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-darwin
+          path: dist/*
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 1 || 30 }}
+
+  build-windows:
+    name: Build Windows (Win64)
+    if: startsWith(github.ref, 'refs/tags/v') ||
+        (github.event_name == 'workflow_dispatch' &&
+          (github.event.inputs.run_mode == 'build' || github.event.inputs.run_mode == 'prerelease') &&
+          (github.event.inputs.target == '' || contains(github.event.inputs.target, 'Win64')))
+    needs: meta
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Export version and channel
+        shell: bash
+        run: |
+          echo "Version: ${{ needs.meta.outputs.version }}"
+          echo "Channel: ${{ needs.meta.outputs.channel }}"
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Verify C compiler
+        shell: cmd
+        continue-on-error: true
+        run: |
+          gcc --version || echo GCC check failed, but continuing...
+
+      - name: Install rsrc
         shell: cmd
         run: |
           go install github.com/akavel/rsrc@latest
           for /f "delims=" %%g in ('go env GOPATH') do echo rsrc installed to: %%g\bin
 
       - name: Build Windows .exe
-        if: matrix.goos == 'windows'
         shell: cmd
         env:
           CGO_ENABLED: 1
@@ -381,7 +399,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ matrix.goos }}
+          name: artifacts-windows
           path: dist/*
           retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 1 || 30 }}
 
@@ -389,8 +407,8 @@ jobs:
     name: Build Windows 7 (x86, legacy)
     if: startsWith(github.ref, 'refs/tags/v') ||
         (github.event_name == 'workflow_dispatch' &&
-          ( (github.event.inputs.run_mode == 'build' || github.event.inputs.run_mode == 'prerelease')
-            && (github.event.inputs.target == 'all' || github.event.inputs.target == 'win7') ))
+          (github.event.inputs.run_mode == 'build' || github.event.inputs.run_mode == 'prerelease') &&
+          (github.event.inputs.target == '' || contains(github.event.inputs.target, 'Win7')))
     needs: meta
     runs-on: windows-2019
 
@@ -490,11 +508,16 @@ jobs:
 
   release:
     name: Create Release
-    needs: [meta, build, build-win7]
+    needs: [meta, build-darwin, build-windows, build-win7]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: needs.build.result == 'success' &&
+    if: always() &&
+        needs.meta.result == 'success' &&
+        (needs.build-darwin.result == 'success' || needs.build-darwin.result == 'skipped') &&
+        (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped') &&
+        (needs.build-win7.result == 'success' || needs.build-win7.result == 'skipped') &&
+        (needs.build-darwin.result == 'success' || needs.build-windows.result == 'success' || needs.build-win7.result == 'success') &&
         (startsWith(github.ref, 'refs/tags/v') ||
          (github.event_name == 'workflow_dispatch' && github.event.inputs.run_mode == 'prerelease'))
 
@@ -629,11 +652,6 @@ jobs:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: ${{ needs.meta.outputs.channel }} ${{ needs.meta.outputs.version }}
           fail_on_unmatched_files: false
-          files: |
-            release-artifacts/singbox-launcher-${{ needs.meta.outputs.version }}-macos.zip
-            release-artifacts/singbox-launcher-${{ needs.meta.outputs.version }}-macos-catalina.zip
-            release-artifacts/singbox-launcher-${{ needs.meta.outputs.version }}-win64.zip
-            release-artifacts/checksums.txt
           body: |
             ## Release ${{ needs.meta.outputs.version }}
 
@@ -645,8 +663,8 @@ jobs:
 
             Install with a single command:
             ```bash
-            # Install latest version (auto-detects version and Catalina build if needed)
-            curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/develop/scripts/install-macos.sh | bash
+            # Install ${{ needs.meta.outputs.version }}
+            curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/develop/scripts/install-macos.sh | bash -s -- ${{ needs.meta.outputs.version }}
             ```
 
             The script will:
@@ -684,5 +702,10 @@ jobs:
             See `checksums.txt` for SHA256 checksums of all files.
 
             ${{ steps.release_notes.outputs.notes }}
+          files: |
+            release-artifacts/singbox-launcher-${{ needs.meta.outputs.version }}-macos.zip
+            release-artifacts/singbox-launcher-${{ needs.meta.outputs.version }}-macos-catalina.zip
+            release-artifacts/singbox-launcher-${{ needs.meta.outputs.version }}-win64.zip
+            release-artifacts/checksums.txt
           draft: true
           prerelease: ${{ needs.meta.outputs.prerelease }}

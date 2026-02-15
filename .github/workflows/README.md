@@ -26,7 +26,7 @@
   - prerelease = `false`
   - tag = `vX.Y.Z`
 - Ручной `prerelease`:
-  - version = результат `git describe` + `-prerelease` (например `v0.8.0-16-gc185054-prerelease`)
+  - version = `git describe --tags --always --exclude='*-prerelease'` + `-prerelease` (например `v0.8.0-16-gc185054-prerelease`)
   - prerelease = `true`
   - создаётся аннотированный тег с этим именем и пушится (фильтр в локальных сборках: `--exclude='*-prerelease'`)
 - Ручной `build` (без релиза):
