@@ -12,25 +12,28 @@ package platform
 #include <unistd.h>
 
 // We use AuthorizationExecuteWithPrivileges (deprecated but still supported) to prompt for password and run sing-box for TUN.
+// A single AuthorizationRef is kept and reused so the user is prompted for password only once per app session.
 // If the child prints decimal PIDs on the first two lines of stdout (script PID, then sing-box PID), they are set; otherwise 0.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+static AuthorizationRef g_privilegedAuthRef = NULL;
+
 static int runWithPrivileges(const char *path, char **args, int argCount, pid_t *outScriptPid, pid_t *outSingboxPid) {
 	*outScriptPid = 0;
 	*outSingboxPid = 0;
-	AuthorizationRef authRef = NULL;
-	OSStatus status = AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment,
-		kAuthorizationFlagInteractionAllowed | kAuthorizationFlagExtendRights,
-		&authRef);
-	if (status != errAuthorizationSuccess) {
-		return (int)status;
+	if (g_privilegedAuthRef == NULL) {
+		OSStatus status = AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment,
+			kAuthorizationFlagInteractionAllowed | kAuthorizationFlagExtendRights,
+			&g_privilegedAuthRef);
+		if (status != errAuthorizationSuccess) {
+			return (int)status;
+		}
 	}
 
 	FILE *pipe = NULL;
-	status = AuthorizationExecuteWithPrivileges(authRef, path,
+	OSStatus status = AuthorizationExecuteWithPrivileges(g_privilegedAuthRef, path,
 		kAuthorizationFlagDefaults, args, &pipe);
-
-	AuthorizationFree(authRef, kAuthorizationFlagDestroyRights);
+	// Do not free g_privilegedAuthRef here; reuse for next RunWithPrivileges
 
 	if (status != errAuthorizationSuccess) {
 		return (int)status;
@@ -50,6 +53,13 @@ static int runWithPrivileges(const char *path, char **args, int argCount, pid_t 
 		fclose(pipe);
 	}
 	return 0;
+}
+
+void freePrivilegedAuthorization(void) {
+	if (g_privilegedAuthRef != NULL) {
+		AuthorizationFree(g_privilegedAuthRef, kAuthorizationFlagDestroyRights);
+		g_privilegedAuthRef = NULL;
+	}
 }
 #pragma clang diagnostic pop
 */
@@ -99,4 +109,10 @@ func WaitForPrivilegedExit(pid int) {
 	}
 	var status syscall.WaitStatus
 	_, _ = syscall.Wait4(pid, &status, 0, nil)
+}
+
+// FreePrivilegedAuthorization releases the cached AuthorizationRef so the next RunWithPrivileges will prompt again.
+// Call on app exit (e.g. GracefulExit) to avoid leaving the ref alive.
+func FreePrivilegedAuthorization() {
+	C.freePrivilegedAuthorization()
 }

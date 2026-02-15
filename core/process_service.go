@@ -28,6 +28,11 @@ const (
 	// gracefulShutdownTimeout is the maximum time to wait for graceful shutdown
 	// before forcing kill
 	gracefulShutdownTimeout = 2 * time.Second
+
+	// Privileged start (macOS TUN): script and PID file names, pkill pattern for "already running" kill
+	privilegedScriptName  = "start-singbox-privileged.sh"
+	privilegedPidFileName = "singbox.pid"
+	privilegedPkillPattern = "sing-box run|start-singbox-privileged"
 )
 
 // ProcessService encapsulates sing-box process lifecycle management.
@@ -40,6 +45,11 @@ type ProcessService struct {
 // NewProcessService constructs a ProcessService bound to the controller.
 func NewProcessService(ac *AppController) *ProcessService {
 	return &ProcessService{ac: ac}
+}
+
+// buildPrivilegedKillByPatternScript returns the shell command to kill privileged script and sing-box by process name pattern (for "already running" dialog on macOS).
+func buildPrivilegedKillByPatternScript() string {
+	return "pkill -TERM -f " + strconv.Quote(privilegedPkillPattern) + " 2>/dev/null"
 }
 
 // Start launches the sing-box process. Behavior is identical to the previous StartSingBoxProcess.
@@ -168,8 +178,8 @@ func (svc *ProcessService) startSingBoxPrivileged() error {
 		ac.FileService.CheckAndRotateLogFile(logPath)
 	}
 
-	scriptPath := filepath.Join(binDir, "start-singbox-privileged.sh")
-	pidFilePath := filepath.Join(binDir, "singbox.pid")
+	scriptPath := filepath.Join(binDir, privilegedScriptName)
+	pidFilePath := filepath.Join(binDir, privilegedPidFileName)
 
 	// Script: echo script PID, run sing-box in subshell (redirect to log so nothing goes to pipe), echo sing-box PID, then exec and wait
 	scriptBody := fmt.Sprintf(`#!/bin/sh
@@ -480,8 +490,15 @@ func (svc *ProcessService) checkAndShowSingBoxRunningWarning(ctx string) bool {
 		debuglog.DebugLog("%s: Found sing-box process already running (PID=%d). Showing warning dialog.", ctx, foundPID)
 		if svc.ac.hasUI() {
 			dialogs.ShowProcessKillConfirmation(svc.ac.UIService.MainWindow, func() {
-				processName := platform.GetProcessNameForCheck()
-				_ = platform.KillProcess(processName)
+				if runtime.GOOS == "darwin" {
+					// On macOS the process may have been started with privileges (root); kill with elevated rights
+					if _, _, err := platform.RunWithPrivileges("/bin/sh", []string{"-c", buildPrivilegedKillByPatternScript()}); err != nil {
+						debuglog.WarnLog("%s: Privileged kill failed (user may have cancelled): %v", ctx, err)
+					}
+				} else {
+					processName := platform.GetProcessNameForCheck()
+					_ = platform.KillProcess(processName)
+				}
 				svc.ac.RunningState.Set(false)
 			})
 		}

@@ -293,6 +293,10 @@ func (ac *AppController) GracefulExit() {
 
 	StopSingBoxProcess()
 
+	if runtime.GOOS == "darwin" {
+		platform.FreePrivilegedAuthorization()
+	}
+
 	debuglog.InfoLog("GracefulExit: Waiting for sing-box to stop...")
 	// Use ProcessService constant for timeout
 	timeout := time.After(2 * time.Second) // gracefulShutdownTimeout from ProcessService

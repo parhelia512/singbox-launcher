@@ -20,3 +20,6 @@ func RunWithPrivileges(toolPath string, args []string) (scriptPID, singboxPID in
 func WaitForPrivilegedExit(pid int) {
 	_ = pid
 }
+
+// FreePrivilegedAuthorization is a no-op on non-darwin.
+func FreePrivilegedAuthorization() {}
