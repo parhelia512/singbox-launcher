@@ -41,7 +41,7 @@
 ### Когда включается привилегированный режим
 
 - **Платформа:** только `runtime.GOOS == "darwin"`.
-- **Условие:** при Start вызывается **config.ConfigHasTun(configPath)**. Если в конфиге есть inbound типа `"tun"` — используется **startSingBoxPrivileged()** (запрос пароля при первом действии). Если TUN нет — обычный **exec.Command** + **Monitor** (без пароля). При ошибке чтения/разбора конфига используется привилегированный путь (безопасный вариант).
+- **Условие:** при Start вызывается **config.ConfigHasTun(configPath)**. Если в конфиге есть inbound типа `"tun"` — используется **startSingBoxPrivileged()** (запрос пароля при первом действии). Если TUN нет — обычный **exec.Command** + **Monitor** (без пароля). При ошибке чтения/разбора конфига считается, что TUN нет — обычный запуск без пароля (избегаем лишнего запроса при повреждённом или недоступном конфиге).
 
 ### Старт (startSingBoxPrivileged)
 
@@ -97,6 +97,14 @@
 
 - **getTrackedPID()**: при **SingboxPrivilegedMode** и **SingboxPrivilegedPID != 0** возвращается script PID; иначе — PID из **SingboxCmd**.
 
+### Визард и конфиг с TUN на darwin
+
+Конфиг собирается в визарде из шаблона **bin/wizard_template.json**. В шаблоне в **params** заданы платформозависимые подстановки:
+- **platforms: ["darwin"]** — подставляет в **inbounds** только mixed (прокси без TUN);
+- **platforms: ["darwin-tun"]**, **mode: "prepend"** — при включённой галочке TUN добавляет TUN inbound в начало списка.
+
+При сборке конфига на darwin вызывается **GetEffectiveConfig(rawConfig, params, goos, model.EnableTunForMacOS)**. Параметр **enableTunForDarwin** задаётся галочкой **TUN** на вкладке Rules визарда; при **true** матчится платформа **darwin-tun**, и в конфиг попадает секция TUN. Значение галочки сохраняется в состоянии визарда как **enable_tun_macos** (config_params в state.json). Итог: при сохранении конфига из визарда с включённой галочкой TUN в **config.json** записываются оба inbound (tun и mixed); при следующем Start лаунчер по **ConfigHasTun** запросит пароль.
+
 ---
 
 ## Архитектура
@@ -129,7 +137,7 @@
 
 ## Главные особенности
 
-1. **Пароль только когда нужен TUN** — привилегированный старт на darwin только при **ConfigHasTun**; без TUN — обычный запуск без пароля.
+1. **Пароль только когда нужен TUN** — привилегированный старт на darwin только при **ConfigHasTun**; без TUN — обычный запуск без пароля. При ошибке **ConfigHasTun** (файл не найден, не разобран) — тоже обычный запуск без пароля.
 2. **Один пароль на сессию** — один **AuthorizationRef** создаётся при первом RunWithPrivileges и переиспользуется; при выходе из приложения вызывается **FreePrivilegedAuthorization()**.
 3. **Два PID** — скрипт выводит свой PID и PID sing-box (благодаря запуску sing-box одной командой с `&`, без подоболочки); оба читаются из pipe в C и возвращаются в Go. Stop убивает оба процесса явно (kill -TERM для каждого).
 4. **Скрипт без подоболочки для sing-box** — `cd binDir` отдельной строкой, затем `sing-box ... &`, чтобы `$!` был PID sing-box. PID-файл — две строки (script PID, sing-box PID), пишется из Go.
@@ -145,9 +153,10 @@
 ## Файлы изменений (кратко)
 
 - **core/controller.go** — поля **SingboxPrivilegedMode**, **SingboxPrivilegedPID**, **SingboxPrivilegedSingboxPID**, **SingboxPrivilegedPIDFile**; в **GracefulExit** — **platform.FreePrivilegedAuthorization()** на darwin.
-- **core/process_service.go** — константы **privilegedScriptName**, **privilegedPidFileName**, **privilegedPkillPattern**; **buildPrivilegedKillByPatternScript()**. Start: на darwin **ConfigHasTun** → startSingBoxPrivileged (пути по константам, cd + sing-box &, два PID из RunWithPrivileges, pid-файл две строки, Wait4 + onPrivilegedScriptExited); Stop: kill обоих PID через RunWithPrivileges; при диалоге «already running» на darwin — kill через RunWithPrivileges + buildPrivilegedKillByPatternScript(); getTrackedPID с учётом привилегированного режима.
+- **core/process_service.go** — константы **privilegedScriptName**, **privilegedPidFileName**, **privilegedPkillPattern**; **buildPrivilegedKillByPatternScript()**. Start: на darwin **ConfigHasTun** → при true startSingBoxPrivileged (пути по константам, cd + sing-box &, два PID из RunWithPrivileges, pid-файл две строки, Wait4 + onPrivilegedScriptExited); при ошибке ConfigHasTun — **hasTun = false** (обычный запуск без пароля); Stop: kill обоих PID через RunWithPrivileges; при диалоге «already running» на darwin — kill через RunWithPrivileges + buildPrivilegedKillByPatternScript(); getTrackedPID с учётом привилегированного режима.
 - **core/config/config_loader.go** — **ConfigHasTun(configPath)** для выбора привилегированного старта на darwin.
 - **internal/platform/privileged_darwin.go** — кэш **g_privilegedAuthRef**, runWithPrivileges (две строки из pipe, без Free после использования), **freePrivilegedAuthorization**; Go: **FreePrivilegedAuthorization()**, **WaitForPrivilegedExit(pid)**.
 - **internal/platform/privileged_stub.go** — заглушки RunWithPrivileges (0, 0, err), WaitForPrivilegedExit, FreePrivilegedAuthorization.
+- **ui/wizard** (конфиг с TUN): **template/loader.go** — RawConfig/Params, **GetEffectiveConfig(raw, params, goos, enableTunForDarwin)**, **matchesPlatform** с учётом darwin-tun; **models/wizard_model.go** — поле **EnableTunForMacOS**; **tabs/rules_tab.go** — чекбокс TUN на darwin рядом с Final outbound; **presenter_state.go** — **enable_tun_macos** в config_params при сохранении/загрузке state; **business/generator.go** — на darwin сборка секций через GetEffectiveConfig с model.EnableTunForMacOS. Шаблон **bin/wizard_template.json** содержит params с platforms **["darwin"]** (mixed) и **["darwin-tun"]** (prepend TUN).
 
 Сборка: `CGO_ENABLED=1 GOOS=darwin go build .` проходит успешно; возможны предупреждения линкера (например, дубликат `-lobjc`), на работу не влияют.
