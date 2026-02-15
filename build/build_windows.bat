@@ -122,7 +122,7 @@ if defined APP_VERSION (
     set "VERSION=%APP_VERSION%"
     echo Version ^(from APP_VERSION^): !VERSION!
 ) else (
-    for /f "delims=" %%v in ('git describe --tags --always --dirty 2^>nul') do set "VERSION=%%v"
+    for /f "delims=" %%v in ('git describe --tags --always --dirty --exclude="*-prerelease" 2^>nul') do set "VERSION=%%v"
     echo Version ^(from git describe^): !VERSION!
 )
 if not defined VERSION (

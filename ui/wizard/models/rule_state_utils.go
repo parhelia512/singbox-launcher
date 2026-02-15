@@ -10,7 +10,7 @@
 // Утилиты для работы с RuleState - это вспомогательные функции, отдельные от структуры данных.
 //
 // Используется в:
-//   - business/generator.go - GetEffectiveOutbound вызывается при слиянии правил маршрутизации
+//   - business/create_config.go - GetEffectiveOutbound вызывается при слиянии правил маршрутизации
 //   - presentation/presenter_methods.go - EnsureDefaultOutbound вызывается при инициализации правил
 package models
 

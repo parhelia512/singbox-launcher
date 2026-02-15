@@ -128,9 +128,19 @@ done
 echo "Using output file: $OUTPUT_FILENAME"
 
 echo ""
-echo "=== Getting version from git tag ==="
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.4.1")
-echo "Version: $VERSION"
+echo "=== Getting version ==="
+if [ -n "${APP_VERSION:-}" ]; then
+    VERSION="$APP_VERSION"
+    echo "Version (from APP_VERSION): $VERSION"
+else
+    VERSION=$(git describe --tags --always --dirty --exclude='*-prerelease' 2>/dev/null || echo "")
+    if [ -n "$VERSION" ]; then
+        echo "Version (from git describe): $VERSION"
+    else
+        VERSION="unnamed-dev"
+        echo "Version (default): $VERSION"
+    fi
+fi
 echo "Minimum macOS version: $MIN_MACOS_VERSION"
 
 if [ "$BUILD_TYPE" = "universal" ]; then

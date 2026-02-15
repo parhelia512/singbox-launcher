@@ -142,15 +142,15 @@ fi
 echo "Found app in archive: $app_path"
 
 target="${INSTALL_DIR}/${APP_NAME}"
-config_path="${target}/Contents/MacOS/bin/config.json"
-config_backup="${tmp}/config.json.backup"
+wizard_states_path="${target}/Contents/MacOS/bin/wizard_states"
+wizard_states_backup="${tmp}/wizard_states_backup"
 
-# Backup config if exists and move old app to Trash
+# Backup wizard_states if exists and move old app to Trash
 if [[ -d "$target" ]]; then
   echo "Moving existing installation to Trash..."
-  if [[ -f "$config_path" ]]; then
-    echo "Backing up config.json..."
-    cp "$config_path" "$config_backup"
+  if [[ -d "$wizard_states_path" ]]; then
+    echo "Backing up wizard_states folder..."
+    cp -R "$wizard_states_path" "$wizard_states_backup"
   fi
   # Move to Trash using AppleScript
   osascript -e "tell application \"Finder\" to move POSIX file \"$target\" to trash" 2>/dev/null || {
@@ -163,29 +163,12 @@ fi
 echo "Installing..."
 cp -R "$app_path" "$target"
 
-# Ask user if they want to restore config (default: no)
-# Only ask if running in interactive mode
-if [[ -f "$config_backup" ]]; then
-  if [[ -t 0 ]]; then
-    # Interactive mode - ask user
-    echo ""
-    echo "Found existing config.json from previous installation."
-    echo -n "Restore previous config.json? [y/N]: "
-    read -r restore_config
-    restore_config="$(echo "$restore_config" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$restore_config" == "y" || "$restore_config" == "yes" ]]; then
-      echo "Restoring config.json..."
-      mkdir -p "$(dirname "$config_path")"
-      cp "$config_backup" "$config_path"
-      echo "Config restored successfully"
-    else
-      echo "Skipping config restoration (using default config)"
-    fi
-  else
-    # Non-interactive mode - skip restoration
-    echo "Found existing config.json from previous installation."
-    echo "Skipping config restoration in non-interactive mode (using default config)"
-  fi
+# Restore wizard_states if it was backed up (automatically, no questions)
+if [[ -d "$wizard_states_backup" ]]; then
+  echo "Restoring wizard_states folder..."
+  mkdir -p "$(dirname "$wizard_states_path")"
+  cp -R "$wizard_states_backup" "$wizard_states_path"
+  echo "Wizard states restored successfully"
 fi
 
 echo "Fixing macOS attributes and permissions..."

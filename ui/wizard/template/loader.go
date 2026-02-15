@@ -18,7 +18,7 @@
 //
 // Используется в:
 //   - business/template_loader.go — DefaultTemplateLoader использует LoadTemplateData
-//   - business/generator.go — TemplateData используется при генерации финальной конфигурации
+//   - business/create_config.go — TemplateData используется при генерации финальной конфигурации
 package template
 
 import (
@@ -30,6 +30,7 @@ import (
 	"runtime"
 	"strings"
 
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -52,6 +53,10 @@ type TemplateData struct {
 
 	// ConfigOrder — порядок секций конфига (log, dns, inbounds, ...).
 	ConfigOrder []string
+
+	// RawConfig и Params — исходный config и params из шаблона; для darwin при сборке конфига применяются заново с учётом EnableTunForMacOS.
+	RawConfig json.RawMessage
+	Params    []TemplateParam
 
 	// SelectableRules — правила маршрутизации для визарда (уже отфильтрованные по платформе).
 	SelectableRules []TemplateSelectableRule
@@ -91,12 +96,12 @@ type TemplateSelectableRule struct {
 	HasOutbound bool
 }
 
-// templateParam — платформозависимый параметр из секции params шаблона.
-type templateParam struct {
+// TemplateParam — платформозависимый параметр из секции params шаблона (name, platforms, value, mode).
+type TemplateParam struct {
 	Name      string          `json:"name"`
 	Platforms []string        `json:"platforms"`
 	Value     json.RawMessage `json:"value"`
-	Mode      string          `json:"mode"` // "replace" (по умолчанию), "prepend", "append"
+	Mode      string          `json:"mode"` // "replace", "prepend", "append"
 }
 
 // jsonSelectableRule — промежуточная структура для десериализации selectable_rules из JSON.
@@ -115,9 +120,9 @@ func GetTemplateFileName() string {
 	return TemplateFileName
 }
 
-// GetTemplateURL возвращает URL для загрузки шаблона с GitHub.
+// GetTemplateURL возвращает URL для загрузки шаблона с GitHub (ветка main или develop в зависимости от версии приложения).
 func GetTemplateURL() string {
-	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/bin/%s", TemplateFileName)
+	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/%s/bin/%s", constants.GetMyBranch(), TemplateFileName)
 }
 
 // LoadTemplateData загружает и обрабатывает шаблон конфигурации.
@@ -139,7 +144,7 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 		ParserConfig    json.RawMessage      `json:"parser_config"`
 		Config          json.RawMessage      `json:"config"`
 		SelectableRules []jsonSelectableRule `json:"selectable_rules"`
-		Params          []templateParam      `json:"params"`
+		Params          []TemplateParam       `json:"params"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, fmt.Errorf("невалидный JSON в %s: %w", TemplateFileName, err)
@@ -163,9 +168,10 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	}
 	debuglog.DebugLog("TemplateLoader: ParserConfig длина: %d", len(parserConfigStr))
 
-	// 2. Применение params к config для текущей платформы
-	configJSON := root.Config
-	configJSON, err = applyParams(configJSON, root.Params, runtime.GOOS)
+	// 2. Сохраняем сырой config и params для переприменения при сборке (darwin + галочка TUN)
+	rawConfig := root.Config
+	enableTunDefault := true
+	configJSON, err := applyParams(root.Config, root.Params, runtime.GOOS, enableTunDefault)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка применения params: %w", err)
 	}
@@ -190,14 +196,16 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 		ParserConfig:    parserConfigStr,
 		Config:          configSections,
 		ConfigOrder:     configOrder,
+		RawConfig:       rawConfig,
+		Params:          root.Params,
 		SelectableRules: selectableRules,
 		DefaultFinal:    defaultFinal,
 	}, nil
 }
 
 // applyParams применяет платформозависимые параметры к config.
-// Поддерживает dot notation (например, "route.rules") и режимы: replace, prepend, append.
-func applyParams(configJSON json.RawMessage, params []templateParam, goos string) (json.RawMessage, error) {
+// enableTunForDarwin: при goos=="darwin" params с platforms ["darwin-tun"] применяются только если true.
+func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string, enableTunForDarwin bool) (json.RawMessage, error) {
 	if len(params) == 0 {
 		return configJSON, nil
 	}
@@ -208,7 +216,7 @@ func applyParams(configJSON json.RawMessage, params []templateParam, goos string
 	}
 
 	for _, param := range params {
-		if !matchesPlatform(param.Platforms, goos) {
+		if !matchesPlatform(param.Platforms, goos, enableTunForDarwin) {
 			continue
 		}
 		mode := param.Mode
@@ -306,13 +314,28 @@ func mergeArrays(config map[string]json.RawMessage, key string, first, second js
 	return nil
 }
 
-// matchesPlatform проверяет, подходит ли текущая платформа.
-func matchesPlatform(platforms []string, goos string) bool {
+// GetEffectiveConfig применяет params к rawConfig с учётом enableTunForDarwin и возвращает секции и порядок ключей.
+func GetEffectiveConfig(rawConfig json.RawMessage, params []TemplateParam, goos string, enableTunForDarwin bool) (map[string]json.RawMessage, []string, error) {
+	if len(rawConfig) == 0 {
+		return nil, nil, fmt.Errorf("raw config is empty")
+	}
+	applied, err := applyParams(rawConfig, params, goos, enableTunForDarwin)
+	if err != nil {
+		return nil, nil, err
+	}
+	return parseJSONWithOrder(applied)
+}
+
+// matchesPlatform проверяет, подходит ли текущая платформа. При goos=="darwin" и enableTunForDarwin также матчится "darwin-tun".
+func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) bool {
 	if len(platforms) == 0 {
 		return true
 	}
 	for _, p := range platforms {
 		if p == goos {
+			return true
+		}
+		if goos == "darwin" && enableTunForDarwin && p == "darwin-tun" {
 			return true
 		}
 	}
@@ -323,7 +346,7 @@ func matchesPlatform(platforms []string, goos string) bool {
 func filterAndConvertRules(jsonRules []jsonSelectableRule, platform string) []TemplateSelectableRule {
 	var result []TemplateSelectableRule
 	for _, jr := range jsonRules {
-		if !matchesPlatform(jr.Platforms, platform) {
+		if !matchesPlatform(jr.Platforms, platform, true) {
 			continue
 		}
 		rule := TemplateSelectableRule{

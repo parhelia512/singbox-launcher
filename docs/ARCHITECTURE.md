@@ -135,11 +135,10 @@ singbox-launcher/
 │       │   │   - readConfigFile()                   # Чтение config.json
 │       │   │   - cleanJSONC()                       # Очистка JSONC
 │       │   │
-│       ├── generator.go        # Генерация конфигурации
+│       ├── outbound_generator.go  # Генерация outbounds (ноды + селекторы)
 │       │   │   - GenerateNodeJSON()                          # Генерация JSON узла
-│       │   │   - GenerateSelector()                          # Генерация селектора (legacy)
-│       │   │   - GenerateSelectorWithFilteredAddOutbounds()  # Генерация селектора с фильтрацией
-│       │   │   - GenerateOutboundsFromParserConfig()         # Генерация outbounds (трехпроходный алгоритм)
+│       │   │   - GenerateSelectorWithFilteredAddOutbounds() # Генерация селектора с фильтрацией
+│       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: buildOutboundsInfo, computeOutboundValidity, generateSelectorJSONs
 │       │   │   - OutboundGenerationResult struct             # Результат генерации
 │       │   │   - outboundInfo struct                         # Информация о динамическом селекторе
 │       │   │
@@ -369,7 +368,7 @@ singbox-launcher/
 │       │   │   │   - matchOrCreateConnectionProxy()          # Сопоставление или создание connection proxy
 │       │   │   │   - updateAndSerializeParserConfig()       # Обновление и сериализация
 │       │   │   │
-│       │   ├── generator.go    # Генерация конфигурации
+│       │   ├── create_config.go  # Сборка конфигурации из шаблона
 │       │   │   │   - BuildTemplateConfig()                   # Построение конфигурации
 │       │   │   │   - BuildParserOutboundsBlock()             # Построение блока outbounds
 │       │   │   │   - MergeRouteSection()                      # Объединение route секции
@@ -554,10 +553,9 @@ singbox-launcher/
 - `readConfigFile()` - чтение и очистка JSONC файла
 - `cleanJSONC()` - очистка JSONC от комментариев
 
-**generator.go**
+**outbound_generator.go**
 - `GenerateNodeJSON()` - генерация JSON узла из ParsedNode (vless, vmess, trojan, shadowsocks, hysteria2)
-- `GenerateSelector()` - генерация селектора из узлов (legacy, для обратной совместимости)
-- `GenerateSelectorWithFilteredAddOutbounds()` - генерация селектора с фильтрацией addOutbounds (новый метод)
+- `GenerateSelectorWithFilteredAddOutbounds()` - генерация селектора с фильтрацией addOutbounds
 - `GenerateOutboundsFromParserConfig()` - генерация outbounds из конфигурации (трехпроходный алгоритм)
   - Pass 1: Создание outboundsInfo и подсчет узлов
   - Pass 2: Топологическая сортировка зависимостей и расчет валидности
@@ -620,8 +618,8 @@ singbox-launcher/
 - `RunParserProcess()` - запуск процесса парсинга конфигурации
 - `UpdateConfigFromSubscriptions()` - обновление конфигурации из подписок
 
-**Примечание:** Генерация конфигурации выполняется функциями из пакета `core/config/generator.go`:
-- `GenerateOutboundsFromParserConfig()` - генерация outbounds из конфигурации (трехпроходный алгоритм)
+**Примечание:** Генерация outbounds выполняется функциями из пакета `core/config/outbound_generator.go`:
+- `GenerateOutboundsFromParserConfig()` - оркестрация (проходы: buildOutboundsInfo, computeOutboundValidity, generateSelectorJSONs)
 - `GenerateSelectorWithFilteredAddOutbounds()` - генерация селектора с фильтрацией addOutbounds
 - `GenerateNodeJSON()` - генерация JSON узла
 
@@ -813,7 +811,7 @@ singbox-launcher/
     - `matchOrCreateConnectionProxy()` - сопоставление connections с существующим ProxySource или создание нового
     - `updateAndSerializeParserConfig()` - обновление ParserConfig и сериализация его
   - Все функции работают с `WizardModel` и используют `UIUpdater` для обновления GUI
-- `generator.go`:
+- `create_config.go`:
   - `BuildTemplateConfig()` - построение финальной конфигурации из шаблона и модели
   - `BuildParserOutboundsBlock()` - формирование блока outbounds из сгенерированных outbounds
   - `MergeRouteSection()` - объединение правил маршрутизации из шаблона и пользовательских правил
@@ -1022,7 +1020,7 @@ singbox-launcher/
 │  │  • Извлечение селекторов                             │   │
 │  │  • Получение TUN интерфейса                          │   │
 │  │                                                      │   │
-│  │  generator.go:                                       │   │
+│  │  outbound_generator.go:                              │   │
 │  │  • Генерация JSON узлов                              │   │
 │  │  • Генерация селекторов (с фильтрацией addOutbounds) │   │
 │  │  • Генерация outbounds (трехпроходный алгоритм)      │   │
@@ -1088,7 +1086,7 @@ singbox-launcher/
 │  │                                                      │   │
 │  │  business/:                                          │   │
 │  │  • Парсинг URL и конфигурации (parser.go)            │   │
-│  │  • Генерация конфигурации (generator.go)             │   │
+│  │  • Сборка конфигурации из шаблона (create_config.go) │   │
 │  │  • Валидация данных (validator.go)                   │   │
 │  │  • Загрузка конфигурации (loader.go)                 │   │
 │  │  • Сохранение конфигурации (saver.go)                │   │
@@ -1142,7 +1140,7 @@ UI (core_dashboard_tab.go)
           ├─> subscription/fetcher.go: FetchSubscription()
           ├─> subscription/decoder.go: DecodeSubscriptionContent()
           ├─> subscription/node_parser.go: ParseNode()
-          └─> config/generator.go: GenerateOutboundsFromParserConfig()
+          └─> config/outbound_generator.go: GenerateOutboundsFromParserConfig()
 ```
 
 ### Поток работы визарда
@@ -1172,13 +1170,13 @@ UI (core_dashboard_tab.go)
       ├─> wizard/presentation/presenter_async.go: TriggerParseForPreview()
       │   └─> wizard/business/parser.go: ParseAndPreview()
       ├─> wizard/presentation/presenter_async.go: UpdateTemplatePreviewAsync()
-      │   └─> wizard/business/generator.go: BuildTemplateConfig()
+      │   └─> wizard/business/create_config.go: BuildTemplateConfig()
       ├─> wizard/presentation/presenter_save.go: SaveConfig()
       │   ├─> validateSaveInput() / checkSaveOperationState()
       │   ├─> executeSaveOperation()
       │   │   ├─> waitForParsingIfNeeded()
       │   │   ├─> buildConfigForSave()
-      │   │   │   └─> wizard/business/generator.go: BuildTemplateConfig()
+      │   │   │   └─> wizard/business/create_config.go: BuildTemplateConfig()
       │   │   ├─> saveConfigFile()
       │   │   │   └─> wizard/business/saver.go: SaveConfigWithBackup()
       │   │   ├─> validateConfigFile()

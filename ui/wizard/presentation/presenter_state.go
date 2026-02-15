@@ -22,6 +22,7 @@ package presentation
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -109,8 +110,13 @@ func (p *WizardPresenter) extractConfigParams() []wizardmodels.ConfigParam {
 		})
 	}
 
-	// TODO: Добавить experimental.clash_api.secret, если он есть в модели
-	// Пока оставляем пустым, так как он генерируется при сохранении конфига
+	if runtime.GOOS == "darwin" {
+		v := "false"
+		if p.model.EnableTunForMacOS {
+			v = "true"
+		}
+		params = append(params, wizardmodels.ConfigParam{Name: "enable_tun_macos", Value: v})
+	}
 
 	return params
 }
@@ -302,8 +308,9 @@ func (p *WizardPresenter) restoreConfigParams(configParams []wizardmodels.Config
 		p.model.SelectedFinalOutbound = p.getDefaultFinalOutbound()
 	}
 
-	// TODO: Сохранить остальные параметры для применения при генерации конфига
-	// (например, experimental.clash_api.secret)
+	if v := p.findConfigParamValue(configParams, "enable_tun_macos"); v != "" {
+		p.model.EnableTunForMacOS = v == "true"
+	}
 }
 
 // findConfigParamValue ищет значение параметра по имени.
