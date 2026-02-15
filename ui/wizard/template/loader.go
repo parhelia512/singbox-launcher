@@ -18,7 +18,7 @@
 //
 // Используется в:
 //   - business/template_loader.go — DefaultTemplateLoader использует LoadTemplateData
-//   - business/generator.go — TemplateData используется при генерации финальной конфигурации
+//   - business/create_config.go — TemplateData используется при генерации финальной конфигурации
 package template
 
 import (

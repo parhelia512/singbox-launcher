@@ -5,7 +5,7 @@
 //   - FormatRuleAsJSON - formats a rule as JSON string with proper indentation
 //   - CloneRuleRaw - creates a deep copy of rule's raw data
 //
-// These functions eliminate duplication across route_text_merger.go, selectable_rule_processor.go, and generator.go
+// These functions eliminate duplication across route_text_merger.go, selectable_rule_processor.go, and create_config.go
 package business
 
 import (

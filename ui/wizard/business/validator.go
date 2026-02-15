@@ -15,12 +15,12 @@
 // Валидаторы находятся в wizard/business, а не в core/config:
 // используют константы из wizard/utils (MaxURILength и т.д.) и core/config/parser (MaxConfigFileSize)
 // которые специфичны для визарда (лимиты для UI операций),
-// используются только в контексте визарда (parser.go, loader.go, generator.go).
+// используются только в контексте визарда (parser.go, loader.go, create_config.go).
 //
 // Они используются в:
 //   - parser.go - для валидации URL и ParserConfig перед обработкой
 //   - loader.go - для валидации при загрузке конфигурации
-//   - generator.go - для валидации данных перед генерацией конфигурации
+//   - create_config.go - для валидации данных перед генерацией конфигурации
 package business
 
 import (

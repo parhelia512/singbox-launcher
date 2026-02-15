@@ -79,11 +79,6 @@ func (svc *ConfigService) ProcessProxySource(proxySource config.ProxySource, tag
 	return subscription.LoadNodesFromSource(proxySource, tagCounts, progressCallback, subscriptionIndex, totalSubscriptions)
 }
 
-// GenerateSelector delegates to config.GenerateSelector
-func (svc *ConfigService) GenerateSelector(allNodes []*config.ParsedNode, outboundConfig config.OutboundConfig) (string, error) {
-	return config.GenerateSelector(allNodes, outboundConfig)
-}
-
 // GenerateNodeJSON delegates to config.GenerateNodeJSON
 func (svc *ConfigService) GenerateNodeJSON(node *config.ParsedNode) (string, error) {
 	return config.GenerateNodeJSON(node)

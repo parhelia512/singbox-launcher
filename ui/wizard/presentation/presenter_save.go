@@ -20,7 +20,7 @@
 //   - wizard.go - SaveConfig вызывается при нажатии кнопки "Save" в визарде
 //
 // Использует:
-//   - business/generator.go - BuildTemplateConfig для генерации конфигурации
+//   - business/create_config.go - BuildTemplateConfig для генерации конфигурации
 //   - business/saver.go - SaveConfigWithBackup для сохранения файла
 //   - presenter_async.go - TriggerParseForPreview для парсинга при необходимости
 package presentation

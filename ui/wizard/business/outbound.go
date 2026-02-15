@@ -10,7 +10,7 @@
 //
 // Используется в:
 //   - presentation/presenter_methods.go - RefreshOutboundOptions вызывает GetAvailableOutbounds и EnsureFinalSelected
-//   - business/generator.go - GetAvailableOutbounds используется при генерации конфигурации
+//   - business/create_config.go - GetAvailableOutbounds используется при генерации конфигурации
 package business
 
 import (
