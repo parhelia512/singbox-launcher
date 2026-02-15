@@ -43,8 +43,8 @@ name: CI/CD
 # - No GitHub Release is created
 #
 # Notes:
-# - push to main ? tests only
-# - pull requests ? tests only
+# - push to main → tests only
+# - pull requests → tests only
 # - workflow_dispatch controls manual behaviors
 # - No automatic tagging happens except prereleases
 #
@@ -73,10 +73,11 @@ on:
         default: false
         type: boolean
       target:
-        description: "Targets to build (space-separated): macOS, Win64, Win7. Empty = all. Example: macOS Win64"
+        description: "Which build to run: all|win7|win64"
         required: false
-        default: ""
-        type: string
+        default: "all"
+        type: choice
+        options: [ all, win7, win64 ]
 
 # Default permission: read-only. Release job overrides to contents: write.
 permissions:
@@ -123,8 +124,7 @@ jobs:
           BRANCH_RAW="${GITHUB_REF_NAME}"
           BRANCH_SANITIZED="$(echo "$BRANCH_RAW" | tr '/ ' '--' | sed -E 's/[^A-Za-z0-9._-]+/-/g')"
 
-          DESCRIBE_RAW="$(git describe --tags --always --exclude='*-prerelease')"
-          DEV_TAG="${DESCRIBE_RAW}-prerelease"
+          DEV_TAG="v.dev.${BRANCH_SANITIZED}.${SHORT_SHA}"
 
           if [[ "$RUN_MODE" == "prerelease" ]]; then
             echo "version=$DEV_TAG" >> "$GITHUB_OUTPUT"
@@ -250,7 +250,7 @@ jobs:
 
           if ! git diff --exit-code; then
             echo ""
-            echo "? go.mod / go.sum are not tidy"
+            echo "❌ go.mod / go.sum are not tidy"
             echo ""
             echo "Please run locally:"
             echo "  go mod tidy"
@@ -261,7 +261,7 @@ jobs:
             exit 1
           fi
 
-          echo "? go.mod and go.sum are tidy"
+          echo "✅ go.mod and go.sum are tidy"
 
   build:
     name: Build ${{ matrix.goos }}
@@ -421,7 +421,7 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      # MSYS2 ????? ?????? ??? ??????
+      # MSYS2 нужен ТОЛЬКО для сборки
       - name: Setup MSYS2 (MINGW32)
         uses: msys2/setup-msys2@v2
         with:
@@ -544,7 +544,7 @@ jobs:
 
           echo "=== Cleaning up unwanted files/directories ==="
           if [ -d "logs" ]; then
-            echo "? Found logs directory, removing it..."
+            echo "⚠ Found logs directory, removing it..."
             rm -rf logs
           fi
           find . -name "*.log" -type f -delete 2>/dev/null || true
@@ -553,24 +553,24 @@ jobs:
 
           MACOS_APP=$(find . -name "singbox-launcher.app" -type d | head -1 || true)
           if [ -n "${MACOS_APP:-}" ]; then
-            echo "? Found singbox-launcher.app, creating ZIP..."
+            echo "✓ Found singbox-launcher.app, creating ZIP..."
             zip -r "singbox-launcher-${VERSION}-macos.zip" "$MACOS_APP"
-            echo "? Created: singbox-launcher-${VERSION}-macos.zip"
+            echo "✓ Created: singbox-launcher-${VERSION}-macos.zip"
           else
-            echo "? Warning: singbox-launcher.app not found"
+            echo "⚠ Warning: singbox-launcher.app not found"
           fi
 
           # Also check for a Catalina-targeted build artifact
           MACOS_APP_CATALINA=$(find . -name "singbox-launcher-macos-catalina.app" -type d | head -1 || true)
           if [ -n "${MACOS_APP_CATALINA:-}" ]; then
-            echo "? Found Catalina-targeted app, creating ZIP..."
+            echo "✓ Found Catalina-targeted app, creating ZIP..."
             zip -r "singbox-launcher-${VERSION}-macos-catalina.zip" "$MACOS_APP_CATALINA"
-            echo "? Created: singbox-launcher-${VERSION}-macos-catalina.zip"
+            echo "✓ Created: singbox-launcher-${VERSION}-macos-catalina.zip"
           fi
 
           WIN_EXE=$(find . -name "singbox-launcher.exe" -type f -size +0 | head -1 || true)
           if [ -n "${WIN_EXE:-}" ]; then
-            echo "? Found singbox-launcher.exe at: $WIN_EXE"
+            echo "✓ Found singbox-launcher.exe at: $WIN_EXE"
             echo "Creating ZIP with only the .exe file (no directory structure)..."
             EXE_DIR=$(dirname "$WIN_EXE")
             EXE_NAME=$(basename "$WIN_EXE")
@@ -578,12 +578,12 @@ jobs:
             cd "$EXE_DIR"
             zip -j "${ORIGINAL_DIR}/singbox-launcher-${VERSION}-win64.zip" "$EXE_NAME"
             cd "$ORIGINAL_DIR"
-            echo "? Created: singbox-launcher-${VERSION}-win64.zip"
+            echo "✓ Created: singbox-launcher-${VERSION}-win64.zip"
             echo ""
             echo "=== ZIP contents verification ==="
             unzip -l "singbox-launcher-${VERSION}-win64.zip" || true
           else
-            echo "? Warning: singbox-launcher.exe not found"
+            echo "⚠ Warning: singbox-launcher.exe not found"
             find . -name "*.exe" -type f || echo "No .exe files found"
           fi
 
@@ -595,7 +595,7 @@ jobs:
             echo "Checksums created:"
             cat checksums.txt
           else
-            echo "? Warning: checksums.txt is empty"
+            echo "⚠ Warning: checksums.txt is empty"
             : > checksums.txt
           fi
 
@@ -617,10 +617,10 @@ jobs:
               echo "${DELIMITER}"
             } >> $GITHUB_OUTPUT
             rm -f "$TEMP_FILE"
-            echo "? Found RELEASE_NOTES.md"
+            echo "✓ Found RELEASE_NOTES.md"
           else
             echo "notes=" >> $GITHUB_OUTPUT
-            echo "? RELEASE_NOTES.md not found, skipping custom notes"
+            echo "⚠ RELEASE_NOTES.md not found, skipping custom notes"
           fi
 
       - name: Upload to GitHub Release
@@ -664,7 +664,7 @@ jobs:
                xattr -cr "singbox-launcher.app" && chmod +x "singbox-launcher.app/Contents/MacOS/singbox-launcher"
                ```
             4. Double-click `singbox-launcher.app` to run
-               - If macOS blocks the app, go to **System Settings ? Privacy & Security** and click **"Open Anyway"**
+               - If macOS blocks the app, go to **System Settings → Privacy & Security** and click **"Open Anyway"**
                - Alternatively, right-click the app and select **"Open"** (first time only)
 
             #### Windows (amd64)
@@ -677,7 +677,7 @@ jobs:
 
             #### Linux Support
 
-            ?? **Linux build temporarily unavailable** - ?? ???? ???????????? ??? ??????? ???????????? ????? ?????????? ?????????????? ??????.
+            ⚠️ **Linux build temporarily unavailable** - мы ищем тестировщика для ручного тестирования перед включением автоматической сборки.
 
             ### Checksums
 
