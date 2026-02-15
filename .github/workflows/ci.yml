@@ -661,9 +661,8 @@ jobs:
 
             **Option 1: Installation Script (Recommended)**
 
-            Install with a single command:
+            Install with a single command (version ${{ needs.meta.outputs.version }}):
             ```bash
-            # Install ${{ needs.meta.outputs.version }}
             curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/develop/scripts/install-macos.sh | bash -s -- ${{ needs.meta.outputs.version }}
             ```
 
