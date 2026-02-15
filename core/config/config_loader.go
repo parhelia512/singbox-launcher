@@ -11,27 +11,10 @@ import (
 
 // GetSelectorGroupsFromConfig extracts selector group names from config.json
 func GetSelectorGroupsFromConfig(configPath string) ([]string, string, error) {
-	// Internal function to strip comments
-	stripComments := func(data []byte) []byte {
-		commentRegex := regexp.MustCompile(`(?m)\s+//.*$|/\*[\s\S]*?\*/`)
-		var clean = commentRegex.ReplaceAll(data, nil)
-		emptyLineRegex := regexp.MustCompile(`(?m)^\s*\n`)
-		return emptyLineRegex.ReplaceAll(clean, nil)
-	}
-	removeTrailingCommas := func(data []byte) []byte {
-		re := regexp.MustCompile(`,(\s*[\]\}])`)
-		return re.ReplaceAll(data, []byte("$1"))
-	}
-
-	data, err := os.ReadFile(configPath)
+	cleanData, err := getConfigJSON(configPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to read config.json: %w", err)
+		return nil, "", err
 	}
-
-	// Convert JSONC (with comments/trailing commas) into clean JSON
-	cleanData := jsonc.ToJSON(data)
-	cleanData = removeTrailingCommas(stripComments(cleanData))
-
 	var jsonData map[string]interface{}
 	if err := json.Unmarshal(cleanData, &jsonData); err != nil {
 		return nil, "", fmt.Errorf("failed to parse JSON: %w", err)
@@ -102,17 +85,32 @@ func GetSelectorGroupsFromConfig(configPath string) ([]string, string, error) {
 	return selectorGroups, defaultSelector, nil
 }
 
+var reTrailingCommas = regexp.MustCompile(`,(\s*[\]\}])`)
+
+func removeTrailingCommas(data []byte) []byte {
+	return reTrailingCommas.ReplaceAll(data, []byte("$1"))
+}
+
+// getConfigJSON reads config and returns JSON safe to parse (JSONC + trailing commas removed).
+// Trailing commas are removed before and after jsonc so jsonc never sees invalid input and we still fix cases like , // comment \n ].
+func getConfigJSON(configPath string) ([]byte, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+	data = removeTrailingCommas(data) // before jsonc so it doesn't fail on simple ,]
+	cleanData := jsonc.ToJSON(data)
+	cleanData = removeTrailingCommas(cleanData) // after jsonc for cases like , // comment \n ]
+	return cleanData, nil
+}
+
 // GetTunInterfaceName extracts TUN interface name from config.json
 // Returns empty string if no TUN interface is configured
 func GetTunInterfaceName(configPath string) (string, error) {
-	data, err := os.ReadFile(configPath)
+	cleanData, err := getConfigJSON(configPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read config: %w", err)
+		return "", err
 	}
-
-	// Parse JSONC (with comments) to clean JSON
-	cleanData := jsonc.ToJSON(data)
-
 	var config map[string]interface{}
 	if err := json.Unmarshal(cleanData, &config); err != nil {
 		return "", fmt.Errorf("failed to parse config: %w", err)
@@ -141,11 +139,10 @@ func GetTunInterfaceName(configPath string) (string, error) {
 
 // ConfigHasTun returns true if config has any TUN inbound (used to decide if privilege escalation is needed on macOS).
 func ConfigHasTun(configPath string) (bool, error) {
-	data, err := os.ReadFile(configPath)
+	cleanData, err := getConfigJSON(configPath)
 	if err != nil {
-		return false, fmt.Errorf("failed to read config: %w", err)
+		return false, err
 	}
-	cleanData := jsonc.ToJSON(data)
 	var config map[string]interface{}
 	if err := json.Unmarshal(cleanData, &config); err != nil {
 		return false, fmt.Errorf("failed to parse config: %w", err)

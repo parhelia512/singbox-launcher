@@ -30,8 +30,8 @@ const (
 	gracefulShutdownTimeout = 2 * time.Second
 
 	// Privileged start (macOS TUN): script and PID file names, pkill pattern for "already running" kill
-	privilegedScriptName  = "start-singbox-privileged.sh"
-	privilegedPidFileName = "singbox.pid"
+	privilegedScriptName   = "start-singbox-privileged.sh"
+	privilegedPidFileName  = "singbox.pid"
 	privilegedPkillPattern = "sing-box run|start-singbox-privileged"
 )
 
@@ -90,21 +90,6 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		if err := ac.APIService.ReloadClashAPIConfig(); err != nil {
 			debuglog.WarnLog("startSingBox: Warning: Failed to reload Clash API config: %v", err)
 			// Continue anyway - API might not be configured or config might be invalid
-		}
-	}
-
-	// Check and remove existing TUN interface before starting (prevents "file already exists" error)
-	if runtime.GOOS == "windows" {
-		interfaceName, err := config.GetTunInterfaceName(ac.FileService.ConfigPath)
-		if err != nil {
-			debuglog.WarnLog("startSingBox: Failed to get TUN interface name from config: %v", err)
-			// Continue anyway - maybe config doesn't have TUN
-		} else if interfaceName != "" {
-			debuglog.DebugLog("startSingBox: Checking for existing TUN interface '%s'...", interfaceName)
-			if err := svc.removeTunInterface(interfaceName); err != nil {
-				debuglog.WarnLog("startSingBox: Warning: Failed to remove TUN interface: %v", err)
-				// Non-critical error - sing-box might handle existing interface
-			}
 		}
 	}
 
@@ -616,64 +601,4 @@ func (svc *ProcessService) isSingBoxProcessRunningWithPS(ourPID int) (bool, int)
 	}
 	debuglog.DebugLog("isSingBoxProcessRunningWithPS: No sing-box process found (checked %d processes)", len(processes))
 	return false, -1
-}
-
-// checkTunInterfaceExists checks if TUN interface exists on Windows
-func (svc *ProcessService) checkTunInterfaceExists(interfaceName string) (bool, error) {
-	if runtime.GOOS != "windows" {
-		// On Linux/macOS, TUN interfaces are managed by the OS
-		// and are automatically removed when the process exits
-		return false, nil
-	}
-
-	cmd := exec.Command("netsh", "interface", "show", "interface", fmt.Sprintf("name=%s", interfaceName))
-	platform.PrepareCommand(cmd) // Hide console window on Windows
-	output, err := cmd.Output()
-
-	if err != nil {
-		// Interface not found or command failed
-		return false, nil
-	}
-
-	// Check if interface name appears in output
-	outputStr := strings.ToLower(string(output))
-	return strings.Contains(outputStr, strings.ToLower(interfaceName)), nil
-}
-
-// removeTunInterface removes TUN interface on Windows before starting sing-box
-func (svc *ProcessService) removeTunInterface(interfaceName string) error {
-	if runtime.GOOS != "windows" {
-		// On Linux/macOS, interface is removed automatically
-		return nil
-	}
-
-	// Check if interface exists
-	exists, err := svc.checkTunInterfaceExists(interfaceName)
-	if err != nil {
-		debuglog.WarnLog("removeTunInterface: Failed to check interface existence: %v", err)
-		// Continue anyway - try to remove it
-	}
-
-	if !exists {
-		debuglog.DebugLog("removeTunInterface: Interface '%s' does not exist, nothing to remove", interfaceName)
-		return nil
-	}
-
-	debuglog.DebugLog("removeTunInterface: Removing existing TUN interface '%s'...", interfaceName)
-
-	// Remove the interface using netsh
-	cmd := exec.Command("netsh", "interface", "delete", "interface", fmt.Sprintf("name=%s", interfaceName))
-	platform.PrepareCommand(cmd) // Hide console window on Windows
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Interface might be in use or already deleted
-		debuglog.WarnLog("removeTunInterface: Failed to remove interface '%s': %v, output: %s",
-			interfaceName, err, string(output))
-		// This is not a critical error - sing-box might handle it
-		return fmt.Errorf("failed to remove interface: %w", err)
-	}
-
-	debuglog.DebugLog("removeTunInterface: Successfully removed TUN interface '%s'", interfaceName)
-	return nil
 }
