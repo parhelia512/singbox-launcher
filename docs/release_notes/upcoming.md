@@ -18,6 +18,7 @@
 - **Docs** — MACOS_TUN report updates (ConfigHasTun, wizard TUN section); telemetry concept (TELEMETRY_CONCEPT.md).
 - **CI** — fix CI/CD.
 - **Build (macOS)** — Version detection in `build_darwin.sh` aligned with Windows: support for `APP_VERSION` env var; `git describe --tags --always --dirty` for tag/branch; fallback `unnamed-dev` instead of hardcoded `0.4.1` when no tag available.
+- **CI / prerelease** — Prerelease version and tag format changed to `vX.Y.Z-N-g<sha>-prerelease` (from `git describe` + suffix); comparable base version for update check. Build scripts use `--exclude='*-prerelease'` in `git describe` so local builds ignore CI prerelease tags. Legacy `v.dev.*` tags removed from repo. `ci.yml` stored as UTF-8.
 
 ---
 
@@ -33,3 +34,4 @@
 - **Документация** — обновления отчёта MACOS_TUN (ConfigHasTun, секция TUN в визарде); концепция телеметрии (TELEMETRY_CONCEPT.md).
 - **CI** — исправление CI/CD.
 - **Сборка (macOS)** — Определение версии в `build_darwin.sh` приведено к логике Windows: поддержка переменной окружения `APP_VERSION`; `git describe --tags --always --dirty` для тегов и веток; fallback `unnamed-dev` вместо жёсткого `0.4.1`, если тег недоступен.
+- **CI / пререлиз** — Формат версии и тега пререлиза: `vX.Y.Z-N-g<sha>-prerelease` (из `git describe` + суффикс); база версии сравнима, проверка обновлений корректна. В скриптах сборки в `git describe` добавлен `--exclude='*-prerelease'`, чтобы локальная сборка не опиралась на теги пререлизов. Теги `v.dev.*` удалены из репозитория. Файл `ci.yml` сохранён в UTF-8.
