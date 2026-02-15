@@ -17,6 +17,7 @@
 - **Scripts** — download statistics tracking and script; latest release section, top 3 with medals.
 - **Docs** — MACOS_TUN report updates (ConfigHasTun, wizard TUN section); telemetry concept (TELEMETRY_CONCEPT.md).
 - **CI** — fix CI/CD.
+- **Build (macOS)** — Version detection in `build_darwin.sh` aligned with Windows: support for `APP_VERSION` env var; `git describe --tags --always --dirty` for tag/branch; fallback `unnamed-dev` instead of hardcoded `0.4.1` when no tag available.
 
 ---
 
@@ -31,3 +32,4 @@
 - **Скрипты** — учёт статистики загрузок и скрипт; блок «последний релиз», топ-3 с медалями.
 - **Документация** — обновления отчёта MACOS_TUN (ConfigHasTun, секция TUN в визарде); концепция телеметрии (TELEMETRY_CONCEPT.md).
 - **CI** — исправление CI/CD.
+- **Сборка (macOS)** — Определение версии в `build_darwin.sh` приведено к логике Windows: поддержка переменной окружения `APP_VERSION`; `git describe --tags --always --dirty` для тегов и веток; fallback `unnamed-dev` вместо жёсткого `0.4.1`, если тег недоступен.

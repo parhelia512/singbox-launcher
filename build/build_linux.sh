@@ -36,7 +36,7 @@ echo "Using output file: $OUTPUT_FILENAME"
 
 echo ""
 echo "=== Getting version from git tag ==="
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.4.1")
+VERSION=$(git describe --tags --always --dirty --exclude='*-prerelease' 2>/dev/null || echo "0.4.1")
 echo "Version: $VERSION"
 
 echo ""
